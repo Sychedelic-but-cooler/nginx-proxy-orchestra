@@ -1,4 +1,3 @@
-const url = require('url');
 const { db, logAudit } = require('../db');
 const { 
   authenticate, 
@@ -34,17 +33,40 @@ const {
 function parseBody(req) {
   return new Promise((resolve, reject) => {
     let body = '';
+    let size = 0;
+    const maxSize = 1024 * 1024; // 1MB limit
+
     req.on('data', chunk => {
+      size += chunk.length;
+      if (size > maxSize) {
+        reject(new Error('Request body too large'));
+        return;
+      }
       body += chunk.toString();
     });
+
     req.on('end', () => {
       try {
-        resolve(body ? JSON.parse(body) : {});
+        // Handle empty body
+        if (!body || body.trim() === '') {
+          resolve({});
+          return;
+        }
+        
+        // Try to parse JSON
+        const parsed = JSON.parse(body);
+        resolve(parsed);
       } catch (error) {
-        reject(new Error('Invalid JSON'));
+        console.error('JSON Parse Error:', error.message);
+        console.error('Body received:', body.substring(0, 200));
+        reject(new Error('Invalid JSON: ' + error.message));
       }
     });
-    req.on('error', reject);
+
+    req.on('error', (error) => {
+      console.error('Request error:', error);
+      reject(error);
+    });
   });
 }
 

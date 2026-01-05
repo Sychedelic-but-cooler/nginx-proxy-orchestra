@@ -2,7 +2,6 @@ require('dotenv').config();
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
-const url = require('url');
 const { handleAPI } = require('./routes/api');
 
 const PORT = process.env.PORT || 81;
@@ -61,7 +60,7 @@ function serveStatic(req, res, filePath) {
  * Main request handler
  */
 const server = http.createServer((req, res) => {
-  const parsedUrl = url.parse(req.url, true);
+  const parsedUrl = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
   const pathname = parsedUrl.pathname;
 
   // Log requests in development
