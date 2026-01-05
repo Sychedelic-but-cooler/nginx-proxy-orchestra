@@ -1,0 +1,26 @@
+{
+  "name": "nginx-proxy-orchestra",
+  "version": "1.0.0",
+  "description": "A minimal web UI for managing nginx reverse proxy configurations",
+  "main": "server/index.js",
+  "scripts": {
+    "start": "node server/index.js",
+    "dev": "NODE_ENV=development node server/index.js",
+    "pm2:start": "pm2 start ecosystem.config.js",
+    "pm2:stop": "pm2 stop nginx-proxy-orchestra",
+    "pm2:restart": "pm2 restart nginx-proxy-orchestra",
+    "pm2:logs": "pm2 logs nginx-proxy-orchestra"
+  },
+  "keywords": ["nginx", "reverse-proxy", "webui", "admin"],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "better-sqlite3": "^9.2.2",
+    "bcrypt": "^5.1.1",
+    "cookie-parser": "^1.4.6",
+    "dotenv": "^16.3.1"
+  },
+  "devDependencies": {
+    "pm2": "^5.3.0"
+  }
+}
