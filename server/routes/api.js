@@ -268,11 +268,28 @@ async function handleChangePassword(req, res) {
   }
 
   try {
-    changePassword(req.user.userId, currentPassword, newPassword);
+    // Get current user from database
+    const user = db.prepare('SELECT password FROM users WHERE id = ?').get(req.user.userId);
+    
+    if (!user) {
+      return sendJSON(res, { error: 'User not found' }, 404);
+    }
+    
+    // Verify current password
+    const isValid = await verifyPassword(currentPassword, user.password);
+    if (!isValid) {
+      return sendJSON(res, { error: 'Current password is incorrect' }, 400);
+    }
+    
+    // Hash new password and update
+    const newHash = await hashPassword(newPassword);
+    db.prepare('UPDATE users SET password = ? WHERE id = ?').run(newHash, req.user.userId);
+    
     logAudit(req.user.userId, 'change_password', 'user', req.user.userId, null, getClientIP(req));
     sendJSON(res, { success: true });
   } catch (error) {
-    sendJSON(res, { error: error.message }, 400);
+    console.error('Change password error:', error);
+    sendJSON(res, { error: error.message || 'Failed to change password' }, 500);
   }
 }
 

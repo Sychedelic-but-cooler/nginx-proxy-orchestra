@@ -204,7 +204,15 @@ function generate404Block(proxyHost) {
  * Write nginx configuration file
  */
 function writeNginxConfig(filename, content) {
-  const configDir = process.env.NGINX_CONFIG_DIR || '/etc/nginx/sites-available';
+  const configDir = process.env.NGINX_CONFIG_DIR || '/etc/nginx/conf.d';
+  
+  // Create directory if it doesn't exist
+  if (!fs.existsSync(configDir)) {
+    console.warn(`Nginx config directory does not exist: ${configDir}`);
+    console.warn('Creating directory...');
+    fs.mkdirSync(configDir, { recursive: true });
+  }
+  
   const configPath = path.join(configDir, filename);
   
   // Create backup if file exists
@@ -221,7 +229,7 @@ function writeNginxConfig(filename, content) {
  * Read nginx configuration file
  */
 function readNginxConfig(filename) {
-  const configDir = process.env.NGINX_CONFIG_DIR || '/etc/nginx/sites-available';
+  const configDir = process.env.NGINX_CONFIG_DIR || '/etc/nginx/conf.d';
   const configPath = path.join(configDir, filename);
   
   if (!fs.existsSync(configPath)) {
@@ -235,16 +243,8 @@ function readNginxConfig(filename) {
  * Delete nginx configuration file
  */
 function deleteNginxConfig(filename) {
-  const configDir = process.env.NGINX_CONFIG_DIR || '/etc/nginx/sites-available';
-  const enabledDir = process.env.NGINX_ENABLED_DIR || '/etc/nginx/sites-enabled';
-  
+  const configDir = process.env.NGINX_CONFIG_DIR || '/etc/nginx/conf.d';
   const configPath = path.join(configDir, filename);
-  const enabledPath = path.join(enabledDir, filename);
-  
-  // Remove symlink if exists
-  if (fs.existsSync(enabledPath)) {
-    fs.unlinkSync(enabledPath);
-  }
   
   // Remove config file
   if (fs.existsSync(configPath)) {
@@ -255,34 +255,35 @@ function deleteNginxConfig(filename) {
 }
 
 /**
- * Enable nginx configuration (create symlink)
+ * Enable nginx configuration
+ * In conf.d, configs are auto-loaded, so we just rename from .disabled to .conf
  */
 function enableNginxConfig(filename) {
-  const configDir = process.env.NGINX_CONFIG_DIR || '/etc/nginx/sites-available';
-  const enabledDir = process.env.NGINX_ENABLED_DIR || '/etc/nginx/sites-enabled';
+  const configDir = process.env.NGINX_CONFIG_DIR || '/etc/nginx/conf.d';
   
-  const configPath = path.join(configDir, filename);
-  const enabledPath = path.join(enabledDir, filename);
+  // If file ends with .disabled, rename it to .conf
+  const disabledPath = path.join(configDir, filename.replace('.conf', '.disabled'));
+  const enabledPath = path.join(configDir, filename.endsWith('.conf') ? filename : filename + '.conf');
   
-  if (!fs.existsSync(configPath)) {
+  if (fs.existsSync(disabledPath)) {
+    fs.renameSync(disabledPath, enabledPath);
+  } else if (!fs.existsSync(enabledPath)) {
     throw new Error(`Config file ${filename} does not exist`);
-  }
-  
-  // Create symlink if it doesn't exist
-  if (!fs.existsSync(enabledPath)) {
-    fs.symlinkSync(configPath, enabledPath);
   }
 }
 
 /**
- * Disable nginx configuration (remove symlink)
+ * Disable nginx configuration
+ * In conf.d, we rename .conf to .disabled so it's not loaded
  */
 function disableNginxConfig(filename) {
-  const enabledDir = process.env.NGINX_ENABLED_DIR || '/etc/nginx/sites-enabled';
-  const enabledPath = path.join(enabledDir, filename);
+  const configDir = process.env.NGINX_CONFIG_DIR || '/etc/nginx/conf.d';
+  
+  const enabledPath = path.join(configDir, filename);
+  const disabledPath = path.join(configDir, filename.replace('.conf', '.disabled'));
   
   if (fs.existsSync(enabledPath)) {
-    fs.unlinkSync(enabledPath);
+    fs.renameSync(enabledPath, disabledPath);
   }
 }
 
