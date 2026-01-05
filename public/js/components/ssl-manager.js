@@ -229,18 +229,3 @@ function readFileAsText(file) {
     reader.readAsText(file);
   });
 }
-      await api.createCertificate(data);
-      showSuccess('Certificate added successfully');
-      modal.innerHTML = '';
-      await renderCertificates(document.getElementById('mainContent'));
-    } catch (error) {
-      hideLoading();
-      showError(error.message);
-    }
-  });
-
-  // Cancel button
-  document.getElementById('cancelBtn').addEventListener('click', () => {
-    modal.innerHTML = '';
-  });
-}
