@@ -64,18 +64,30 @@ export async function renderDashboard(container) {
                 <tr>
                   <th>Name</th>
                   <th>Expires</th>
+                  <th>Days Left</th>
                 </tr>
               </thead>
               <tbody>
-                ${stats.certificates.expiring.map(cert => `
-                  <tr>
-                    <td>${cert.name}</td>
-                    <td>${new Date(cert.expires_at).toLocaleDateString()}</td>
-                  </tr>
-                `).join('')}
+                ${stats.certificates.expiring.map(cert => {
+                  const rowClass = cert.urgency === 'critical' ? 'cert-critical' : 
+                                   cert.urgency === 'warning' ? 'cert-warning' : '';
+                  return `
+                    <tr class="${rowClass}">
+                      <td><strong>${cert.name}</strong></td>
+                      <td>${new Date(cert.expires_at).toLocaleDateString()}</td>
+                      <td>
+                        <span class="badge ${cert.urgency === 'critical' ? 'badge-danger' : 
+                                            cert.urgency === 'warning' ? 'badge-warning' : 
+                                            'badge-success'}">
+                          ${cert.daysUntilExpiry} day${cert.daysUntilExpiry !== 1 ? 's' : ''}
+                        </span>
+                      </td>
+                    </tr>
+                  `;
+                }).join('')}
               </tbody>
             </table>
-          ` : '<p style="color: var(--text-secondary);">No certificates expiring soon</p>'}
+          ` : '<p style="padding: 16px; color: var(--text-secondary);">No certificates expiring soon</p>'}
         </div>
       </div>
 

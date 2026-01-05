@@ -314,9 +314,30 @@ function handleDashboardStats(req, res) {
     FROM ssl_certificates 
     WHERE expires_at IS NOT NULL 
       AND date(expires_at) <= date('now', '+30 days')
+      AND date(expires_at) >= date('now')
     ORDER BY expires_at ASC
-    LIMIT 5
+    LIMIT 10
   `).all();
+
+  // Add urgency level to each certificate
+  const now = Date.now();
+  const certsWithUrgency = expiringCerts.map(cert => {
+    const expiresAt = new Date(cert.expires_at).getTime();
+    const daysUntilExpiry = Math.floor((expiresAt - now) / (1000 * 60 * 60 * 24));
+    
+    let urgency = 'normal';
+    if (daysUntilExpiry <= 7) {
+      urgency = 'critical';
+    } else if (daysUntilExpiry <= 14) {
+      urgency = 'warning';
+    }
+    
+    return {
+      ...cert,
+      daysUntilExpiry,
+      urgency
+    };
+  });
 
   // Recent audit log
   const recentActivity = db.prepare(`
@@ -340,7 +361,7 @@ function handleDashboardStats(req, res) {
     },
     certificates: {
       total: certificateCount.count,
-      expiring: expiringCerts
+      expiring: certsWithUrgency
     },
     nginx: nginxStatus,
     recentActivity

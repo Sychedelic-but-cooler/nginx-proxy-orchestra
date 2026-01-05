@@ -435,6 +435,25 @@ body {
   background: var(--bg-color);
 }
 
+/* Certificate urgency highlighting */
+.table tr.cert-critical {
+  background: #fef2f2;
+  border-left: 3px solid var(--danger-color);
+}
+
+.table tr.cert-critical:hover {
+  background: #fee2e2;
+}
+
+.table tr.cert-warning {
+  background: #fffbeb;
+  border-left: 3px solid var(--warning-color);
+}
+
+.table tr.cert-warning:hover {
+  background: #fef3c7;
+}
+
 /* Badges */
 .badge {
   display: inline-block;
