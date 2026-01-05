@@ -58,6 +58,7 @@ function initializeDatabase() {
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       name TEXT UNIQUE NOT NULL,
       domain_names TEXT NOT NULL,
+      issuer TEXT,
       expires_at DATETIME,
       cert_path TEXT NOT NULL,
       key_path TEXT NOT NULL,

@@ -22,6 +22,12 @@ const {
   safeReload,
   testNginxConfig
 } = require('../utils/nginx-ops');
+const {
+  parseCertificate,
+  validateCertificateKeyPair,
+  saveCertificateFiles,
+  deleteCertificateFiles
+} = require('../utils/ssl-parser');
 
 /**
  * Parse JSON request body
@@ -644,27 +650,61 @@ function handleGetCertificates(req, res) {
 
 async function handleCreateCertificate(req, res) {
   const body = await parseBody(req);
-  const { name, domain_names, cert_path, key_path, expires_at } = body;
+  const { name, cert_content, key_content } = body;
 
-  if (!name || !domain_names || !cert_path || !key_path) {
-    return sendJSON(res, { error: 'Name, domain names, cert path, and key path required' }, 400);
+  if (!name || !cert_content || !key_content) {
+    return sendJSON(res, { error: 'Name, certificate content, and key content required' }, 400);
   }
 
   try {
-    const result = db.prepare('INSERT INTO ssl_certificates (name, domain_names, cert_path, key_path, expires_at) VALUES (?, ?, ?, ?, ?)')
-      .run(name, domain_names, cert_path, key_path, expires_at || null);
+    // Parse certificate to extract metadata
+    const certInfo = parseCertificate(cert_content);
     
-    logAudit(req.user.userId, 'create', 'certificate', result.lastInsertRowid, JSON.stringify({ name, domain_names }), getClientIP(req));
-    sendJSON(res, { success: true, id: result.lastInsertRowid }, 201);
+    // Validate certificate and key pair
+    const isValid = validateCertificateKeyPair(cert_content, key_content);
+    if (!isValid) {
+      return sendJSON(res, { error: 'Certificate and key do not match' }, 400);
+    }
+
+    // Save certificate files to disk
+    const { certPath, keyPath } = saveCertificateFiles(cert_content, key_content, name);
+
+    // Extract domain names and issuer
+    const domainNames = certInfo.domains.join(', ');
+    const issuer = certInfo.issuer.organizationName || certInfo.issuer.commonName || 'Unknown';
+    const expiresAt = certInfo.notAfter ? certInfo.notAfter.toISOString() : null;
+
+    // Insert into database
+    const result = db.prepare(`
+      INSERT INTO ssl_certificates (name, domain_names, issuer, expires_at, cert_path, key_path) 
+      VALUES (?, ?, ?, ?, ?, ?)
+    `).run(name, domainNames, issuer, expiresAt, certPath, keyPath);
+    
+    logAudit(req.user.userId, 'create', 'certificate', result.lastInsertRowid, JSON.stringify({ name, domainNames }), getClientIP(req));
+    
+    sendJSON(res, { 
+      success: true, 
+      id: result.lastInsertRowid,
+      certificate: {
+        id: result.lastInsertRowid,
+        name,
+        domain_names: domainNames,
+        issuer,
+        expires_at: expiresAt,
+        cert_path: certPath,
+        key_path: keyPath
+      }
+    }, 201);
   } catch (error) {
-    sendJSON(res, { error: error.message }, 500);
+    console.error('Certificate creation error:', error);
+    sendJSON(res, { error: error.message || 'Failed to create certificate' }, 500);
   }
 }
 
 function handleDeleteCertificate(req, res, parsedUrl) {
   const id = parseInt(parsedUrl.pathname.split('/')[3]);
   
-  const cert = db.prepare('SELECT name FROM ssl_certificates WHERE id = ?').get(id);
+  const cert = db.prepare('SELECT name, cert_path, key_path FROM ssl_certificates WHERE id = ?').get(id);
   if (!cert) {
     return sendJSON(res, { error: 'Certificate not found' }, 404);
   }
@@ -676,6 +716,10 @@ function handleDeleteCertificate(req, res, parsedUrl) {
   }
 
   try {
+    // Delete certificate files from disk
+    deleteCertificateFiles(cert.cert_path, cert.key_path);
+    
+    // Delete from database
     db.prepare('DELETE FROM ssl_certificates WHERE id = ?').run(id);
     logAudit(req.user.userId, 'delete', 'certificate', id, JSON.stringify({ name: cert.name }), getClientIP(req));
     sendJSON(res, { success: true });
