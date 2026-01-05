@@ -99,16 +99,50 @@ function validateCertificateKeyPair(certContent, keyContent) {
         encoding: 'utf8'
       }).trim();
 
-      // Get key modulus
-      const keyModulus = execSync(`openssl rsa -noout -modulus -in ${keyFile}`, {
-        encoding: 'utf8'
-      }).trim();
+      let keyModulus;
+      
+      // Try to detect key type and get modulus accordingly
+      try {
+        // First try RSA
+        keyModulus = execSync(`openssl rsa -noout -modulus -in ${keyFile}`, {
+          encoding: 'utf8'
+        }).trim();
+      } catch (rsaError) {
+        // If RSA fails, try EC (Elliptic Curve)
+        try {
+          keyModulus = execSync(`openssl ec -noout -modulus -in ${keyFile}`, {
+            encoding: 'utf8'
+          }).trim();
+        } catch (ecError) {
+          // If both fail, try generic pkey
+          keyModulus = execSync(`openssl pkey -noout -text -in ${keyFile}`, {
+            encoding: 'utf8'
+          }).trim();
+          
+          // For EC keys, we need to compare differently
+          // Get the public key from both cert and key and compare
+          const certPubKey = execSync(`openssl x509 -noout -pubkey -in ${certFile}`, {
+            encoding: 'utf8'
+          }).trim();
+          
+          const keyPubKey = execSync(`openssl pkey -pubout -in ${keyFile}`, {
+            encoding: 'utf8'
+          }).trim();
+          
+          // Clean up
+          fs.unlinkSync(certFile);
+          fs.unlinkSync(keyFile);
+          
+          // Compare public keys
+          return certPubKey === keyPubKey;
+        }
+      }
 
       // Clean up
       fs.unlinkSync(certFile);
       fs.unlinkSync(keyFile);
 
-      // Compare moduli
+      // Compare moduli (for RSA keys)
       return certModulus === keyModulus;
     } catch (error) {
       // Clean up on error
