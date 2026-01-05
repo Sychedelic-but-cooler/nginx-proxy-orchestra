@@ -179,7 +179,7 @@ function showChangePasswordModal() {
       <div class="modal">
         <div class="modal-header">
           <h3>Change Password</h3>
-          <button class="modal-close" onclick="document.getElementById('changePasswordModal').remove()">&times;</button>
+          <button class="modal-close" id="closePasswordModal">&times;</button>
         </div>
         <div class="modal-body">
           <form id="changePasswordForm">
@@ -190,24 +190,33 @@ function showChangePasswordModal() {
             <div class="form-group">
               <label>New Password</label>
               <input type="password" id="newPassword" required autocomplete="new-password" minlength="8">
-              <small style="color: var(--text-secondary);">Minimum 8 characters</small>
+              <small>Minimum 8 characters</small>
             </div>
             <div class="form-group">
               <label>Confirm New Password</label>
               <input type="password" id="confirmPassword" required autocomplete="new-password">
             </div>
             <div id="passwordError" style="color: var(--danger-color); margin-bottom: 15px; display: none;"></div>
-            <div class="modal-footer">
-              <button type="button" class="btn btn-secondary" onclick="document.getElementById('changePasswordModal').remove()">Cancel</button>
-              <button type="submit" class="btn btn-primary" id="savePasswordBtn">Change Password</button>
-            </div>
           </form>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" id="cancelPasswordBtn">Cancel</button>
+          <button type="submit" form="changePasswordForm" class="btn btn-primary" id="savePasswordBtn">Change Password</button>
         </div>
       </div>
     </div>
   `;
   
   document.getElementById('modalContainer').innerHTML = modalHTML;
+  
+  // Close button handlers
+  document.getElementById('closePasswordModal').addEventListener('click', () => {
+    document.getElementById('changePasswordModal').remove();
+  });
+  
+  document.getElementById('cancelPasswordBtn').addEventListener('click', () => {
+    document.getElementById('changePasswordModal').remove();
+  });
   
   document.getElementById('changePasswordForm').addEventListener('submit', async (e) => {
     e.preventDefault();
