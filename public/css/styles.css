@@ -208,11 +208,6 @@ body {
   border-left-color: var(--primary-color);
 }
 
-.nav-icon {
-  margin-right: 12px;
-  font-size: 18px;
-}
-
 .sidebar-footer {
   padding: 20px;
   border-top: 1px solid rgba(255, 255, 255, 0.1);
