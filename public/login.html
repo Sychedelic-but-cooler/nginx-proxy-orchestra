@@ -12,7 +12,7 @@
       <h1>Nginx Proxy Orchestra</h1>
       <p class="subtitle">Web UI for Managing Nginx Configurations</p>
       
-      <form id="loginForm">
+      <form id="loginForm" method="post" action="/api/login" onsubmit="return false;">
         <div class="form-group">
           <label for="username">Username</label>
           <input 
@@ -22,6 +22,8 @@
             required 
             autocomplete="username"
             placeholder="Enter username"
+            autocorrect="off"
+            autocapitalize="none"
           >
         </div>
 
@@ -34,12 +36,14 @@
             required 
             autocomplete="current-password"
             placeholder="Enter password"
+            autocorrect="off"
+            autocapitalize="none"
           >
         </div>
 
         <div id="errorMessage" class="error-message" style="display: none;"></div>
 
-        <button type="submit" class="btn btn-primary btn-block">
+        <button type="submit" class="btn btn-primary btn-block" id="loginButton">
           Login
         </button>
       </form>
@@ -53,11 +57,18 @@
   <script>
     const loginForm = document.getElementById('loginForm');
     const errorMessage = document.getElementById('errorMessage');
+    const loginButton = document.getElementById('loginButton');
 
+    // Prevent any form submission to URL
     loginForm.addEventListener('submit', async (e) => {
       e.preventDefault();
+      e.stopPropagation();
       
-      const username = document.getElementById('username').value;
+      // Disable button to prevent double submission
+      loginButton.disabled = true;
+      loginButton.textContent = 'Logging in...';
+      
+      const username = document.getElementById('username').value.trim();
       const password = document.getElementById('password').value;
 
       errorMessage.style.display = 'none';
@@ -65,24 +76,42 @@
       try {
         const response = await fetch('/api/login', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 
+            'Content-Type': 'application/json',
+            'Cache-Control': 'no-cache'
+          },
           body: JSON.stringify({ username, password }),
-          credentials: 'same-origin'
+          credentials: 'same-origin',
+          redirect: 'manual'
         });
 
         const data = await response.json();
 
         if (response.ok) {
-          window.location.href = '/app';
+          // Clear form fields immediately for security
+          document.getElementById('username').value = '';
+          document.getElementById('password').value = '';
+          
+          // Redirect to app
+          window.location.replace('/app');
         } else {
           errorMessage.textContent = data.error || 'Login failed';
           errorMessage.style.display = 'block';
+          loginButton.disabled = false;
+          loginButton.textContent = 'Login';
         }
       } catch (error) {
         errorMessage.textContent = 'Connection error. Please try again.';
         errorMessage.style.display = 'block';
+        loginButton.disabled = false;
+        loginButton.textContent = 'Login';
       }
+      
+      return false;
     });
+
+    // Additional protection: prevent form from submitting via any other means
+    loginForm.onsubmit = function() { return false; };
   </script>
 </body>
 </html>
