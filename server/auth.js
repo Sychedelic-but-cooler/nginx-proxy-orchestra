@@ -89,90 +89,17 @@ function resetRateLimit(ip) {
 }
 
 /**
- * Authenticate user credentials
+ * Hash a password
  */
-function authenticate(username, password) {
-  const user = db.prepare('SELECT id, username, password, role FROM users WHERE username = ?').get(username);
-  
-  if (!user) return null;
-  
-  const isValid = bcrypt.compareSync(password, user.password);
-  if (!isValid) return null;
-  
-  // Update last login
-  db.prepare('UPDATE users SET last_login = CURRENT_TIMESTAMP WHERE id = ?').run(user.id);
-  
-  return {
-    id: user.id,
-    username: user.username,
-    role: user.role
-  };
+async function hashPassword(password) {
+  return await bcrypt.hash(password, 10);
 }
 
 /**
- * Change user password
+ * Verify password against hash
  */
-function changePassword(userId, currentPassword, newPassword) {
-  const user = db.prepare('SELECT password FROM users WHERE id = ?').get(userId);
-  
-  if (!user) {
-    throw new Error('User not found');
-  }
-  
-  const isValid = bcrypt.compareSync(currentPassword, user.password);
-  if (!isValid) {
-    throw new Error('Current password is incorrect');
-  }
-  
-  const hash = bcrypt.hashSync(newPassword, 10);
-  db.prepare('UPDATE users SET password = ? WHERE id = ?').run(hash, userId);
-}
-
-/**
- * Authentication middleware
- */
-function authMiddleware(req, res, next) {
-  const cookies = parseCookies(req.headers.cookie);
-  const sessionId = cookies.session;
-  
-  const session = getSession(sessionId);
-  if (!session) {
-    res.writeHead(401, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ error: 'Unauthorized' }));
-    return;
-  }
-  
-  req.user = session;
-  next();
-}
-
-/**
- * Set session cookie
- */
-function setSessionCookie(res, sessionId) {
-  const isProduction = process.env.NODE_ENV === 'production';
-  const maxAge = 24 * 60 * 60; // 24 hours in seconds
-  
-  const cookie = [
-    `session=${sessionId}`,
-    'HttpOnly',
-    'SameSite=Strict',
-    `Max-Age=${maxAge}`,
-    'Path=/'
-  ];
-  
-  if (isProduction) {
-    cookie.push('Secure'); // Only send over HTTPS in production
-  }
-  
-  res.setHeader('Set-Cookie', cookie.join('; '));
-}
-
-/**
- * Clear session cookie
- */
-function clearSessionCookie(res) {
-  res.setHeader('Set-Cookie', 'session=; HttpOnly; SameSite=Strict; Max-Age=0; Path=/');
+async function verifyPassword(password, hash) {
+  return await bcrypt.compare(password, hash);
 }
 
 module.exports = {
@@ -180,6 +107,7 @@ module.exports = {
   verifyToken,
   extractToken,
   checkRateLimit,
+  resetRateLimit,
   verifyPassword,
   hashPassword
 };
