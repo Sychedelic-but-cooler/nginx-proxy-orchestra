@@ -12,14 +12,12 @@
       <h1>Nginx Proxy Orchestra</h1>
       <p class="subtitle">Web UI for Managing Nginx Configurations</p>
       
-      <form id="loginForm" onsubmit="return false;">
+      <div id="loginForm">
         <div class="form-group">
           <label for="username">Username</label>
           <input 
             type="text" 
             id="username" 
-            name="username" 
-            required 
             autocomplete="username"
             placeholder="Enter username"
             autocorrect="off"
@@ -32,8 +30,6 @@
           <input 
             type="password" 
             id="password" 
-            name="password" 
-            required 
             autocomplete="current-password"
             placeholder="Enter password"
             autocorrect="off"
@@ -43,10 +39,10 @@
 
         <div id="errorMessage" class="error-message" style="display: none;"></div>
 
-        <button type="submit" class="btn btn-primary btn-block" id="loginButton">
+        <button type="button" class="btn btn-primary btn-block" id="loginButton">
           Login
         </button>
-      </form>
+      </div>
 
       <div class="login-footer">
         <small>Default credentials are generated on first launch. Check the server logs.</small>
@@ -55,21 +51,27 @@
   </div>
 
   <script>
-    const loginForm = document.getElementById('loginForm');
     const errorMessage = document.getElementById('errorMessage');
     const loginButton = document.getElementById('loginButton');
+    const usernameInput = document.getElementById('username');
+    const passwordInput = document.getElementById('password');
 
-    // Prevent any form submission to URL
-    loginForm.addEventListener('submit', async (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      
+    // Handle login
+    async function performLogin() {
       // Disable button to prevent double submission
       loginButton.disabled = true;
       loginButton.textContent = 'Logging in...';
       
-      const username = document.getElementById('username').value.trim();
-      const password = document.getElementById('password').value;
+      const username = usernameInput.value.trim();
+      const password = passwordInput.value;
+
+      if (!username || !password) {
+        errorMessage.textContent = 'Username and password are required';
+        errorMessage.style.display = 'block';
+        loginButton.disabled = false;
+        loginButton.textContent = 'Login';
+        return;
+      }
 
       errorMessage.style.display = 'none';
 
@@ -89,8 +91,8 @@
 
         if (response.ok) {
           // Clear form fields immediately for security
-          document.getElementById('username').value = '';
-          document.getElementById('password').value = '';
+          usernameInput.value = '';
+          passwordInput.value = '';
           
           // Redirect to app
           window.location.replace('/app');
@@ -106,12 +108,26 @@
         loginButton.disabled = false;
         loginButton.textContent = 'Login';
       }
-      
-      return false;
+    }
+
+    // Button click handler
+    loginButton.addEventListener('click', performLogin);
+
+    // Allow Enter key in password field
+    passwordInput.addEventListener('keypress', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        performLogin();
+      }
     });
 
-    // Additional protection: prevent form from submitting via any other means
-    loginForm.onsubmit = function() { return false; };
+    // Allow Enter key in username field
+    usernameInput.addEventListener('keypress', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        performLogin();
+      }
+    });
   </script>
 </body>
 </html>
