@@ -54,6 +54,12 @@ async function performLogin() {
 
     if (response.ok) {
       console.log('Login successful');
+      
+      // Store JWT token in localStorage
+      if (data.token) {
+        localStorage.setItem('auth_token', data.token);
+      }
+      
       // Clear form fields immediately for security
       usernameInput.value = '';
       passwordInput.value = '';

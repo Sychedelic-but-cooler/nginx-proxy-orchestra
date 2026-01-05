@@ -7,6 +7,11 @@ import { renderCertificates } from './components/ssl-manager.js';
 import { renderModules } from './components/module-manager.js';
 import { renderAuditLog } from './components/audit-log.js';
 
+// Check authentication on app load
+if (!api.getToken()) {
+  window.location.href = '/login.html';
+}
+
 // Main content container
 const mainContent = document.getElementById('mainContent');
 const headerTitle = document.getElementById('headerTitle');
@@ -112,9 +117,12 @@ document.getElementById('logoutBtn').addEventListener('click', async () => {
   if (confirm('Are you sure you want to logout?')) {
     try {
       await api.logout();
-      window.location.href = '/';
+      window.location.href = '/login.html';
     } catch (error) {
       console.error('Logout error:', error);
+      // Clear token anyway and redirect
+      api.clearToken();
+      window.location.href = '/login.html';
     }
   }
 });

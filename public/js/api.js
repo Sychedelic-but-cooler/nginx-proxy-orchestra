@@ -7,17 +7,43 @@ class API {
   }
 
   /**
+   * Get JWT token from localStorage
+   */
+  getToken() {
+    return localStorage.getItem('auth_token');
+  }
+
+  /**
+   * Set JWT token in localStorage
+   */
+  setToken(token) {
+    localStorage.setItem('auth_token', token);
+  }
+
+  /**
+   * Clear JWT token from localStorage
+   */
+  clearToken() {
+    localStorage.removeItem('auth_token');
+  }
+
+  /**
    * Make a fetch request
    */
   async request(endpoint, options = {}) {
     const url = this.baseURL + endpoint;
     
     const defaultOptions = {
-      credentials: 'same-origin',
       headers: {
         'Content-Type': 'application/json'
       }
     };
+
+    // Add JWT token to headers if available
+    const token = this.getToken();
+    if (token) {
+      defaultOptions.headers['Authorization'] = `Bearer ${token}`;
+    }
 
     const config = { ...defaultOptions, ...options };
 
@@ -30,6 +56,11 @@ class API {
       const data = await response.json();
 
       if (!response.ok) {
+        // If 401 Unauthorized, clear token and redirect to login
+        if (response.status === 401) {
+          this.clearToken();
+          window.location.href = '/login.html';
+        }
         throw new Error(data.error || `HTTP ${response.status}`);
       }
 
@@ -42,14 +73,23 @@ class API {
 
   // Auth endpoints
   async login(username, password) {
-    return this.request('/api/login', {
+    const response = await this.request('/api/login', {
       method: 'POST',
       body: { username, password }
     });
+    
+    // Store the token if login successful
+    if (response.token) {
+      this.setToken(response.token);
+    }
+    
+    return response;
   }
 
   async logout() {
-    return this.request('/api/logout', { method: 'POST' });
+    const response = await this.request('/api/logout', { method: 'POST' });
+    this.clearToken();
+    return response;
   }
 
   async changePassword(currentPassword, newPassword) {

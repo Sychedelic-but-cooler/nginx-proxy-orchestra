@@ -1,82 +1,60 @@
 const crypto = require('crypto');
 const bcrypt = require('bcrypt');
+const jwt = require('jsonwebtoken');
 const { db, logAudit } = require('./db');
-
-// In-memory session storage (use Redis for production with multiple instances)
-const sessions = new Map();
 
 // Rate limiting storage
 const loginAttempts = new Map();
 
-// Session secret - generated or from env
-const SESSION_SECRET = process.env.SESSION_SECRET || crypto.randomBytes(32).toString('hex');
+// JWT secret - generated or from env
+const JWT_SECRET = process.env.JWT_SECRET || crypto.randomBytes(32).toString('hex');
+const JWT_EXPIRY = '3d'; // 3 days
 
-/**
- * Create a new session
- */
-function createSession(userId, username) {
-  const sessionId = crypto.randomBytes(32).toString('hex');
-  const session = {
-    userId,
-    username,
-    createdAt: Date.now(),
-    lastActivity: Date.now()
-  };
-  
-  sessions.set(sessionId, session);
-  return sessionId;
+if (!process.env.JWT_SECRET) {
+  console.warn('WARNING: Using auto-generated JWT_SECRET. Set JWT_SECRET in .env for production.');
 }
 
 /**
- * Verify and retrieve session
+ * Generate a JWT token
  */
-function getSession(sessionId) {
-  if (!sessionId) return null;
+function generateToken(userId, username) {
+  return jwt.sign(
+    { userId, username },
+    JWT_SECRET,
+    { expiresIn: JWT_EXPIRY }
+  );
+}
+
+/**
+ * Verify and decode JWT token
+ */
+function verifyToken(token) {
+  if (!token) return null;
   
-  const session = sessions.get(sessionId);
-  if (!session) return null;
+  try {
+    const decoded = jwt.verify(token, JWT_SECRET);
+    return {
+      userId: decoded.userId,
+      username: decoded.username
+    };
+  } catch (error) {
+    // Token invalid or expired
+    return null;
+  }
+}
+
+/**
+ * Extract token from Authorization header
+ */
+function extractToken(authHeader) {
+  if (!authHeader) return null;
   
-  // Session expires after 24 hours
-  const maxAge = 24 * 60 * 60 * 1000;
-  if (Date.now() - session.createdAt > maxAge) {
-    sessions.delete(sessionId);
+  const parts = authHeader.split(' ');
+  if (parts.length !== 2 || parts[0] !== 'Bearer') {
     return null;
   }
   
-  // Auto-logout after 2 hours of inactivity
-  const inactivityLimit = 2 * 60 * 60 * 1000;
-  if (Date.now() - session.lastActivity > inactivityLimit) {
-    sessions.delete(sessionId);
-    return null;
-  }
-  
-  // Update last activity
-  session.lastActivity = Date.now();
-  return session;
-}
-
-/**
- * Destroy a session
- */
-function destroySession(sessionId) {
-  sessions.delete(sessionId);
-}
-
-/**
- * Parse cookies from request
- */
-function parseCookies(cookieHeader) {
-  const cookies = {};
-  if (!cookieHeader) return cookies;
-  
-  cookieHeader.split(';').forEach(cookie => {
-    const [name, ...rest] = cookie.split('=');
-    if (name && rest.length) {
-      cookies[name.trim()] = decodeURIComponent(rest.join('=').trim());
-    }
-  });
-  
-  return cookies;
+  return parts[1];
 }
 
 /**
@@ -198,15 +176,10 @@ function clearSessionCookie(res) {
 }
 
 module.exports = {
-  createSession,
-  getSession,
-  destroySession,
-  parseCookies,
+  generateToken,
+  verifyToken,
+  extractToken,
   checkRateLimit,
-  resetRateLimit,
-  authenticate,
-  changePassword,
-  authMiddleware,
-  setSessionCookie,
-  clearSessionCookie
+  verifyPassword,
+  hashPassword
 };

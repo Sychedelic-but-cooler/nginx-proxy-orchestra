@@ -1,15 +1,11 @@
 const { db, logAudit } = require('../db');
 const { 
-  authenticate, 
-  createSession, 
-  destroySession, 
-  checkRateLimit, 
-  resetRateLimit,
-  changePassword,
-  setSessionCookie,
-  clearSessionCookie,
-  parseCookies,
-  getSession
+  generateToken,
+  verifyToken,
+  extractToken,
+  checkRateLimit,
+  verifyPassword,
+  hashPassword
 } = require('../auth');
 const {
   generateServerBlock,
@@ -104,14 +100,15 @@ async function handleAPI(req, res, parsedUrl) {
     }
 
     // All other routes require authentication
-    const cookies = parseCookies(req.headers.cookie);
-    const session = getSession(cookies.session);
+    const authHeader = req.headers.authorization;
+    const token = extractToken(authHeader);
+    const user = verifyToken(token);
     
-    if (!session) {
+    if (!user) {
       return sendJSON(res, { error: 'Unauthorized' }, 401);
     }
     
-    req.user = session;
+    req.user = user;
 
     // Dashboard routes
     if (pathname === '/api/dashboard/stats') {
@@ -225,20 +222,21 @@ async function handleLogin(req, res) {
     return sendJSON(res, { error: 'Username and password required' }, 400);
   }
 
-  const user = authenticate(username, password);
+  // Get user from database
+  const user = db.prepare('SELECT * FROM users WHERE username = ?').get(username);
   
-  if (!user) {
+  if (!user || !(await verifyPassword(password, user.password))) {
     return sendJSON(res, { error: 'Invalid credentials' }, 401);
   }
 
-  resetRateLimit(ip);
-  const sessionId = createSession(user.id, user.username);
-  setSessionCookie(res, sessionId);
+  // Generate JWT token
+  const token = generateToken(user.id, user.username);
 
   logAudit(user.id, 'login', 'user', user.id, null, ip);
 
   sendJSON(res, { 
-    success: true, 
+    success: true,
+    token,
     user: { 
       id: user.id, 
       username: user.username, 
@@ -248,18 +246,12 @@ async function handleLogin(req, res) {
 }
 
 function handleLogout(req, res) {
-  const cookies = parseCookies(req.headers.cookie);
-  const sessionId = cookies.session;
-  
-  if (sessionId) {
-    const session = getSession(sessionId);
-    if (session) {
-      logAudit(session.userId, 'logout', 'user', session.userId, null, getClientIP(req));
-    }
-    destroySession(sessionId);
+  // With JWT, logout is handled client-side by removing the token
+  // But we still log it for audit purposes
+  if (req.user) {
+    logAudit(req.user.userId, 'logout', 'user', req.user.userId, null, getClientIP(req));
   }
-
-  clearSessionCookie(res);
+  
   sendJSON(res, { success: true });
 }
 
