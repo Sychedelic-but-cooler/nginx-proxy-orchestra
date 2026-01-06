@@ -3,12 +3,20 @@ import { showLoading, hideLoading, showError, showSuccess } from '../app.js';
 
 export async function renderModules(container) {
   showLoading();
-  
+
   try {
     const modules = await api.getModules();
-    
+
+    // Create info banner
+    const infoBanner = `
+      <div class="info-banner" style="background: #e3f2fd; border-left: 4px solid #2196F3; padding: 12px 16px; margin-bottom: 20px; border-radius: 4px;">
+        <strong>ℹ️ About Modules:</strong> Modules are reusable configuration snippets that can be added to any proxy host. Select modules when creating or editing a proxy to apply them automatically.
+      </div>
+    `;
+
     if (modules.length === 0) {
       container.innerHTML = `
+        ${infoBanner}
         <div class="empty-state">
           <h2>No Modules</h2>
           <p>Create reusable configuration snippets</p>
@@ -16,6 +24,7 @@ export async function renderModules(container) {
       `;
     } else {
       container.innerHTML = `
+        ${infoBanner}
         <div class="grid grid-2">
           ${modules.map(module => `
             <div class="card">
@@ -27,7 +36,7 @@ export async function renderModules(container) {
                 </div>
               </div>
               <p style="color: var(--text-secondary); margin-bottom: 12px;">${module.description || 'No description'}</p>
-              <pre style="background: var(--bg-color); padding: 12px; border-radius: 4px; font-size: 12px; overflow-x: auto;"><code>${module.content}</code></pre>
+              <pre style="background: var(--bg-color); padding: 12px; border-radius: 4px; font-size: 12px; white-space: pre-wrap; word-wrap: break-word; overflow-wrap: break-word; max-width: 100%; overflow-x: hidden;"><code>${module.content}</code></pre>
               <small style="color: var(--text-secondary);">Created: ${new Date(module.created_at).toLocaleDateString()}</small>
             </div>
           `).join('')}
@@ -71,14 +80,16 @@ async function handleDeleteModule(id, container) {
 
 function showModuleForm(id = null, modules = []) {
   const module = id ? modules.find(m => m.id === id) : null;
-  
+
   const modal = document.getElementById('modalContainer');
   modal.innerHTML = `
-    <div class="modal">
-      <div class="modal-content">
+    <div class="modal-overlay" id="moduleModal">
+      <div class="modal">
         <div class="modal-header">
           <h3>${id ? 'Edit' : 'Add'} Module</h3>
+          <button class="modal-close" id="closeModuleModal">&times;</button>
         </div>
+        <div class="modal-body">
         <form id="moduleForm">
           <div class="form-group">
             <label for="moduleName">Name *</label>
@@ -101,9 +112,24 @@ function showModuleForm(id = null, modules = []) {
             <button type="submit" class="btn btn-primary">Save</button>
           </div>
         </form>
+        </div>
       </div>
     </div>
   `;
+
+  // Close button handlers
+  const closeModal = () => {
+    document.getElementById('moduleModal')?.remove();
+  };
+
+  document.getElementById('closeModuleModal').addEventListener('click', closeModal);
+
+  // Click outside to close
+  document.getElementById('moduleModal').addEventListener('click', (e) => {
+    if (e.target.id === 'moduleModal') {
+      closeModal();
+    }
+  });
 
   // Form submit handler
   document.getElementById('moduleForm').addEventListener('submit', async (e) => {
@@ -124,7 +150,7 @@ function showModuleForm(id = null, modules = []) {
         await api.createModule(data);
         showSuccess('Module created successfully');
       }
-      modal.innerHTML = '';
+      closeModal();
       await renderModules(document.getElementById('mainContent'));
     } catch (error) {
       hideLoading();
@@ -133,7 +159,5 @@ function showModuleForm(id = null, modules = []) {
   });
 
   // Cancel button
-  document.getElementById('cancelBtn').addEventListener('click', () => {
-    modal.innerHTML = '';
-  });
+  document.getElementById('cancelBtn').addEventListener('click', closeModal);
 }

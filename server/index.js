@@ -1,10 +1,19 @@
 require('dotenv').config();
-const http = require('http');
+const https = require('https');
 const fs = require('fs');
 const path = require('path');
 const { handleAPI } = require('./routes/api');
+const { initializeDefaultServer } = require('./utils/default-server');
+const { ensureAdminCert, getActiveCertPaths } = require('./utils/admin-cert');
+const { db } = require('./db');
 
-const PORT = process.env.PORT || 81;
+// Initialize default catch-all server configuration
+initializeDefaultServer();
+
+// Ensure admin certificate exists (generate self-signed if needed)
+ensureAdminCert();
+
+const HTTPS_PORT = process.env.PORT || 81;
 const PUBLIC_DIR = path.join(__dirname, '..', 'public');
 
 // MIME types for static files
@@ -59,7 +68,7 @@ function serveStatic(req, res, filePath) {
 /**
  * Main request handler
  */
-const server = http.createServer((req, res) => {
+function requestHandler(req, res) {
   const parsedUrl = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
   const pathname = parsedUrl.pathname;
 
@@ -112,37 +121,51 @@ const server = http.createServer((req, res) => {
 
     serveStatic(req, res, filePath);
   });
-});
+}
+
+// Get admin certificate paths
+const certPaths = getActiveCertPaths(db);
+
+// HTTPS server (main application)
+const httpsOptions = {
+  key: fs.readFileSync(certPaths.key),
+  cert: fs.readFileSync(certPaths.cert)
+};
+
+const server = https.createServer(httpsOptions, requestHandler);
 
 // Start server
-server.listen(PORT, () => {
+server.listen(HTTPS_PORT, () => {
   console.log('');
   console.log('═══════════════════════════════════════════════════════════');
   console.log('           🎵 Nginx Proxy Orchestra Started 🎵            ');
   console.log('═══════════════════════════════════════════════════════════');
   console.log('');
-  console.log(`  🌐 Server running at: http://localhost:${PORT}`);
+  console.log(`  🔒 HTTPS server running at: https://localhost:${HTTPS_PORT}`);
   console.log(`  📁 Public directory: ${PUBLIC_DIR}`);
   console.log(`  🗄️  Database: ${process.env.DB_PATH || './data/database.sqlite'}`);
   console.log(`  🔧 Environment: ${process.env.NODE_ENV || 'production'}`);
+  console.log('');
+  if (!certPaths.isCustom) {
+    console.log('  ⚠️  Using self-signed certificate (browser will show warning)');
+    console.log('     Configure a trusted certificate in Settings');
+  } else {
+    console.log('  ✅ Using custom TLS certificate');
+  }
   console.log('');
   console.log('═══════════════════════════════════════════════════════════');
   console.log('');
 });
 
 // Graceful shutdown
-process.on('SIGTERM', () => {
-  console.log('\n🛑 SIGTERM received, shutting down gracefully...');
-  server.close(() => {
-    console.log('✅ Server closed');
-    process.exit(0);
-  });
-});
+function shutdown() {
+  console.log('\n🛑 Shutting down gracefully...');
 
-process.on('SIGINT', () => {
-  console.log('\n🛑 SIGINT received, shutting down gracefully...');
   server.close(() => {
-    console.log('✅ Server closed');
+    console.log('✅ HTTPS server closed');
     process.exit(0);
   });
-});
+}
+
+process.on('SIGTERM', shutdown);
+process.on('SIGINT', shutdown);

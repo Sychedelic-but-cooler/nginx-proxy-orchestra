@@ -9,13 +9,19 @@ export async function renderCertificates(container) {
     
     if (certificates.length === 0) {
       container.innerHTML = `
+        <div class="info-banner" style="background: #e3f2fd; border-left: 4px solid #2196F3; padding: 12px 16px; margin-bottom: 20px; border-radius: 4px;">
+          <strong>ℹ️ Certificate Storage Location:</strong> Certificates are saved to <code style="background: rgba(0,0,0,0.1); padding: 2px 6px; border-radius: 3px;">data/ssl/</code> directory. Files are named as <code style="background: rgba(0,0,0,0.1); padding: 2px 6px; border-radius: 3px;">&lt;name&gt;.crt</code> and <code style="background: rgba(0,0,0,0.1); padding: 2px 6px; border-radius: 3px;">&lt;name&gt;.key</code>
+        </div>
         <div class="empty-state">
-          <h2>No SSL Certificates</h2>
-          <p>Add your first SSL certificate to enable HTTPS</p>
+          <h2>No TLS Certificates</h2>
+          <p>Add your first TLS certificate to enable HTTPS</p>
         </div>
       `;
     } else {
       container.innerHTML = `
+        <div class="info-banner" style="background: #e3f2fd; border-left: 4px solid #2196F3; padding: 12px 16px; margin-bottom: 20px; border-radius: 4px;">
+          <strong>ℹ️ Certificate Storage Location:</strong> Certificates are saved to <code style="background: rgba(0,0,0,0.1); padding: 2px 6px; border-radius: 3px;">data/ssl/</code> directory. Files are named as <code style="background: rgba(0,0,0,0.1); padding: 2px 6px; border-radius: 3px;">&lt;name&gt;.crt</code> and <code style="background: rgba(0,0,0,0.1); padding: 2px 6px; border-radius: 3px;">&lt;name&gt;.key</code>
+        </div>
         <div class="card">
           <table class="table">
             <thead>
@@ -24,6 +30,7 @@ export async function renderCertificates(container) {
                 <th>Domain(s)</th>
                 <th>Issuer</th>
                 <th>Expires</th>
+                <th>Usage</th>
                 <th>Created</th>
                 <th>Actions</th>
               </tr>
@@ -33,7 +40,24 @@ export async function renderCertificates(container) {
                 const expiresAt = cert.expires_at ? new Date(cert.expires_at) : null;
                 const isExpiringSoon = expiresAt && (expiresAt - Date.now()) < 30 * 24 * 60 * 60 * 1000;
                 const isExpired = expiresAt && expiresAt < Date.now();
-                
+
+                // Build usage tooltip content
+                let usageTooltip = '';
+                if (cert.in_use) {
+                  const usageList = [];
+                  if (cert.used_by_admin) {
+                    usageList.push('• Admin Interface');
+                  }
+                  if (cert.used_by_proxies && cert.used_by_proxies.length > 0) {
+                    cert.used_by_proxies.forEach(proxy => {
+                      usageList.push('• ' + proxy.name);
+                    });
+                  }
+                  usageTooltip = usageList.join('&#10;'); // HTML line break entity
+                }
+
+                const usageCount = (cert.used_by_admin ? 1 : 0) + (cert.used_by_proxies ? cert.used_by_proxies.length : 0);
+
                 return `
                   <tr>
                     <td><strong>${cert.name}</strong></td>
@@ -45,6 +69,13 @@ export async function renderCertificates(container) {
                           ${expiresAt.toLocaleDateString()}
                         </span>
                       ` : '<span class="badge badge-info">N/A</span>'}
+                    </td>
+                    <td>
+                      ${cert.in_use ? `
+                        <span class="badge badge-success cert-usage-badge" title="${usageTooltip}" style="cursor: help;">
+                          In Use (${usageCount})
+                        </span>
+                      ` : '<span class="badge badge-secondary">Not In Use</span>'}
                     </td>
                     <td>${new Date(cert.created_at).toLocaleDateString()}</td>
                     <td class="action-buttons">
@@ -76,12 +107,41 @@ export async function renderCertificates(container) {
 }
 
 async function handleDeleteCertificate(id, container) {
-  if (!confirm('Are you sure you want to delete this certificate?')) return;
-  
+  // Get certificate details first to show in confirmation
+  const certificates = await api.getCertificates();
+  const cert = certificates.find(c => c.id === id);
+
+  if (!cert) {
+    showError('Certificate not found');
+    return;
+  }
+
+  // Build confirmation message
+  let confirmMessage = 'Are you sure you want to delete this certificate?';
+  if (cert.in_use) {
+    const affectedItems = [];
+    if (cert.used_by_admin) {
+      affectedItems.push('Admin Interface');
+    }
+    if (cert.used_by_proxies && cert.used_by_proxies.length > 0) {
+      affectedItems.push(`${cert.used_by_proxies.length} proxy host(s)`);
+    }
+    confirmMessage += `\n\nThis certificate is currently in use by:\n- ${affectedItems.join('\n- ')}\n\nTLS will be automatically disabled on affected proxy hosts.`;
+  }
+
+  if (!confirm(confirmMessage)) return;
+
   showLoading();
   try {
-    await api.deleteCertificate(id);
-    showSuccess('Certificate deleted successfully');
+    const result = await api.deleteCertificate(id);
+    hideLoading();
+
+    if (result.message) {
+      showSuccess(result.message);
+    } else {
+      showSuccess('Certificate deleted successfully');
+    }
+
     await renderCertificates(container);
   } catch (error) {
     hideLoading();
@@ -92,11 +152,11 @@ async function handleDeleteCertificate(id, container) {
 function showCertificateForm() {
   const modal = document.getElementById('modalContainer');
   modal.innerHTML = `
-    <div class="modal-overlay">
+    <div class="modal-overlay" id="certificateModal">
       <div class="modal">
         <div class="modal-header">
-          <h3>Add SSL Certificate</h3>
-          <button class="modal-close" onclick="document.getElementById('modalContainer').innerHTML=''">&times;</button>
+          <h3>Add TLS Certificate</h3>
+          <button class="modal-close" id="closeCertModal">&times;</button>
         </div>
         <div class="modal-body">
           <form id="certificateForm">
@@ -153,7 +213,7 @@ function showCertificateForm() {
             </div>
 
             <div class="modal-footer">
-              <button type="button" class="btn btn-secondary" onclick="document.getElementById('modalContainer').innerHTML=''">Cancel</button>
+              <button type="button" class="btn btn-secondary" id="cancelCertBtn">Cancel</button>
               <button type="submit" class="btn btn-primary">Save Certificate</button>
             </div>
           </form>
@@ -161,6 +221,21 @@ function showCertificateForm() {
       </div>
     </div>
   `;
+
+  // Close button handlers
+  const closeModal = () => {
+    document.getElementById('certificateModal')?.remove();
+  };
+
+  document.getElementById('closeCertModal').addEventListener('click', closeModal);
+  document.getElementById('cancelCertBtn').addEventListener('click', closeModal);
+
+  // Click outside to close
+  document.getElementById('certificateModal').addEventListener('click', (e) => {
+    if (e.target.id === 'certificateModal') {
+      closeModal();
+    }
+  });
 
   // Toggle input method
   const pasteMethod = document.getElementById('pasteMethod');
@@ -210,7 +285,7 @@ function showCertificateForm() {
 
       showLoading();
       await api.createCertificate({ name, cert_content: certContent, key_content: keyContent });
-      document.getElementById('modalContainer').innerHTML = '';
+      closeModal();
       showSuccess('Certificate added successfully');
       await renderCertificates(document.getElementById('mainContent'));
     } catch (error) {

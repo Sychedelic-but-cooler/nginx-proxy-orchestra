@@ -6,6 +6,8 @@ import { renderProxies } from './components/proxy-list.js';
 import { renderCertificates } from './components/ssl-manager.js';
 import { renderModules } from './components/module-manager.js';
 import { renderAuditLog } from './components/audit-log.js';
+import { renderAdvancedEditor } from './components/advanced-editor.js';
+import { renderSettings } from './components/settings.js';
 
 // Check authentication on app load
 if (!api.getToken()) {
@@ -103,13 +105,13 @@ router.register('/dashboard', async () => {
 
 router.register('/proxies', async () => {
   updateNavigation('proxies');
-  setHeader('Proxy Hosts', '<button id="addProxyBtn" class="btn btn-primary">+ Add Proxy</button>');
+  setHeader('Hosts', '<button id="addProxyBtn" class="btn btn-primary">+ Add Proxy</button>');
   await renderProxies(mainContent);
 });
 
 router.register('/certificates', async () => {
   updateNavigation('certificates');
-  setHeader('SSL Certificates', '<button id="addCertBtn" class="btn btn-primary">+ Add Certificate</button>');
+  setHeader('TLS Certificates', '<button id="addCertBtn" class="btn btn-primary">+ Add Certificate</button>');
   await renderCertificates(mainContent);
 });
 
@@ -123,6 +125,18 @@ router.register('/audit', async () => {
   updateNavigation('audit');
   setHeader('Audit Log');
   await renderAuditLog(mainContent);
+});
+
+router.register('/settings', async () => {
+  updateNavigation('settings');
+  setHeader('Settings');
+  await renderSettings(mainContent);
+});
+
+router.register('/advanced', async () => {
+  updateNavigation('advanced');
+  setHeader('Advanced Config Editor');
+  await renderAdvancedEditor(mainContent);
 });
 
 router.register('/404', () => {
@@ -276,4 +290,3 @@ if (logoutBtn) {
 }
 
 // Initialize app
-console.log('Nginx Proxy Orchestra initialized');

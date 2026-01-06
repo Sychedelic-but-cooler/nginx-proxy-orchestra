@@ -3,6 +3,18 @@ const fs = require('fs');
 const path = require('path');
 
 /**
+ * Get the nginx config directory
+ * Defaults to data/conf in project root to avoid needing sudo
+ */
+function getConfigDir() {
+  if (process.env.NGINX_CONFIG_DIR) {
+    return process.env.NGINX_CONFIG_DIR;
+  }
+  // Default to data/conf in project root
+  return path.join(__dirname, '../../data/conf');
+}
+
+/**
  * Parse nginx configuration file to extract server blocks
  */
 function parseNginxConfig(configContent) {
@@ -75,6 +87,35 @@ function extractLocations(block) {
  */
 function escapeRegex(str) {
   return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
+ * Sanitize name for use as filename
+ * Removes or replaces characters that are invalid in filenames
+ * @param {string} name - The proxy name
+ * @returns {string} - Safe filename (without .conf extension)
+ */
+function sanitizeFilename(name) {
+  if (!name) {
+    return `proxy_${Date.now()}`;
+  }
+
+  // Replace invalid filename characters with underscore
+  // Invalid: < > : " / \ | ? * and control characters
+  let sanitized = name.replace(/[<>:"/\\|?*\x00-\x1f]/g, '_');
+
+  // Remove leading/trailing dots and spaces
+  sanitized = sanitized.replace(/^[.\s]+|[.\s]+$/g, '');
+
+  // Limit length to 200 characters
+  sanitized = sanitized.substring(0, 200);
+
+  // If empty after sanitization, use timestamp
+  if (!sanitized) {
+    sanitized = `proxy_${Date.now()}`;
+  }
+
+  return sanitized;
 }
 
 /**
@@ -204,7 +245,7 @@ function generate404Block(proxyHost) {
  * Write nginx configuration file
  */
 function writeNginxConfig(filename, content) {
-  const configDir = process.env.NGINX_CONFIG_DIR || '/etc/nginx/conf.d';
+  const configDir = getConfigDir();
   
   // Create directory if it doesn't exist
   if (!fs.existsSync(configDir)) {
@@ -229,7 +270,7 @@ function writeNginxConfig(filename, content) {
  * Read nginx configuration file
  */
 function readNginxConfig(filename) {
-  const configDir = process.env.NGINX_CONFIG_DIR || '/etc/nginx/conf.d';
+  const configDir = getConfigDir();
   const configPath = path.join(configDir, filename);
   
   if (!fs.existsSync(configPath)) {
@@ -243,7 +284,7 @@ function readNginxConfig(filename) {
  * Delete nginx configuration file
  */
 function deleteNginxConfig(filename) {
-  const configDir = process.env.NGINX_CONFIG_DIR || '/etc/nginx/conf.d';
+  const configDir = getConfigDir();
   const configPath = path.join(configDir, filename);
   
   // Remove config file
@@ -259,7 +300,7 @@ function deleteNginxConfig(filename) {
  * In conf.d, configs are auto-loaded, so we just rename from .disabled to .conf
  */
 function enableNginxConfig(filename) {
-  const configDir = process.env.NGINX_CONFIG_DIR || '/etc/nginx/conf.d';
+  const configDir = getConfigDir();
   
   // If file ends with .disabled, rename it to .conf
   const disabledPath = path.join(configDir, filename.replace('.conf', '.disabled'));
@@ -277,7 +318,7 @@ function enableNginxConfig(filename) {
  * In conf.d, we rename .conf to .disabled so it's not loaded
  */
 function disableNginxConfig(filename) {
-  const configDir = process.env.NGINX_CONFIG_DIR || '/etc/nginx/conf.d';
+  const configDir = getConfigDir();
   
   const enabledPath = path.join(configDir, filename);
   const disabledPath = path.join(configDir, filename.replace('.conf', '.disabled'));
@@ -299,5 +340,6 @@ module.exports = {
   readNginxConfig,
   deleteNginxConfig,
   enableNginxConfig,
-  disableNginxConfig
+  disableNginxConfig,
+  sanitizeFilename
 };

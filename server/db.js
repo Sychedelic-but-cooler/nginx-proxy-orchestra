@@ -17,6 +17,31 @@ const db = new Database(dbPath);
 db.pragma('foreign_keys = ON');
 
 /**
+ * Run database migrations
+ */
+function runMigrations() {
+  // Check if proxy_hosts table exists
+  const tableInfo = db.pragma('table_info(proxy_hosts)');
+  const columnNames = tableInfo.map(col => col.name);
+
+  // Migration 1: Add config status tracking columns
+  if (!columnNames.includes('config_status')) {
+    console.log('Running migration: Adding config_status column...');
+    db.exec(`ALTER TABLE proxy_hosts ADD COLUMN config_status TEXT DEFAULT 'active'`);
+  }
+
+  if (!columnNames.includes('config_error')) {
+    console.log('Running migration: Adding config_error column...');
+    db.exec(`ALTER TABLE proxy_hosts ADD COLUMN config_error TEXT`);
+  }
+
+  if (!columnNames.includes('config_filename')) {
+    console.log('Running migration: Adding config_filename column...');
+    db.exec(`ALTER TABLE proxy_hosts ADD COLUMN config_filename TEXT`);
+  }
+}
+
+/**
  * Initialize database schema
  */
 function initializeDatabase() {
@@ -51,6 +76,9 @@ function initializeDatabase() {
       FOREIGN KEY (ssl_cert_id) REFERENCES ssl_certificates(id) ON DELETE SET NULL
     )
   `);
+
+  // Run migrations
+  runMigrations();
 
   // SSL certificates table
   db.exec(`
@@ -103,6 +131,75 @@ function initializeDatabase() {
       FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
     )
   `);
+
+  // Settings table
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS settings (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+
+  // Initialize default settings if they don't exist
+  const defaultBehavior = db.prepare('SELECT value FROM settings WHERE key = ?').get('default_server_behavior');
+  if (!defaultBehavior) {
+    db.prepare('INSERT INTO settings (key, value) VALUES (?, ?)').run('default_server_behavior', 'drop');
+  }
+
+  const customPage = db.prepare('SELECT value FROM settings WHERE key = ?').get('default_server_custom_page');
+  if (!customPage) {
+    const defaultCustomPage = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Service Unavailable</title>
+  <style>
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      margin: 0;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+    }
+    .container {
+      text-align: center;
+      padding: 2rem;
+    }
+    h1 {
+      font-size: 3rem;
+      margin: 0 0 1rem 0;
+    }
+    p {
+      font-size: 1.25rem;
+      opacity: 0.9;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Service Unavailable</h1>
+    <p>The requested service is not currently available.</p>
+  </div>
+</body>
+</html>`;
+    db.prepare('INSERT INTO settings (key, value) VALUES (?, ?)').run('default_server_custom_page', defaultCustomPage);
+  }
+
+  const customUrl = db.prepare('SELECT value FROM settings WHERE key = ?').get('default_server_custom_url');
+  if (!customUrl) {
+    db.prepare('INSERT INTO settings (key, value) VALUES (?, ?)').run('default_server_custom_url', '');
+  }
+
+  // Admin interface certificate setting (null/empty = use self-signed)
+  const adminCertId = db.prepare('SELECT value FROM settings WHERE key = ?').get('admin_cert_id');
+  if (!adminCertId) {
+    db.prepare('INSERT INTO settings (key, value) VALUES (?, ?)').run('admin_cert_id', '');
+  }
 
   // Check if admin user exists
   const adminExists = db.prepare('SELECT id FROM users WHERE username = ?').get('admin');
@@ -160,6 +257,117 @@ proxy_set_header Connection "upgrade";`
 proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
 proxy_set_header X-Forwarded-Proto $scheme;
 proxy_set_header X-Forwarded-Host $host;`
+      },
+      {
+        name: 'Gzip Compression',
+        description: 'Enable gzip compression (built-in)',
+        content: `gzip on;
+gzip_vary on;
+gzip_proxied any;
+gzip_comp_level 6;
+gzip_types text/plain text/css text/xml text/javascript application/json application/javascript application/xml+rss application/rss+xml font/truetype font/opentype application/vnd.ms-fontobject image/svg+xml;`
+      },
+      {
+        name: 'Gzip Compression (Aggressive)',
+        description: 'Aggressive gzip compression with more types',
+        content: `gzip on;
+gzip_vary on;
+gzip_proxied any;
+gzip_comp_level 9;
+gzip_min_length 256;
+gzip_types
+  application/atom+xml
+  application/geo+json
+  application/javascript
+  application/x-javascript
+  application/json
+  application/ld+json
+  application/manifest+json
+  application/rdf+xml
+  application/rss+xml
+  application/vnd.ms-fontobject
+  application/wasm
+  application/x-web-app-manifest+json
+  application/xhtml+xml
+  application/xml
+  font/eot
+  font/otf
+  font/ttf
+  image/bmp
+  image/svg+xml
+  text/cache-manifest
+  text/calendar
+  text/css
+  text/javascript
+  text/markdown
+  text/plain
+  text/xml
+  text/vcard
+  text/vnd.rim.location.xloc
+  text/vtt
+  text/x-component
+  text/x-cross-domain-policy;`
+      },
+      {
+        name: 'Brotli Compression',
+        description: 'Enable Brotli compression (requires nginx-mod-brotli package)',
+        content: `# Install: dnf install nginx-mod-brotli
+# Then add to /etc/nginx/nginx.conf: load_module modules/ngx_http_brotli_filter_module.so;
+# After installation, uncomment these lines:
+# brotli on;
+# brotli_comp_level 6;
+# brotli_types text/plain text/css text/xml text/javascript application/json application/javascript application/xml+rss application/rss+xml font/truetype font/opentype application/vnd.ms-fontobject image/svg+xml;`
+      },
+      {
+        name: 'Brotli Compression (Aggressive)',
+        description: 'Aggressive Brotli compression (requires nginx-mod-brotli package)',
+        content: `# Install: dnf install nginx-mod-brotli
+# Then add to /etc/nginx/nginx.conf: load_module modules/ngx_http_brotli_filter_module.so;
+# After installation, uncomment these lines:
+# brotli on;
+# brotli_comp_level 11;
+# brotli_min_length 256;
+# brotli_types
+#   application/atom+xml
+#   application/geo+json
+#   application/javascript
+#   application/x-javascript
+#   application/json
+#   application/ld+json
+#   application/manifest+json
+#   application/rdf+xml
+#   application/rss+xml
+#   application/vnd.ms-fontobject
+#   application/wasm
+#   application/x-web-app-manifest+json
+#   application/xhtml+xml
+#   application/xml
+#   font/eot
+#   font/otf
+#   font/ttf
+#   image/bmp
+#   image/svg+xml
+#   text/cache-manifest
+#   text/calendar
+#   text/css
+#   text/javascript
+#   text/markdown
+#   text/plain
+#   text/xml;`
+      },
+      {
+        name: 'HTTP/3 (QUIC)',
+        description: 'Enable HTTP/3 with QUIC protocol (requires nginx 1.25.0+ with http_v3_module)',
+        content: `# Requires nginx 1.25.0+ compiled with --with-http_v3_module
+# Current version: nginx 1.20.1 (does not support HTTP/3)
+# To upgrade, see: https://nginx.org/en/docs/http/ngx_http_v3_module.html
+# After upgrade, uncomment these lines:
+# listen 443 quic reuseport;
+# listen 443 ssl;
+# http3 on;
+# http3_hq on;
+# quic_retry on;
+# add_header Alt-Svc 'h3=":443"; ma=86400' always;`
       }
     ];
 
@@ -167,6 +375,81 @@ proxy_set_header X-Forwarded-Host $host;`
     for (const module of defaultModules) {
       insertModule.run(module.name, module.description, module.content);
     }
+  }
+
+  // Update Brotli modules if installed
+  updateBrotliModulesIfInstalled();
+}
+
+/**
+ * Update Brotli modules to uncommented version if nginx-mod-brotli is installed
+ */
+function updateBrotliModulesIfInstalled() {
+  const fs = require('fs');
+
+  // Check if Brotli modules are loaded in nginx
+  const brotliModuleConfigPath = '/usr/share/nginx/modules/mod-brotli.conf';
+  const isBrotliInstalled = fs.existsSync(brotliModuleConfigPath);
+
+  if (!isBrotliInstalled) {
+    return; // Brotli not installed, keep modules commented
+  }
+
+  // Check if modules need updating (check if they're still commented)
+  const brotliModule = db.prepare('SELECT content FROM modules WHERE name = ?').get('Brotli Compression');
+  if (!brotliModule || !brotliModule.content.includes('# Install:')) {
+    return; // Already updated or doesn't exist
+  }
+
+  console.log('Detected nginx-mod-brotli installation, updating modules...');
+
+  // Brotli Compression (standard)
+  const brotliStandard = `brotli on;
+brotli_comp_level 6;
+brotli_types text/plain text/css text/xml text/javascript application/json application/javascript application/xml+rss application/rss+xml font/truetype font/opentype application/vnd.ms-fontobject image/svg+xml;`;
+
+  // Brotli Compression (aggressive)
+  const brotliAggressive = `brotli on;
+brotli_comp_level 11;
+brotli_min_length 256;
+brotli_types
+  application/atom+xml
+  application/geo+json
+  application/javascript
+  application/x-javascript
+  application/json
+  application/ld+json
+  application/manifest+json
+  application/rdf+xml
+  application/rss+xml
+  application/vnd.ms-fontobject
+  application/wasm
+  application/x-web-app-manifest+json
+  application/xhtml+xml
+  application/xml
+  font/eot
+  font/otf
+  font/ttf
+  image/bmp
+  image/svg+xml
+  text/cache-manifest
+  text/calendar
+  text/css
+  text/javascript
+  text/markdown
+  text/plain
+  text/xml;`;
+
+  try {
+    db.prepare('UPDATE modules SET content = ?, updated_at = CURRENT_TIMESTAMP WHERE name = ?')
+      .run(brotliStandard, 'Brotli Compression');
+
+    db.prepare('UPDATE modules SET content = ?, updated_at = CURRENT_TIMESTAMP WHERE name = ?')
+      .run(brotliAggressive, 'Brotli Compression (Aggressive)');
+
+    console.log('✓ Brotli modules updated and ready to use');
+  } catch (error) {
+    console.error('Warning: Could not update Brotli modules:', error.message);
   }
 }
 
@@ -183,7 +466,37 @@ function logAudit(userId, action, resourceType, resourceId, details, ipAddress) 
   stmt.run(userId, action, resourceType, resourceId, details || null, ipAddress || null);
 }
 
+/**
+ * Get a setting value
+ */
+function getSetting(key) {
+  const result = db.prepare('SELECT value FROM settings WHERE key = ?').get(key);
+  return result ? result.value : null;
+}
+
+/**
+ * Set a setting value
+ */
+function setSetting(key, value) {
+  const exists = db.prepare('SELECT key FROM settings WHERE key = ?').get(key);
+  if (exists) {
+    db.prepare('UPDATE settings SET value = ?, updated_at = CURRENT_TIMESTAMP WHERE key = ?').run(value, key);
+  } else {
+    db.prepare('INSERT INTO settings (key, value) VALUES (?, ?)').run(key, value);
+  }
+}
+
+/**
+ * Get all settings
+ */
+function getAllSettings() {
+  return db.prepare('SELECT key, value FROM settings').all();
+}
+
 module.exports = {
   db,
-  logAudit
+  logAudit,
+  getSetting,
+  setSetting,
+  getAllSettings
 };

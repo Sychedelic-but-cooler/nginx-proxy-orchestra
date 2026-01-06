@@ -104,6 +104,10 @@ class API {
     return this.request('/api/dashboard/stats');
   }
 
+  async getStatistics(range = '24h') {
+    return this.request(`/api/statistics?range=${range}`);
+  }
+
   // Proxy endpoints
   async getProxies() {
     return this.request('/api/proxies');
@@ -164,7 +168,7 @@ class API {
     });
   }
 
-  // SSL certificate endpoints
+  // TLS certificate endpoints
   async getCertificates() {
     return this.request('/api/certificates');
   }
@@ -198,6 +202,18 @@ class API {
   // Audit log
   async getAuditLog() {
     return this.request('/api/audit-log');
+  }
+
+  // Settings
+  async getSettings() {
+    return this.request('/api/settings');
+  }
+
+  async updateSettings(data) {
+    return this.request('/api/settings', {
+      method: 'PUT',
+      body: data
+    });
   }
 }
 

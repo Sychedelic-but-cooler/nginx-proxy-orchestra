@@ -113,6 +113,14 @@ body {
   font-size: 12px;
 }
 
+.form-help {
+  display: block;
+  margin-top: 4px;
+  margin-bottom: 8px;
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
 .radio-group {
   display: flex;
   gap: 20px;
@@ -595,7 +603,7 @@ body {
 .modal {
   background: white;
   border-radius: 12px;
-  max-width: 600px;
+  max-width: 65%;
   width: 90%;
   max-height: 90vh;
   overflow: hidden;
@@ -652,6 +660,88 @@ body {
   justify-content: flex-end;
   gap: 10px;
   background: var(--bg-color);
+}
+
+/* Tabs (for modal) */
+.tabs {
+  display: flex;
+  gap: 0;
+  border-bottom: 2px solid var(--border-color);
+  margin: 0 24px;
+}
+
+.tab {
+  padding: 12px 24px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  position: relative;
+  transition: all 0.2s;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -2px;
+}
+
+.tab:hover {
+  color: var(--text-primary);
+  background: var(--bg-color);
+}
+
+.tab.active {
+  color: var(--primary-color);
+  border-bottom-color: var(--primary-color);
+}
+
+.tab-content {
+  display: none;
+}
+
+.tab-content.active {
+  display: block;
+}
+
+/* Advanced editor in modal */
+.advanced-editor-container {
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+}
+
+.test-result {
+  padding: 15px;
+  border-radius: 6px;
+  border: 2px solid;
+  margin-bottom: 15px;
+}
+
+.test-result.success {
+  background-color: rgba(34, 197, 94, 0.1);
+  border-color: #22c55e;
+  color: #065f46;
+}
+
+.test-result.error {
+  background-color: rgba(239, 68, 68, 0.1);
+  border-color: #ef4444;
+  color: #991b1b;
+}
+
+.test-result pre {
+  margin: 10px 0 0 0;
+  padding: 10px;
+  background-color: rgba(0,0,0,0.05);
+  border-radius: 4px;
+  overflow-x: auto;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  font-size: 12px;
+}
+
+.badge-secondary {
+  background: #e2e8f0;
+  color: #475569;
 }
 
 /* Legacy modal support (for backwards compatibility) */
