@@ -226,6 +226,22 @@ function initializeDatabase() {
     console.log('\n');
   }
 
+  // Run security features migration
+  const { runSecurityMigration } = require('./migrations/001_security_features');
+  try {
+    runSecurityMigration(db);
+  } catch (error) {
+    console.error('Security migration error:', error.message);
+  }
+
+  // Run certbot support migration
+  const { runCertbotMigration } = require('./migrations/002_certbot_support');
+  try {
+    runCertbotMigration(db);
+  } catch (error) {
+    console.error('Certbot migration error:', error.message);
+  }
+
   // Create some default modules if none exist
   const modulesExist = db.prepare('SELECT COUNT(*) as count FROM modules').get();
   if (modulesExist.count === 0) {
@@ -248,7 +264,7 @@ add_header Referrer-Policy "no-referrer-when-downgrade" always;`
         description: 'Enable WebSocket proxying',
         content: `proxy_http_version 1.1;
 proxy_set_header Upgrade $http_upgrade;
-proxy_set_header Connection "upgrade";`
+proxy_set_header Connection $http_upgrade;`
       },
       {
         name: 'Real IP',

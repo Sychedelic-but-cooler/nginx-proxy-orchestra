@@ -5,7 +5,11 @@ const path = require('path');
 const { handleAPI } = require('./routes/api');
 const { initializeDefaultServer } = require('./utils/default-server');
 const { ensureAdminCert, getActiveCertPaths } = require('./utils/admin-cert');
+const { initializeACMEWebroot } = require('./utils/acme-setup');
 const { db } = require('./db');
+
+// Initialize ACME webroot for Let's Encrypt challenges
+initializeACMEWebroot();
 
 // Initialize default catch-all server configuration
 initializeDefaultServer();
@@ -158,13 +162,41 @@ server.listen(HTTPS_PORT, () => {
 });
 
 // Graceful shutdown
-function shutdown() {
-  console.log('\n🛑 Shutting down gracefully...');
+let isShuttingDown = false;
+
+function shutdown(signal) {
+  // If already shutting down, force exit on second signal
+  if (isShuttingDown) {
+    console.log('\n⚠️  Force shutting down...');
+    process.exit(1);
+  }
+
+  isShuttingDown = true;
+  console.log('\nShutting down gracefully...');
+
+  // Set a timeout to force exit if graceful shutdown takes too long
+  const forceExitTimeout = setTimeout(() => {
+    console.log('Server did not close in time, forcing exit...');
+    process.exit(1);
+  }, 5000); // 5 second timeout
 
   server.close(() => {
-    console.log('✅ HTTPS server closed');
+    clearTimeout(forceExitTimeout);
+    console.log('HTTPS server closed');
+
+    // Close database connection
+    try {
+      db.close();
+      console.log('Database connection closed');
+    } catch (err) {
+      console.error('Error closing database:', err.message);
+    }
+
     process.exit(0);
   });
+
+  // Force close any existing connections
+  server.closeAllConnections?.();
 }
 
 process.on('SIGTERM', shutdown);

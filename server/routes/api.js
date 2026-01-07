@@ -32,6 +32,27 @@ const {
 const {
   parseAccessLogs
 } = require('../utils/log-parser');
+const {
+  getNginxStatistics,
+  getTopCountries
+} = require('../utils/nginx-log-parser');
+const {
+  getProviders,
+  getProvider,
+  validateCredentials,
+  isProviderInstalled
+} = require('../utils/dns-providers');
+const {
+  encryptCredentials,
+  decryptCredentials,
+  isEncryptionConfigured
+} = require('../utils/credential-encryption');
+const {
+  checkCertbotInstallation,
+  orderCertificateHTTP,
+  orderCertificateDNS,
+  getInstallationInstructions
+} = require('../utils/certbot');
 
 /**
  * Parse JSON request body
@@ -232,6 +253,99 @@ async function handleAPI(req, res, parsedUrl) {
     // Statistics routes
     if (pathname === '/api/statistics' && method === 'GET') {
       return handleGetStatistics(req, res, parsedUrl);
+    }
+
+    // Security routes
+    if (pathname === '/api/security/rules' && method === 'GET') {
+      return handleGetSecurityRules(req, res, parsedUrl);
+    }
+
+    if (pathname === '/api/security/rules' && method === 'POST') {
+      return await handleCreateSecurityRule(req, res);
+    }
+
+    if (pathname.match(/^\/api\/security\/rules\/\d+$/) && method === 'PUT') {
+      return await handleUpdateSecurityRule(req, res, parsedUrl);
+    }
+
+    if (pathname.match(/^\/api\/security\/rules\/\d+$/) && method === 'DELETE') {
+      return handleDeleteSecurityRule(req, res, parsedUrl);
+    }
+
+    if (pathname === '/api/security/rules/bulk' && method === 'POST') {
+      return await handleBulkImportSecurityRules(req, res);
+    }
+
+    if (pathname === '/api/security/rate-limits' && method === 'GET') {
+      return handleGetRateLimits(req, res, parsedUrl);
+    }
+
+    if (pathname === '/api/security/rate-limits' && method === 'POST') {
+      return await handleCreateRateLimit(req, res);
+    }
+
+    if (pathname.match(/^\/api\/security\/rate-limits\/\d+$/) && method === 'PUT') {
+      return await handleUpdateRateLimit(req, res, parsedUrl);
+    }
+
+    if (pathname.match(/^\/api\/security\/rate-limits\/\d+$/) && method === 'DELETE') {
+      return handleDeleteRateLimit(req, res, parsedUrl);
+    }
+
+    if (pathname === '/api/security/settings' && method === 'GET') {
+      return handleGetSecuritySettings(req, res);
+    }
+
+    if (pathname === '/api/security/settings' && method === 'PUT') {
+      return await handleUpdateSecuritySettings(req, res);
+    }
+
+    if (pathname === '/api/security/stats' && method === 'GET') {
+      return handleGetSecurityStats(req, res, parsedUrl);
+    }
+
+    if (pathname === '/api/security/recent-blocks' && method === 'GET') {
+      return handleGetRecentBlocks(req, res, parsedUrl);
+    }
+
+    // Nginx tuning and statistics routes
+    if (pathname === '/api/nginx/tuning-stats' && method === 'GET') {
+      return await handleGetNginxTuningStats(req, res, parsedUrl);
+    }
+
+    if (pathname === '/api/nginx/statistics' && method === 'GET') {
+      return await handleGetNginxStatistics(req, res, parsedUrl);
+    }
+
+    // DNS Providers routes
+    if (pathname === '/api/dns-providers' && method === 'GET') {
+      return handleGetDNSProviders(req, res);
+    }
+
+    // DNS Credentials routes
+    if (pathname === '/api/dns-credentials' && method === 'GET') {
+      return handleGetDNSCredentials(req, res);
+    }
+
+    if (pathname === '/api/dns-credentials' && method === 'POST') {
+      return await handleCreateDNSCredential(req, res);
+    }
+
+    if (pathname.match(/^\/api\/dns-credentials\/\d+$/) && method === 'PUT') {
+      return await handleUpdateDNSCredential(req, res, parsedUrl);
+    }
+
+    if (pathname.match(/^\/api\/dns-credentials\/\d+$/) && method === 'DELETE') {
+      return handleDeleteDNSCredential(req, res, parsedUrl);
+    }
+
+    // Certificate ordering routes
+    if (pathname === '/api/certificates/order' && method === 'POST') {
+      return await handleOrderCertificate(req, res);
+    }
+
+    if (pathname === '/api/certbot/status' && method === 'GET') {
+      return await handleGetCertbotStatus(req, res);
     }
 
     // Route not found
@@ -494,7 +608,7 @@ async function handleCreateProxy(req, res) {
     } else if (type === '404') {
       config = generate404Block(proxy);
     } else {
-      config = generateServerBlock(proxy, modules);
+      config = generateServerBlock(proxy, modules, db);
 
       // Replace SSL cert placeholders if needed
       if (ssl_enabled && ssl_cert_id) {
@@ -612,7 +726,7 @@ async function handleUpdateProxy(req, res, parsedUrl) {
     } else if (updatedProxy.type === '404') {
       config = generate404Block(updatedProxy);
     } else {
-      config = generateServerBlock(updatedProxy, modules);
+      config = generateServerBlock(updatedProxy, modules, db);
 
       if (updatedProxy.ssl_enabled && updatedProxy.ssl_cert_id) {
         const cert = db.prepare('SELECT cert_path, key_path FROM ssl_certificates WHERE id = ?').get(updatedProxy.ssl_cert_id);
@@ -1058,7 +1172,7 @@ function handleDeleteCertificate(req, res, parsedUrl) {
           } else if (updatedProxy.type === '404') {
             config = generate404Block(updatedProxy);
           } else {
-            config = generateServerBlock(updatedProxy, modules);
+            config = generateServerBlock(updatedProxy, modules, db);
           }
 
           const filename = updatedProxy.config_filename || `${sanitizeFilename(updatedProxy.name)}.conf`;
@@ -1445,6 +1559,1223 @@ function handleGetStatistics(req, res, parsedUrl) {
   } catch (error) {
     console.error('Statistics error:', error);
     sendJSON(res, { error: error.message || 'Failed to get statistics' }, 500);
+  }
+}
+
+// ============================================================================
+// Security Rules Handlers
+// ============================================================================
+
+function handleGetSecurityRules(req, res, parsedUrl) {
+  try {
+    const params = new URLSearchParams(parsedUrl.search);
+    const ruleType = params.get('type');
+
+    let query = 'SELECT * FROM security_rules';
+    let queryParams = [];
+
+    if (ruleType) {
+      query += ' WHERE rule_type = ?';
+      queryParams.push(ruleType);
+    }
+
+    query += ' ORDER BY created_at DESC';
+
+    const rules = db.prepare(query).all(...queryParams);
+    sendJSON(res, { rules });
+  } catch (error) {
+    console.error('Get security rules error:', error);
+    sendJSON(res, { error: error.message || 'Failed to get security rules' }, 500);
+  }
+}
+
+async function handleCreateSecurityRule(req, res) {
+  try {
+    const body = await parseBody(req);
+    const { rule_type, rule_value, action, description, enabled } = body;
+
+    if (!rule_type || !rule_value) {
+      return sendJSON(res, { error: 'rule_type and rule_value are required' }, 400);
+    }
+
+    // Validate rule_type
+    const validTypes = ['ip_blacklist', 'geo_block', 'user_agent_filter'];
+    if (!validTypes.includes(rule_type)) {
+      return sendJSON(res, { error: 'Invalid rule_type' }, 400);
+    }
+
+    const result = db.prepare(`
+      INSERT INTO security_rules (rule_type, rule_value, action, description, enabled)
+      VALUES (?, ?, ?, ?, ?)
+    `).run(
+      rule_type,
+      rule_value,
+      action || 'deny',
+      description || null,
+      enabled !== undefined ? enabled : 1
+    );
+
+    // Update global security config
+    const { updateGlobalSecurityConfig } = require('../utils/security-config-generator');
+    updateGlobalSecurityConfig(db);
+
+    // Log audit
+    logAudit(
+      req.user.id,
+      'create',
+      'security_rule',
+      result.lastInsertRowid,
+      `Created ${rule_type} rule: ${rule_value}`,
+      getClientIP(req)
+    );
+
+    // Trigger nginx reload
+    const { safeReload } = require('../utils/nginx-ops');
+    const reloadResult = safeReload();
+    if (!reloadResult.success) {
+      console.error('Nginx reload error:', reloadResult.error);
+    }
+
+    sendJSON(res, {
+      success: true,
+      id: result.lastInsertRowid,
+      message: 'Security rule created successfully'
+    });
+  } catch (error) {
+    console.error('Create security rule error:', error);
+    sendJSON(res, { error: error.message || 'Failed to create security rule' }, 500);
+  }
+}
+
+async function handleUpdateSecurityRule(req, res, parsedUrl) {
+  try {
+    const id = parseInt(parsedUrl.pathname.split('/')[4]);
+    const body = await parseBody(req);
+    const { rule_value, action, description, enabled } = body;
+
+    const rule = db.prepare('SELECT * FROM security_rules WHERE id = ?').get(id);
+    if (!rule) {
+      return sendJSON(res, { error: 'Security rule not found' }, 404);
+    }
+
+    db.prepare(`
+      UPDATE security_rules
+      SET rule_value = ?, action = ?, description = ?, enabled = ?, updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `).run(
+      rule_value || rule.rule_value,
+      action || rule.action,
+      description !== undefined ? description : rule.description,
+      enabled !== undefined ? enabled : rule.enabled,
+      id
+    );
+
+    // Update global security config
+    const { updateGlobalSecurityConfig } = require('../utils/security-config-generator');
+    updateGlobalSecurityConfig(db);
+
+    // Log audit
+    logAudit(
+      req.user.id,
+      'update',
+      'security_rule',
+      id,
+      `Updated ${rule.rule_type} rule: ${rule_value || rule.rule_value}`,
+      getClientIP(req)
+    );
+
+    // Trigger nginx reload
+    const { safeReload } = require('../utils/nginx-ops');
+    const reloadResult = safeReload();
+    if (!reloadResult.success) {
+      console.error('Nginx reload error:', reloadResult.error);
+    }
+
+    sendJSON(res, { success: true, message: 'Security rule updated successfully' });
+  } catch (error) {
+    console.error('Update security rule error:', error);
+    sendJSON(res, { error: error.message || 'Failed to update security rule' }, 500);
+  }
+}
+
+function handleDeleteSecurityRule(req, res, parsedUrl) {
+  try {
+    const id = parseInt(parsedUrl.pathname.split('/')[4]);
+
+    const rule = db.prepare('SELECT * FROM security_rules WHERE id = ?').get(id);
+    if (!rule) {
+      return sendJSON(res, { error: 'Security rule not found' }, 404);
+    }
+
+    db.prepare('DELETE FROM security_rules WHERE id = ?').run(id);
+
+    // Update global security config
+    const { updateGlobalSecurityConfig } = require('../utils/security-config-generator');
+    updateGlobalSecurityConfig(db);
+
+    // Log audit
+    logAudit(
+      req.user.id,
+      'delete',
+      'security_rule',
+      id,
+      `Deleted ${rule.rule_type} rule: ${rule.rule_value}`,
+      getClientIP(req)
+    );
+
+    // Trigger nginx reload
+    const { safeReload } = require('../utils/nginx-ops');
+    const reloadResult = safeReload();
+    if (!reloadResult.success) {
+      console.error('Nginx reload error:', reloadResult.error);
+    }
+
+    sendJSON(res, { success: true, message: 'Security rule deleted successfully' });
+  } catch (error) {
+    console.error('Delete security rule error:', error);
+    sendJSON(res, { error: error.message || 'Failed to delete security rule' }, 500);
+  }
+}
+
+async function handleBulkImportSecurityRules(req, res) {
+  try {
+    const body = await parseBody(req);
+    const { rule_type, rules } = body;
+
+    if (!rule_type || !Array.isArray(rules) || rules.length === 0) {
+      return sendJSON(res, { error: 'rule_type and rules array are required' }, 400);
+    }
+
+    const validTypes = ['ip_blacklist', 'geo_block', 'user_agent_filter'];
+    if (!validTypes.includes(rule_type)) {
+      return sendJSON(res, { error: 'Invalid rule_type' }, 400);
+    }
+
+    const insertStmt = db.prepare(`
+      INSERT INTO security_rules (rule_type, rule_value, action, description, enabled)
+      VALUES (?, ?, ?, ?, ?)
+    `);
+
+    let imported = 0;
+    for (const rule of rules) {
+      if (rule.rule_value) {
+        insertStmt.run(
+          rule_type,
+          rule.rule_value,
+          rule.action || 'deny',
+          rule.description || null,
+          rule.enabled !== undefined ? rule.enabled : 1
+        );
+        imported++;
+      }
+    }
+
+    // Update global security config
+    const { updateGlobalSecurityConfig } = require('../utils/security-config-generator');
+    updateGlobalSecurityConfig(db);
+
+    // Log audit
+    logAudit(
+      req.user.id,
+      'bulk_import',
+      'security_rule',
+      null,
+      `Bulk imported ${imported} ${rule_type} rules`,
+      getClientIP(req)
+    );
+
+    // Trigger nginx reload
+    const { safeReload } = require('../utils/nginx-ops');
+    const reloadResult = safeReload();
+    if (!reloadResult.success) {
+      console.error('Nginx reload error:', reloadResult.error);
+    }
+
+    sendJSON(res, {
+      success: true,
+      imported,
+      message: `Successfully imported ${imported} security rules`
+    });
+  } catch (error) {
+    console.error('Bulk import security rules error:', error);
+    sendJSON(res, { error: error.message || 'Failed to bulk import security rules' }, 500);
+  }
+}
+
+// ============================================================================
+// Rate Limiting Handlers
+// ============================================================================
+
+function handleGetRateLimits(req, res, parsedUrl) {
+  try {
+    const params = new URLSearchParams(parsedUrl.search);
+    const proxyId = params.get('proxy_id');
+
+    let query = 'SELECT * FROM rate_limits';
+    let queryParams = [];
+
+    if (proxyId) {
+      query += ' WHERE proxy_id = ?';
+      queryParams.push(parseInt(proxyId));
+    }
+
+    query += ' ORDER BY created_at DESC';
+
+    const rateLimits = db.prepare(query).all(...queryParams);
+    sendJSON(res, { rateLimits });
+  } catch (error) {
+    console.error('Get rate limits error:', error);
+    sendJSON(res, { error: error.message || 'Failed to get rate limits' }, 500);
+  }
+}
+
+async function handleCreateRateLimit(req, res) {
+  try {
+    const body = await parseBody(req);
+    const { proxy_id, rate, burst, nodelay, enabled } = body;
+
+    if (!proxy_id || !rate) {
+      return sendJSON(res, { error: 'proxy_id and rate are required' }, 400);
+    }
+
+    // Check if proxy exists
+    const proxy = db.prepare('SELECT id, name FROM proxy_hosts WHERE id = ?').get(proxy_id);
+    if (!proxy) {
+      return sendJSON(res, { error: 'Proxy not found' }, 404);
+    }
+
+    // Generate zone name
+    const zoneName = `proxy_${proxy_id}_ratelimit`;
+
+    const result = db.prepare(`
+      INSERT INTO rate_limits (proxy_id, zone_name, rate, burst, nodelay, enabled)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `).run(
+      proxy_id,
+      zoneName,
+      rate,
+      burst !== undefined ? burst : 50,
+      nodelay !== undefined ? nodelay : 0,
+      enabled !== undefined ? enabled : 1
+    );
+
+    // Update global security config and regenerate proxy config
+    const { updateGlobalSecurityConfig } = require('../utils/security-config-generator');
+    updateGlobalSecurityConfig(db);
+
+    // Regenerate the proxy config
+    const updatedProxy = db.prepare('SELECT * FROM proxy_hosts WHERE id = ?').get(proxy_id);
+    const modules = db.prepare(`
+      SELECT m.* FROM modules m
+      JOIN proxy_modules pm ON m.id = pm.module_id
+      WHERE pm.proxy_id = ?
+    `).all(proxy_id);
+
+    const { generateServerBlock, writeNginxConfig } = require('../utils/nginx-parser');
+    let config = generateServerBlock(updatedProxy, modules, db);
+
+    // Replace SSL placeholders if needed
+    if (updatedProxy.ssl_enabled && updatedProxy.ssl_cert_id) {
+      const cert = db.prepare('SELECT cert_path, key_path FROM ssl_certificates WHERE id = ?')
+        .get(updatedProxy.ssl_cert_id);
+      if (cert) {
+        config = config.replace('{{SSL_CERT_PATH}}', cert.cert_path);
+        config = config.replace('{{SSL_KEY_PATH}}', cert.key_path);
+      }
+    }
+
+    const filename = updatedProxy.config_filename || `${updatedProxy.id}.conf`;
+    writeNginxConfig(filename, config);
+
+    // Log audit
+    logAudit(
+      req.user.id,
+      'create',
+      'rate_limit',
+      result.lastInsertRowid,
+      `Created rate limit for proxy ${proxy.name}: ${rate}`,
+      getClientIP(req)
+    );
+
+    // Trigger nginx reload
+    const { safeReload } = require('../utils/nginx-ops');
+    const reloadResult = safeReload();
+    if (!reloadResult.success) {
+      console.error('Nginx reload error:', reloadResult.error);
+    }
+
+    sendJSON(res, {
+      success: true,
+      id: result.lastInsertRowid,
+      message: 'Rate limit created successfully'
+    });
+  } catch (error) {
+    console.error('Create rate limit error:', error);
+    sendJSON(res, { error: error.message || 'Failed to create rate limit' }, 500);
+  }
+}
+
+async function handleUpdateRateLimit(req, res, parsedUrl) {
+  try {
+    const id = parseInt(parsedUrl.pathname.split('/')[4]);
+    const body = await parseBody(req);
+    const { rate, burst, nodelay, enabled } = body;
+
+    const rateLimit = db.prepare('SELECT * FROM rate_limits WHERE id = ?').get(id);
+    if (!rateLimit) {
+      return sendJSON(res, { error: 'Rate limit not found' }, 404);
+    }
+
+    db.prepare(`
+      UPDATE rate_limits
+      SET rate = ?, burst = ?, nodelay = ?, enabled = ?, updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `).run(
+      rate || rateLimit.rate,
+      burst !== undefined ? burst : rateLimit.burst,
+      nodelay !== undefined ? nodelay : rateLimit.nodelay,
+      enabled !== undefined ? enabled : rateLimit.enabled,
+      id
+    );
+
+    // Update global security config and regenerate proxy config
+    const { updateGlobalSecurityConfig } = require('../utils/security-config-generator');
+    updateGlobalSecurityConfig(db);
+
+    // Regenerate the proxy config
+    const proxy = db.prepare('SELECT * FROM proxy_hosts WHERE id = ?').get(rateLimit.proxy_id);
+    const modules = db.prepare(`
+      SELECT m.* FROM modules m
+      JOIN proxy_modules pm ON m.id = pm.module_id
+      WHERE pm.proxy_id = ?
+    `).all(rateLimit.proxy_id);
+
+    const { generateServerBlock, writeNginxConfig } = require('../utils/nginx-parser');
+    let config = generateServerBlock(proxy, modules, db);
+
+    // Replace SSL placeholders if needed
+    if (proxy.ssl_enabled && proxy.ssl_cert_id) {
+      const cert = db.prepare('SELECT cert_path, key_path FROM ssl_certificates WHERE id = ?')
+        .get(proxy.ssl_cert_id);
+      if (cert) {
+        config = config.replace('{{SSL_CERT_PATH}}', cert.cert_path);
+        config = config.replace('{{SSL_KEY_PATH}}', cert.key_path);
+      }
+    }
+
+    const filename = proxy.config_filename || `${proxy.id}.conf`;
+    writeNginxConfig(filename, config);
+
+    // Log audit
+    logAudit(
+      req.user.id,
+      'update',
+      'rate_limit',
+      id,
+      `Updated rate limit: ${rate || rateLimit.rate}`,
+      getClientIP(req)
+    );
+
+    // Trigger nginx reload
+    const { safeReload } = require('../utils/nginx-ops');
+    const reloadResult = safeReload();
+    if (!reloadResult.success) {
+      console.error('Nginx reload error:', reloadResult.error);
+    }
+
+    sendJSON(res, { success: true, message: 'Rate limit updated successfully' });
+  } catch (error) {
+    console.error('Update rate limit error:', error);
+    sendJSON(res, { error: error.message || 'Failed to update rate limit' }, 500);
+  }
+}
+
+function handleDeleteRateLimit(req, res, parsedUrl) {
+  try {
+    const id = parseInt(parsedUrl.pathname.split('/')[4]);
+
+    const rateLimit = db.prepare('SELECT * FROM rate_limits WHERE id = ?').get(id);
+    if (!rateLimit) {
+      return sendJSON(res, { error: 'Rate limit not found' }, 404);
+    }
+
+    db.prepare('DELETE FROM rate_limits WHERE id = ?').run(id);
+
+    // Update global security config and regenerate proxy config
+    const { updateGlobalSecurityConfig } = require('../utils/security-config-generator');
+    updateGlobalSecurityConfig(db);
+
+    // Regenerate the proxy config
+    const proxy = db.prepare('SELECT * FROM proxy_hosts WHERE id = ?').get(rateLimit.proxy_id);
+    if (proxy) {
+      const modules = db.prepare(`
+        SELECT m.* FROM modules m
+        JOIN proxy_modules pm ON m.id = pm.module_id
+        WHERE pm.proxy_id = ?
+      `).all(rateLimit.proxy_id);
+
+      const { generateServerBlock, writeNginxConfig } = require('../utils/nginx-parser');
+      let config = generateServerBlock(proxy, modules, db);
+
+      // Replace SSL placeholders if needed
+      if (proxy.ssl_enabled && proxy.ssl_cert_id) {
+        const cert = db.prepare('SELECT cert_path, key_path FROM ssl_certificates WHERE id = ?')
+          .get(proxy.ssl_cert_id);
+        if (cert) {
+          config = config.replace('{{SSL_CERT_PATH}}', cert.cert_path);
+          config = config.replace('{{SSL_KEY_PATH}}', cert.key_path);
+        }
+      }
+
+      const filename = proxy.config_filename || `${proxy.id}.conf`;
+      writeNginxConfig(filename, config);
+    }
+
+    // Log audit
+    logAudit(
+      req.user.id,
+      'delete',
+      'rate_limit',
+      id,
+      `Deleted rate limit for proxy ${rateLimit.proxy_id}`,
+      getClientIP(req)
+    );
+
+    // Trigger nginx reload
+    const { safeReload } = require('../utils/nginx-ops');
+    const reloadResult = safeReload();
+    if (!reloadResult.success) {
+      console.error('Nginx reload error:', reloadResult.error);
+    }
+
+    sendJSON(res, { success: true, message: 'Rate limit deleted successfully' });
+  } catch (error) {
+    console.error('Delete rate limit error:', error);
+    sendJSON(res, { error: error.message || 'Failed to delete rate limit' }, 500);
+  }
+}
+
+// ============================================================================
+// Security Settings Handlers
+// ============================================================================
+
+function handleGetSecuritySettings(req, res) {
+  try {
+    const settingKeys = [
+      'security_ip_blacklist_enabled',
+      'security_geo_blocking_enabled',
+      'security_user_agent_filtering_enabled',
+      'security_default_deny_countries',
+      'security_geoip_database_path',
+      'waf_enabled',
+      'waf_mode',
+      'waf_default_profile_id'
+    ];
+
+    const settings = {};
+    for (const key of settingKeys) {
+      const value = getSetting(key);
+      // Convert '0'/'1' to boolean for enabled fields
+      if (key.endsWith('_enabled')) {
+        settings[key] = value === '1';
+      } else {
+        settings[key] = value || '';
+      }
+    }
+
+    sendJSON(res, settings);
+  } catch (error) {
+    console.error('Get security settings error:', error);
+    sendJSON(res, { error: error.message || 'Failed to get security settings' }, 500);
+  }
+}
+
+async function handleUpdateSecuritySettings(req, res) {
+  try {
+    const body = await parseBody(req);
+
+    const allowedKeys = [
+      'security_ip_blacklist_enabled',
+      'security_geo_blocking_enabled',
+      'security_user_agent_filtering_enabled',
+      'security_default_deny_countries',
+      'security_geoip_database_path',
+      'waf_enabled',
+      'waf_mode',
+      'waf_default_profile_id'
+    ];
+
+    for (const key of allowedKeys) {
+      if (body.hasOwnProperty(key)) {
+        let value = body[key];
+        // Convert boolean to '0'/'1' for enabled fields
+        if (key.endsWith('_enabled')) {
+          value = value ? '1' : '0';
+        }
+        setSetting(key, String(value));
+      }
+    }
+
+    // Update global security config
+    const { updateGlobalSecurityConfig } = require('../utils/security-config-generator');
+    updateGlobalSecurityConfig(db);
+
+    // Log audit
+    logAudit(
+      req.user.id,
+      'update',
+      'security_settings',
+      null,
+      `Updated security settings`,
+      getClientIP(req)
+    );
+
+    // Trigger nginx reload
+    const { safeReload } = require('../utils/nginx-ops');
+    const reloadResult = safeReload();
+    if (!reloadResult.success) {
+      console.error('Nginx reload error:', reloadResult.error);
+    }
+
+    sendJSON(res, { success: true, message: 'Security settings updated successfully' });
+  } catch (error) {
+    console.error('Update security settings error:', error);
+    sendJSON(res, { error: error.message || 'Failed to update security settings' }, 500);
+  }
+}
+
+// ============================================================================
+// Security Statistics Handlers
+// ============================================================================
+
+function handleGetSecurityStats(req, res, parsedUrl) {
+  try {
+    // For now, return mock data since we need to implement log parsing for security events
+    // In the future, parse nginx logs for 403 responses and correlate with security rules
+    const params = new URLSearchParams(parsedUrl.search);
+    const timeRange = params.get('range') || '24h';
+
+    // Get counts of security rules
+    const ipBlacklistCount = db.prepare(
+      "SELECT COUNT(*) as count FROM security_rules WHERE rule_type = 'ip_blacklist' AND enabled = 1"
+    ).get().count;
+
+    const geoBlockCount = db.prepare(
+      "SELECT COUNT(*) as count FROM security_rules WHERE rule_type = 'geo_block' AND enabled = 1"
+    ).get().count;
+
+    const uaFilterCount = db.prepare(
+      "SELECT COUNT(*) as count FROM security_rules WHERE rule_type = 'user_agent_filter' AND enabled = 1"
+    ).get().count;
+
+    const rateLimitCount = db.prepare(
+      "SELECT COUNT(*) as count FROM rate_limits WHERE enabled = 1"
+    ).get().count;
+
+    const stats = {
+      timeRange,
+      blocked: {
+        total: 0, // Parse from logs in future
+        byRule: {
+          ip_blacklist: 0,
+          geo_block: 0,
+          user_agent_filter: 0,
+          rate_limit: 0
+        }
+      },
+      topBlockedIPs: [],
+      topBlockedCountries: [],
+      rateLimitHits: 0,
+      activeRules: {
+        ipBlacklist: ipBlacklistCount,
+        geoBlock: geoBlockCount,
+        userAgentFilter: uaFilterCount,
+        rateLimit: rateLimitCount
+      }
+    };
+
+    sendJSON(res, stats);
+  } catch (error) {
+    console.error('Get security stats error:', error);
+    sendJSON(res, { error: error.message || 'Failed to get security stats' }, 500);
+  }
+}
+
+function handleGetRecentBlocks(req, res, parsedUrl) {
+  try {
+    // For now, return empty array
+    // In the future, parse nginx logs for 403/429 responses
+    const params = new URLSearchParams(parsedUrl.search);
+    const limit = parseInt(params.get('limit') || '50');
+
+    const blocks = [];
+
+    sendJSON(res, { blocks });
+  } catch (error) {
+    console.error('Get recent blocks error:', error);
+    sendJSON(res, { error: error.message || 'Failed to get recent blocks' }, 500);
+  }
+}
+
+// ============================================================================
+// Nginx Tuning & Statistics Handlers
+// ============================================================================
+
+/**
+ * Get nginx tuning stats (top 10s for tuning decisions)
+ */
+async function handleGetNginxTuningStats(req, res, parsedUrl) {
+  try {
+    const params = new URLSearchParams(parsedUrl.search);
+    const hoursBack = parseInt(params.get('hours') || '24');
+    const excludePrivate = params.get('excludePrivate') !== 'false'; // Default true
+
+    const stats = await getNginxStatistics(hoursBack, excludePrivate);
+
+    // Get top countries if available
+    const countryStats = await getTopCountries(hoursBack);
+
+    // Get current security rules for cross-referencing
+    const existingIPBlocks = db.prepare(
+      "SELECT rule_value FROM security_rules WHERE rule_type = 'ip_blacklist' AND enabled = 1"
+    ).all().map(r => r.rule_value);
+
+    const existingGeoBlocks = db.prepare(
+      "SELECT rule_value FROM security_rules WHERE rule_type = 'geo_block' AND enabled = 1"
+    ).all().map(r => r.rule_value);
+
+    const existingUABlocks = db.prepare(
+      "SELECT rule_value FROM security_rules WHERE rule_type = 'user_agent_filter' AND enabled = 1"
+    ).all().map(r => r.rule_value);
+
+    // Augment top lists with block status
+    const topIPsWithStatus = stats.topIPs.map(ip => ({
+      ...ip,
+      isBlocked: existingIPBlocks.includes(ip.item)
+    }));
+
+    const topUserAgentsWithStatus = stats.topUserAgents.map(ua => ({
+      ...ua,
+      isBlocked: existingUABlocks.some(pattern => {
+        try {
+          const regex = new RegExp(pattern, 'i');
+          return regex.test(ua.item);
+        } catch {
+          return pattern === ua.item;
+        }
+      })
+    }));
+
+    sendJSON(res, {
+      timeRange: `${hoursBack}h`,
+      topIPs: topIPsWithStatus,
+      topUserAgents: topUserAgentsWithStatus,
+      topCountries: countryStats.topCountries || [],
+      totalRequests: stats.totalRequests,
+      uniqueIPCount: stats.uniqueIPCount,
+      blockedRequests: stats.blockedRequests,
+      rateLimitedRequests: stats.rateLimitedRequests
+    });
+  } catch (error) {
+    console.error('Get nginx tuning stats error:', error);
+    sendJSON(res, { error: error.message || 'Failed to get tuning statistics' }, 500);
+  }
+}
+
+/**
+ * Get nginx statistics (effectiveness metrics)
+ */
+async function handleGetNginxStatistics(req, res, parsedUrl) {
+  try {
+    const params = new URLSearchParams(parsedUrl.search);
+    const hoursBack = parseInt(params.get('hours') || '24');
+
+    const stats = await getNginxStatistics(hoursBack);
+
+    // Calculate additional metrics
+    const successRate = stats.totalRequests > 0
+      ? ((stats.successfulRequests / stats.totalRequests) * 100).toFixed(2)
+      : '0.00';
+
+    const blockedPercentage = stats.totalRequests > 0
+      ? ((stats.blockedRequests / stats.totalRequests) * 100).toFixed(2)
+      : '0.00';
+
+    const rateLimitedPercentage = stats.totalRequests > 0
+      ? ((stats.rateLimitedRequests / stats.totalRequests) * 100).toFixed(2)
+      : '0.00';
+
+    // Get security rule counts
+    const activeRules = {
+      ipBlacklist: db.prepare(
+        "SELECT COUNT(*) as count FROM security_rules WHERE rule_type = 'ip_blacklist' AND enabled = 1"
+      ).get().count,
+      geoBlock: db.prepare(
+        "SELECT COUNT(*) as count FROM security_rules WHERE rule_type = 'geo_block' AND enabled = 1"
+      ).get().count,
+      userAgentFilter: db.prepare(
+        "SELECT COUNT(*) as count FROM security_rules WHERE rule_type = 'user_agent_filter' AND enabled = 1"
+      ).get().count,
+      rateLimit: db.prepare(
+        "SELECT COUNT(*) as count FROM rate_limits WHERE enabled = 1"
+      ).get().count
+    };
+
+    sendJSON(res, {
+      timeRange: `${hoursBack}h`,
+      totalRequests: stats.totalRequests,
+      successfulRequests: stats.successfulRequests,
+      blockedRequests: stats.blockedRequests,
+      rateLimitedRequests: stats.rateLimitedRequests,
+      successRate,
+      blockedPercentage,
+      rateLimitedPercentage,
+      statusBreakdown: stats.requestsByStatus,
+      errorStats: stats.errorStats,
+      activeRules,
+      metrics: {
+        avgRequestsPerHour: (stats.totalRequests / hoursBack).toFixed(0),
+        avgBlocksPerHour: (stats.blockedRequests / hoursBack).toFixed(0),
+        avgRateLimitsPerHour: (stats.rateLimitedRequests / hoursBack).toFixed(0)
+      }
+    });
+  } catch (error) {
+    console.error('Get nginx statistics error:', error);
+    sendJSON(res, { error: error.message || 'Failed to get nginx statistics' }, 500);
+  }
+}
+
+// ============================================================================
+// DNS Providers Handlers
+// ============================================================================
+
+/**
+ * Get list of DNS providers
+ */
+function handleGetDNSProviders(req, res) {
+  try {
+    const providers = getProviders();
+    sendJSON(res, { providers });
+  } catch (error) {
+    console.error('Get DNS providers error:', error);
+    sendJSON(res, { error: error.message || 'Failed to get DNS providers' }, 500);
+  }
+}
+
+// ============================================================================
+// DNS Credentials Handlers
+// ============================================================================
+
+/**
+ * Get all DNS credentials
+ */
+function handleGetDNSCredentials(req, res) {
+  try {
+    // Check if encryption is configured
+    if (!isEncryptionConfigured()) {
+      return sendJSON(res, {
+        error: 'Encryption not configured. Please set CERT_ENCRYPTION_KEY in .env file',
+        credentials: []
+      }, 500);
+    }
+
+    const credentials = db.prepare(`
+      SELECT
+        id,
+        name,
+        provider,
+        created_at,
+        updated_at,
+        created_by
+      FROM dns_credentials
+      ORDER BY created_at DESC
+    `).all();
+
+    sendJSON(res, { credentials });
+  } catch (error) {
+    console.error('Get DNS credentials error:', error);
+    sendJSON(res, { error: error.message || 'Failed to get DNS credentials' }, 500);
+  }
+}
+
+/**
+ * Create new DNS credential
+ */
+async function handleCreateDNSCredential(req, res) {
+  try {
+    const body = await parseBody(req);
+    const { name, provider, credentials } = body;
+
+    // Validate inputs
+    if (!name || !provider || !credentials) {
+      return sendJSON(res, { error: 'Name, provider, and credentials are required' }, 400);
+    }
+
+    // Check if encryption is configured
+    if (!isEncryptionConfigured()) {
+      return sendJSON(res, {
+        error: 'Encryption not configured. Please set CERT_ENCRYPTION_KEY in .env file'
+      }, 500);
+    }
+
+    // Validate provider
+    const providerDef = getProvider(provider);
+    if (!providerDef) {
+      return sendJSON(res, { error: `Unknown provider: ${provider}` }, 400);
+    }
+
+    // Validate credentials
+    const validation = validateCredentials(provider, credentials);
+    if (!validation.valid) {
+      return sendJSON(res, {
+        error: 'Invalid credentials',
+        details: validation.errors
+      }, 400);
+    }
+
+    // Check for duplicate name
+    const existing = db.prepare(
+      'SELECT id FROM dns_credentials WHERE name = ?'
+    ).get(name);
+
+    if (existing) {
+      return sendJSON(res, { error: 'Credential with this name already exists' }, 400);
+    }
+
+    // Encrypt credentials
+    const encrypted = encryptCredentials(credentials);
+
+    // Insert into database
+    const result = db.prepare(`
+      INSERT INTO dns_credentials (name, provider, credentials_encrypted, created_by)
+      VALUES (?, ?, ?, ?)
+    `).run(name, provider, encrypted, req.user.id);
+
+    logAudit(req.user.id, 'create', 'dns_credential', result.lastInsertRowid, null, getClientIP(req));
+
+    sendJSON(res, {
+      success: true,
+      message: 'DNS credential created successfully',
+      id: result.lastInsertRowid
+    }, 201);
+  } catch (error) {
+    console.error('Create DNS credential error:', error);
+    sendJSON(res, { error: error.message || 'Failed to create DNS credential' }, 500);
+  }
+}
+
+/**
+ * Update DNS credential
+ */
+async function handleUpdateDNSCredential(req, res, parsedUrl) {
+  try {
+    const id = parseInt(parsedUrl.pathname.split('/').pop());
+    const body = await parseBody(req);
+    const { name, credentials } = body;
+
+    // Check if credential exists
+    const existing = db.prepare('SELECT * FROM dns_credentials WHERE id = ?').get(id);
+    if (!existing) {
+      return sendJSON(res, { error: 'DNS credential not found' }, 404);
+    }
+
+    // Check if encryption is configured
+    if (!isEncryptionConfigured()) {
+      return sendJSON(res, {
+        error: 'Encryption not configured. Please set CERT_ENCRYPTION_KEY in .env file'
+      }, 500);
+    }
+
+    // Build update query
+    const updates = [];
+    const params = [];
+
+    if (name) {
+      // Check for duplicate name
+      const duplicate = db.prepare(
+        'SELECT id FROM dns_credentials WHERE name = ? AND id != ?'
+      ).get(name, id);
+
+      if (duplicate) {
+        return sendJSON(res, { error: 'Credential with this name already exists' }, 400);
+      }
+
+      updates.push('name = ?');
+      params.push(name);
+    }
+
+    if (credentials) {
+      // Validate credentials
+      const validation = validateCredentials(existing.provider, credentials);
+      if (!validation.valid) {
+        return sendJSON(res, {
+          error: 'Invalid credentials',
+          details: validation.errors
+        }, 400);
+      }
+
+      // Encrypt credentials
+      const encrypted = encryptCredentials(credentials);
+      updates.push('credentials_encrypted = ?');
+      params.push(encrypted);
+    }
+
+    if (updates.length === 0) {
+      return sendJSON(res, { error: 'No updates provided' }, 400);
+    }
+
+    updates.push('updated_at = CURRENT_TIMESTAMP');
+    params.push(id);
+
+    db.prepare(`
+      UPDATE dns_credentials
+      SET ${updates.join(', ')}
+      WHERE id = ?
+    `).run(...params);
+
+    logAudit(req.user.id, 'update', 'dns_credential', id, null, getClientIP(req));
+
+    sendJSON(res, { success: true, message: 'DNS credential updated successfully' });
+  } catch (error) {
+    console.error('Update DNS credential error:', error);
+    sendJSON(res, { error: error.message || 'Failed to update DNS credential' }, 500);
+  }
+}
+
+/**
+ * Delete DNS credential
+ */
+function handleDeleteDNSCredential(req, res, parsedUrl) {
+  try {
+    const id = parseInt(parsedUrl.pathname.split('/').pop());
+
+    // Check if credential exists
+    const existing = db.prepare('SELECT * FROM dns_credentials WHERE id = ?').get(id);
+    if (!existing) {
+      return sendJSON(res, { error: 'DNS credential not found' }, 404);
+    }
+
+    // Check if credential is in use
+    const inUse = db.prepare(`
+      SELECT COUNT(*) as count
+      FROM ssl_certificates
+      WHERE dns_credential_id = ? AND auto_renew = 1
+    `).get(id);
+
+    if (inUse.count > 0) {
+      return sendJSON(res, {
+        error: `Cannot delete credential: in use by ${inUse.count} certificate(s) with auto-renewal enabled`
+      }, 400);
+    }
+
+    // Delete credential
+    db.prepare('DELETE FROM dns_credentials WHERE id = ?').run(id);
+
+    logAudit(req.user.id, 'delete', 'dns_credential', id, null, getClientIP(req));
+
+    sendJSON(res, { success: true, message: 'DNS credential deleted successfully' });
+  } catch (error) {
+    console.error('Delete DNS credential error:', error);
+    sendJSON(res, { error: error.message || 'Failed to delete DNS credential' }, 500);
+  }
+}
+
+// ============================================================================
+// Certificate Ordering Handlers
+// ============================================================================
+
+/**
+ * Order a certificate via Certbot
+ */
+async function handleOrderCertificate(req, res) {
+  try {
+    const body = await parseBody(req);
+    const {
+      email,
+      domains,
+      challengeType,
+      dnsCredentialId,
+      propagationSeconds,
+      autoRenew,
+      certName
+    } = body;
+
+    // Validate inputs
+    if (!email || !domains || !Array.isArray(domains) || domains.length === 0) {
+      return sendJSON(res, { error: 'Email and at least one domain are required' }, 400);
+    }
+
+    if (!challengeType || !['http-01', 'dns-01'].includes(challengeType)) {
+      return sendJSON(res, { error: 'Challenge type must be http-01 or dns-01' }, 400);
+    }
+
+    // Check for wildcard domains with HTTP-01
+    const hasWildcard = domains.some(d => d.trim().startsWith('*'));
+    if (hasWildcard && challengeType === 'http-01') {
+      return sendJSON(res, {
+        error: 'Wildcard domains require DNS-01 challenge'
+      }, 400);
+    }
+
+    let result;
+    let certbotConfig = { email, domains, challengeType };
+
+    if (challengeType === 'http-01') {
+      // Order using HTTP-01 challenge
+      result = await orderCertificateHTTP({
+        email,
+        domains,
+        certName
+      });
+    } else {
+      // DNS-01 challenge - need credentials
+      if (!dnsCredentialId) {
+        return sendJSON(res, {
+          error: 'DNS credential is required for DNS-01 challenge'
+        }, 400);
+      }
+
+      // Get DNS credentials
+      const credentialRecord = db.prepare(
+        'SELECT * FROM dns_credentials WHERE id = ?'
+      ).get(dnsCredentialId);
+
+      if (!credentialRecord) {
+        return sendJSON(res, { error: 'DNS credential not found' }, 404);
+      }
+
+      // Decrypt credentials
+      const credentials = decryptCredentials(credentialRecord.credentials_encrypted);
+
+      // Order using DNS-01 challenge
+      result = await orderCertificateDNS({
+        email,
+        domains,
+        providerId: credentialRecord.provider,
+        credentials,
+        propagationSeconds: propagationSeconds || 10,
+        certName
+      });
+
+      certbotConfig.dnsCredentialId = dnsCredentialId;
+      certbotConfig.provider = credentialRecord.provider;
+      certbotConfig.propagationSeconds = propagationSeconds || 10;
+    }
+
+    if (!result.success) {
+      return sendJSON(res, {
+        error: 'Certificate ordering failed',
+        details: result.error,
+        output: result.output
+      }, 500);
+    }
+
+    // Read certificate files
+    const certFiles = await require('../utils/certbot').readCertificateFiles(
+      certName || domains[0]
+    );
+
+    // Parse certificate to extract metadata (same as uploaded certificates)
+    const certInfo = parseCertificate(certFiles.cert);
+
+    // Extract domain names and issuer (same format as uploaded certificates)
+    const domainNames = certInfo.domains && certInfo.domains.length > 0
+      ? certInfo.domains.join(', ')
+      : domains.join(', ');
+    const issuer = certInfo.issuer.organizationName || certInfo.issuer.commonName || 'Let\'s Encrypt';
+    const expiresAt = certInfo.notAfter ? certInfo.notAfter.toISOString() : null;
+
+    // Use the certificate name or first domain as the filename
+    const certFileName = certInfo.subject.commonName || certInfo.domains[0] || domains[0];
+    const savedPaths = saveCertificateFiles(
+      certFiles.fullchain,  // Use fullchain (includes intermediate certs)
+      certFiles.privkey,
+      certFileName
+    );
+
+    // Insert certificate into database (same as uploaded certificates)
+    const certResult = db.prepare(`
+      INSERT INTO ssl_certificates (
+        name,
+        domain_names,
+        issuer,
+        expires_at,
+        cert_path,
+        key_path,
+        source,
+        auto_renew,
+        challenge_type,
+        dns_credential_id,
+        certbot_config
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      certFileName,
+      domainNames,
+      issuer,
+      expiresAt,
+      savedPaths.certPath,
+      savedPaths.keyPath,
+      'certbot',
+      autoRenew ? 1 : 0,
+      challengeType,
+      dnsCredentialId || null,
+      JSON.stringify(certbotConfig)
+    );
+
+    logAudit(req.user.id, 'order_certificate', 'ssl_certificate', certResult.lastInsertRowid, null, getClientIP(req));
+
+    sendJSON(res, {
+      success: true,
+      message: 'Certificate ordered successfully',
+      certificate: {
+        id: certResult.lastInsertRowid,
+        name: certInfo.subject.CN,
+        domain: domains[0],
+        expires_at: certInfo.validTo,
+        source: 'certbot',
+        auto_renew: autoRenew ? 1 : 0
+      },
+      output: result.output
+    }, 201);
+  } catch (error) {
+    console.error('Order certificate error:', error);
+    sendJSON(res, { error: error.message || 'Failed to order certificate' }, 500);
+  }
+}
+
+/**
+ * Get Certbot installation status
+ */
+async function handleGetCertbotStatus(req, res) {
+  try {
+    const certbotStatus = await checkCertbotInstallation();
+    const encryptionConfigured = isEncryptionConfigured();
+    const instructions = getInstallationInstructions();
+
+    // Check DNS provider plugins
+    const providers = getProviders();
+    const pluginStatus = await Promise.all(
+      providers.map(async (provider) => ({
+        id: provider.id,
+        name: provider.name,
+        plugin: provider.plugin,
+        installed: await isProviderInstalled(provider.id),
+        installCommand: provider.installCommand
+      }))
+    );
+
+    sendJSON(res, {
+      certbot: certbotStatus,
+      encryption: {
+        configured: encryptionConfigured,
+        warning: !encryptionConfigured ? 'CERT_ENCRYPTION_KEY not set in .env' : null
+      },
+      dnsProviders: pluginStatus,
+      instructions
+    });
+  } catch (error) {
+    console.error('Get certbot status error:', error);
+    sendJSON(res, { error: error.message || 'Failed to get certbot status' }, 500);
   }
 }
 

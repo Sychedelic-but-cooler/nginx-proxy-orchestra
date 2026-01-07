@@ -243,6 +243,69 @@ body {
   border-left-color: var(--primary-color);
 }
 
+/* Navigation groups (collapsible) */
+.nav-group {
+  margin: 0;
+}
+
+.nav-group-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 20px;
+  color: var(--sidebar-text);
+  cursor: pointer;
+  transition: all 0.2s;
+  border-left: 3px solid transparent;
+  user-select: none;
+}
+
+.nav-group-header:hover {
+  background: rgba(255, 255, 255, 0.05);
+  color: white;
+}
+
+.nav-group-icon {
+  flex-shrink: 0;
+  transition: transform 0.2s ease;
+}
+
+.nav-group.collapsed .nav-group-icon {
+  transform: rotate(-90deg);
+}
+
+.nav-group-items {
+  display: block;
+  overflow: hidden;
+  transition: max-height 0.3s ease;
+}
+
+.nav-group.collapsed .nav-group-items {
+  display: none;
+}
+
+.nav-subitem {
+  display: flex;
+  align-items: center;
+  padding: 10px 20px 10px 40px;
+  color: rgba(203, 213, 225, 0.8);
+  text-decoration: none;
+  transition: all 0.2s;
+  border-left: 3px solid transparent;
+  font-size: 13px;
+}
+
+.nav-subitem:hover {
+  background: rgba(255, 255, 255, 0.05);
+  color: white;
+}
+
+.nav-subitem.active {
+  background: rgba(59, 130, 246, 0.1);
+  color: white;
+  border-left-color: var(--primary-color);
+}
+
 .sidebar-footer {
   padding: 20px;
   border-top: 1px solid rgba(255, 255, 255, 0.1);

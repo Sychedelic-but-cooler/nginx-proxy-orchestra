@@ -2,6 +2,9 @@ import router from './router.js';
 import state from './state.js';
 import api from './api.js';
 import { renderDashboard } from './components/dashboard.js';
+import { renderSecurityDashboard } from './components/security-dashboard.js';
+import { renderNginxTuning } from './components/nginx-tuning.js';
+import { renderNginxStatistics } from './components/nginx-statistics.js';
 import { renderProxies } from './components/proxy-list.js';
 import { renderCertificates } from './components/ssl-manager.js';
 import { renderModules } from './components/module-manager.js';
@@ -36,19 +39,38 @@ const mainContent = document.getElementById('mainContent');
 const headerTitle = document.getElementById('headerTitle');
 const headerActions = document.getElementById('headerActions');
 
-// Navigation items
-const navItems = document.querySelectorAll('.nav-item');
+// Navigation items (includes both nav-item and nav-subitem)
+const navItems = document.querySelectorAll('.nav-item, .nav-subitem');
+const navGroups = document.querySelectorAll('.nav-group');
 
 /**
- * Update active nav item
+ * Update active nav item and expand parent groups
  */
 function updateNavigation(routeName) {
   navItems.forEach(item => {
     if (item.dataset.route === routeName) {
       item.classList.add('active');
+
+      // If this is a subitem, expand its parent group
+      const parentGroup = item.closest('.nav-group');
+      if (parentGroup) {
+        parentGroup.classList.remove('collapsed');
+      }
     } else {
       item.classList.remove('active');
     }
+  });
+}
+
+/**
+ * Setup collapsible navigation groups
+ */
+function setupNavigationGroups() {
+  document.querySelectorAll('.nav-group-header').forEach(header => {
+    header.addEventListener('click', () => {
+      const group = header.closest('.nav-group');
+      group.classList.toggle('collapsed');
+    });
   });
 }
 
@@ -103,6 +125,31 @@ router.register('/dashboard', async () => {
   await renderDashboard(mainContent);
 });
 
+// Security sub-routes
+router.register('/security/tuning', async () => {
+  updateNavigation('security/tuning');
+  await renderNginxTuning(mainContent);
+});
+
+router.register('/security/statistics', async () => {
+  updateNavigation('security/statistics');
+  await renderNginxStatistics(mainContent);
+});
+
+router.register('/security/waf', async () => {
+  updateNavigation('security/waf');
+  await renderSecurityDashboard(mainContent, 'waf');
+});
+
+// Redirect old routes to new tuning dashboard
+router.register('/security/nginx', async () => {
+  router.navigate('/security/tuning');
+});
+
+router.register('/security', async () => {
+  router.navigate('/security/tuning');
+});
+
 router.register('/proxies', async () => {
   updateNavigation('proxies');
   setHeader('Hosts', '<button id="addProxyBtn" class="btn btn-primary">+ Add Proxy</button>');
@@ -111,7 +158,13 @@ router.register('/proxies', async () => {
 
 router.register('/certificates', async () => {
   updateNavigation('certificates');
-  setHeader('TLS Certificates', '<button id="addCertBtn" class="btn btn-primary">+ Add Certificate</button>');
+  setHeader('TLS Certificates', `
+    <div style="display: flex; gap: 10px;">
+      <button id="addCertBtn" class="btn btn-primary">Upload Certificate</button>
+      <button id="orderCertBtn" class="btn btn-primary">Order Certificate</button>
+      <button id="apiSecretsBtn" class="btn btn-primary">API Secrets</button>
+    </div>
+  `);
   await renderCertificates(mainContent);
 });
 
@@ -127,10 +180,22 @@ router.register('/audit', async () => {
   await renderAuditLog(mainContent);
 });
 
+// Settings sub-routes
+router.register('/settings/general', async () => {
+  updateNavigation('settings/general');
+  setHeader('General Settings');
+  await renderSettings(mainContent, 'general');
+});
+
+router.register('/settings/security', async () => {
+  updateNavigation('settings/security');
+  setHeader('Security Settings');
+  await renderSettings(mainContent, 'security');
+});
+
+// Redirect old /settings route to /settings/general
 router.register('/settings', async () => {
-  updateNavigation('settings');
-  setHeader('Settings');
-  await renderSettings(mainContent);
+  router.navigate('/settings/general');
 });
 
 router.register('/advanced', async () => {
@@ -290,3 +355,4 @@ if (logoutBtn) {
 }
 
 // Initialize app
+setupNavigationGroups();

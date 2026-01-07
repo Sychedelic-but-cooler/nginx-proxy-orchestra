@@ -5,9 +5,12 @@ import { escapeHtml } from '../utils/sanitize.js';
 
 export async function renderProxies(container) {
   showLoading();
-  
+
   try {
-    const proxies = await api.getProxies();
+    const [proxies, allRateLimits] = await Promise.all([
+      api.getProxies(),
+      api.getRateLimits()
+    ]);
     state.set('proxies', proxies);
     
     if (proxies.length === 0) {
@@ -28,12 +31,15 @@ export async function renderProxies(container) {
                 <th>Domain(s)</th>
                 <th>Forward To</th>
                 <th>TLS</th>
+                <th>Rate Limit</th>
                 <th>Status</th>
                 <th>Actions</th>
               </tr>
             </thead>
             <tbody>
               ${proxies.map(proxy => {
+                // Find rate limit for this proxy
+                const rateLimit = allRateLimits.rateLimits.find(rl => rl.proxy_id === proxy.id && rl.enabled);
                 // Determine status badge
                 let statusBadge, statusText, statusClass;
                 if (proxy.config_status === 'error') {
@@ -78,6 +84,11 @@ export async function renderProxies(container) {
                     ${proxy.ssl_enabled ?
                       `<span class="badge badge-success">✓ ${escapeHtml(proxy.ssl_cert_name || 'Enabled')}</span>` :
                       '<span class="badge badge-danger">✗</span>'}
+                  </td>
+                  <td>
+                    ${rateLimit ?
+                      `<span class="badge badge-warning" title="Rate: ${rateLimit.rate}, Burst: ${rateLimit.burst}">⏱️ ${rateLimit.rate}</span>` :
+                      '<span class="badge badge-secondary">-</span>'}
                   </td>
                   <td>
                     <span class="badge ${statusClass}" title="${proxy.config_error || ''}">
@@ -156,16 +167,19 @@ function handleEditProxy(id) {
 
 async function showProxyForm(id = null) {
   showLoading();
-  
+
   try {
-    const [modules, certificates] = await Promise.all([
+    const [modules, certificates, rateLimits] = await Promise.all([
       api.getModules(),
-      api.getCertificates()
+      api.getCertificates(),
+      id ? api.getRateLimits(id) : Promise.resolve({ rateLimits: [] })
     ]);
 
     let proxy = null;
+    let currentRateLimit = null;
     if (id) {
       proxy = await api.getProxy(id);
+      currentRateLimit = rateLimits.rateLimits.find(rl => rl.proxy_id === id);
     }
 
     const modal = document.getElementById('modalContainer');
@@ -241,6 +255,49 @@ async function showProxyForm(id = null) {
                 `).join('')}
               </select>
             </div>
+
+            <hr style="margin: 24px 0; border: none; border-top: 1px solid var(--border-color);">
+
+            <!-- Rate Limiting Section -->
+            <div class="form-group">
+              <div class="checkbox-group">
+                <input type="checkbox" id="rateLimitEnabled" ${currentRateLimit ? 'checked' : ''}>
+                <label for="rateLimitEnabled">Enable Rate Limiting</label>
+                <small style="display: block; margin-left: 24px; color: var(--text-secondary);">
+                  Limit how many requests per minute clients can make to this host. Helps prevent abuse and DoS attacks.
+                </small>
+              </div>
+
+              <div id="rateLimitConfig" style="${currentRateLimit ? '' : 'display: none;'}">
+                <div class="form-group">
+                  <label for="rateLimitRate">Request Rate *</label>
+                  <select id="rateLimitRate" class="form-control">
+                    <option value="60r/m" ${currentRateLimit?.rate === '60r/m' ? 'selected' : ''}>60 requests/minute (Recommended)</option>
+                    <option value="360r/m" ${currentRateLimit?.rate === '360r/m' ? 'selected' : ''}>360 requests/minute (6 per second)</option>
+                    <option value="1000r/m" ${currentRateLimit?.rate === '1000r/m' ? 'selected' : ''}>1000 requests/minute (16 per second)</option>
+                    <option value="5000r/m" ${currentRateLimit?.rate === '5000r/m' ? 'selected' : ''}>5000 requests/minute (83 per second)</option>
+                  </select>
+                  <small>Choose how many requests each IP can make</small>
+                </div>
+
+                <div class="form-group">
+                  <label for="rateLimitBurst">Burst Allowance</label>
+                  <input type="number" id="rateLimitBurst" class="form-control" min="0" max="500"
+                    value="${currentRateLimit?.burst || 50}" placeholder="50">
+                  <small>Allow short bursts above the rate limit. Default is 50.</small>
+                </div>
+
+                <div class="checkbox-group">
+                  <input type="checkbox" id="rateLimitNodelay" ${currentRateLimit?.nodelay ? 'checked' : ''}>
+                  <label for="rateLimitNodelay">Reject Immediately (No Delay)</label>
+                </div>
+                <small style="display: block; margin-left: 24px; color: var(--text-secondary); margin-top: -8px;">
+                  When burst is exceeded, reject requests immediately instead of queuing them. More aggressive but prevents slowdowns.
+                </small>
+              </div>
+            </div>
+
+            <hr style="margin: 24px 0; border: none; border-top: 1px solid var(--border-color);">
 
             <div class="form-group">
               <label>Modules</label>
@@ -329,6 +386,11 @@ async function showProxyForm(id = null) {
     // TLS checkbox handler
     document.getElementById('sslEnabled').addEventListener('change', (e) => {
       document.getElementById('sslCertGroup').style.display = e.target.checked ? 'block' : 'none';
+    });
+
+    // Rate limiting checkbox handler
+    document.getElementById('rateLimitEnabled').addEventListener('change', (e) => {
+      document.getElementById('rateLimitConfig').style.display = e.target.checked ? 'block' : 'none';
     });
 
     // Load existing config if editing
@@ -690,19 +752,59 @@ async function showProxyForm(id = null) {
         module_ids: selectedModules
       };
 
+      // Collect rate limiting data
+      const rateLimitData = {
+        enabled: document.getElementById('rateLimitEnabled').checked,
+        rate: document.getElementById('rateLimitRate').value,
+        burst: parseInt(document.getElementById('rateLimitBurst').value) || 5,
+        nodelay: document.getElementById('rateLimitNodelay').checked ? 1 : 0
+      };
+
       // Update Advanced tab with latest Basic form data to keep in sync
       generateConfigFromBasic(false);
       advancedConfigLoaded = true;
 
       showLoading();
       try {
+        let proxyId = id;
+
+        // Save proxy first
         if (id) {
           await api.updateProxy(id, data);
-          showSuccess('Proxy updated successfully');
         } else {
-          await api.createProxy(data);
-          showSuccess('Proxy created successfully');
+          const result = await api.createProxy(data);
+          proxyId = result.id;
         }
+
+        // Handle rate limiting
+        if (rateLimitData.enabled) {
+          // Create or update rate limit
+          if (currentRateLimit) {
+            // Update existing rate limit
+            await api.updateRateLimit(currentRateLimit.id, {
+              rate: rateLimitData.rate,
+              burst: rateLimitData.burst,
+              nodelay: rateLimitData.nodelay,
+              enabled: 1
+            });
+          } else {
+            // Create new rate limit
+            await api.createRateLimit({
+              proxy_id: proxyId,
+              rate: rateLimitData.rate,
+              burst: rateLimitData.burst,
+              nodelay: rateLimitData.nodelay,
+              enabled: 1
+            });
+          }
+        } else {
+          // Rate limiting disabled - delete if exists
+          if (currentRateLimit) {
+            await api.deleteRateLimit(currentRateLimit.id);
+          }
+        }
+
+        showSuccess(id ? 'Proxy updated successfully' : 'Proxy created successfully');
         closeModal();
         await renderProxies(document.getElementById('mainContent'));
       } catch (error) {

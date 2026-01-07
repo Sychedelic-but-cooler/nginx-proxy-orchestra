@@ -1,6 +1,7 @@
 const { execSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
+const { ACME_WEBROOT } = require('./acme-setup');
 
 /**
  * Get the nginx config directory
@@ -121,13 +122,13 @@ function sanitizeFilename(name) {
 /**
  * Generate nginx server block configuration
  */
-function generateServerBlock(proxyHost, modules = []) {
+function generateServerBlock(proxyHost, modules = [], db = null) {
   const domains = proxyHost.domain_names.split(',').map(d => d.trim()).join(' ');
   const upstreamUrl = `${proxyHost.forward_scheme}://${proxyHost.forward_host}:${proxyHost.forward_port}`;
-  
+
   let config = `# Proxy: ${proxyHost.name}\n`;
   config += `server {\n`;
-  
+
   // Listen directives
   if (proxyHost.ssl_enabled) {
     config += `    listen 443 ssl http2;\n`;
@@ -136,11 +137,11 @@ function generateServerBlock(proxyHost, modules = []) {
     config += `    listen 80;\n`;
     config += `    listen [::]:80;\n`;
   }
-  
+
   config += `\n`;
   config += `    server_name ${domains};\n`;
   config += `\n`;
-  
+
   // SSL configuration
   if (proxyHost.ssl_enabled && proxyHost.ssl_cert_id) {
     // SSL paths will be filled in by the API handler
@@ -151,36 +152,84 @@ function generateServerBlock(proxyHost, modules = []) {
     config += `    ssl_prefer_server_ciphers on;\n`;
     config += `\n`;
   }
-  
-  // Include modules
-  for (const module of modules) {
-    config += `    # Module: ${module.name}\n`;
-    module.content.split('\n').forEach(line => {
-      if (line.trim()) {
-        config += `    ${line.trim()}\n`;
-      }
-    });
-    config += `\n`;
+
+  // Security features
+  if (db) {
+    const { generateServerSecurityConfig } = require('./security-config-generator');
+    config += generateServerSecurityConfig(db, proxyHost.id);
   }
-  
+
+  // Modules that belong at server level (headers, SSL settings, etc.)
+  const serverLevelModules = ['HSTS', 'Security Headers', 'HTTP/3 (QUIC)'];
+  const locationLevelModules = ['WebSocket Support', 'Real IP', 'Gzip Compression', 'Brotli Compression'];
+
+  // Include server-level modules
+  for (const module of modules) {
+    if (serverLevelModules.includes(module.name)) {
+      config += `    # Module: ${module.name}\n`;
+      module.content.split('\n').forEach(line => {
+        if (line.trim()) {
+          config += `    ${line.trim()}\n`;
+        }
+      });
+      config += `\n`;
+    }
+  }
+
+  // ACME challenge location for Let's Encrypt certificate validation
+  config += `    # ACME challenge for Let's Encrypt\n`;
+  config += `    location /.well-known/acme-challenge/ {\n`;
+  config += `        root ${ACME_WEBROOT};\n`;
+  config += `        allow all;\n`;
+  config += `    }\n`;
+  config += `\n`;
+
   // Location block
   config += `    location / {\n`;
   config += `        proxy_pass ${upstreamUrl};\n`;
   config += `        proxy_set_header Host $host;\n`;
-  config += `        proxy_set_header X-Real-IP $remote_addr;\n`;
-  config += `        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;\n`;
-  config += `        proxy_set_header X-Forwarded-Proto $scheme;\n`;
-  
+
+  // Only set default forwarding headers if Real IP module is not enabled
+  const hasRealIPModule = modules.some(m => m.name === 'Real IP');
+  if (!hasRealIPModule) {
+    config += `        proxy_set_header X-Real-IP $remote_addr;\n`;
+    config += `        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;\n`;
+    config += `        proxy_set_header X-Forwarded-Proto $scheme;\n`;
+  }
+  config += `\n`;
+
+  // Always enable Gzip compression (default for all hosts)
+  config += `        # Gzip Compression (always enabled)\n`;
+  config += `        gzip on;\n`;
+  config += `        gzip_vary on;\n`;
+  config += `        gzip_proxied any;\n`;
+  config += `        gzip_comp_level 6;\n`;
+  config += `        gzip_types text/plain text/css text/xml text/javascript application/json application/javascript application/xml+rss application/rss+xml font/truetype font/opentype application/vnd.ms-fontobject image/svg+xml;\n`;
+  config += `\n`;
+
+  // Include location-level modules (proxy settings, WebSocket, Brotli compression)
+  // Note: Gzip module is ignored as it's always enabled by default
+  for (const module of modules) {
+    if (locationLevelModules.includes(module.name) && module.name !== 'Gzip Compression') {
+      config += `        # Module: ${module.name}\n`;
+      module.content.split('\n').forEach(line => {
+        if (line.trim()) {
+          config += `        ${line.trim()}\n`;
+        }
+      });
+      config += `\n`;
+    }
+  }
+
   // Advanced config
   if (proxyHost.advanced_config) {
-    config += `\n`;
     proxyHost.advanced_config.split('\n').forEach(line => {
       if (line.trim()) {
         config += `        ${line.trim()}\n`;
       }
     });
   }
-  
+
   config += `    }\n`;
   config += `}\n`;
   
@@ -235,9 +284,20 @@ function generate404Block(proxyHost) {
   config += `\n`;
   config += `    server_name ${domains};\n`;
   config += `\n`;
-  config += `    return 404;\n`;
+
+  // ACME challenge location for Let's Encrypt certificate validation
+  config += `    # ACME challenge for Let's Encrypt\n`;
+  config += `    location /.well-known/acme-challenge/ {\n`;
+  config += `        root ${ACME_WEBROOT};\n`;
+  config += `        allow all;\n`;
+  config += `    }\n`;
+  config += `\n`;
+
+  config += `    location / {\n`;
+  config += `        return 404;\n`;
+  config += `    }\n`;
   config += `}\n`;
-  
+
   return config;
 }
 
