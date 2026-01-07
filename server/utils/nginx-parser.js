@@ -241,16 +241,23 @@ function generateServerBlock(proxyHost, modules = [], db = null) {
  */
 function generateStreamBlock(proxyHost) {
   const upstreamName = `stream_${proxyHost.name.replace(/[^a-zA-Z0-9]/g, '_')}`;
-  
-  let config = `# Stream: ${proxyHost.name}\n`;
+  const protocol = proxyHost.stream_protocol || 'tcp';
+  const incomingPort = proxyHost.incoming_port || proxyHost.forward_port;
+
+  let config = `# Stream: ${proxyHost.name} (${protocol.toUpperCase()})\n`;
   config += `upstream ${upstreamName} {\n`;
   config += `    server ${proxyHost.forward_host}:${proxyHost.forward_port};\n`;
   config += `}\n\n`;
-  
+
   config += `server {\n`;
-  config += `    listen ${proxyHost.forward_port};\n`;
+  config += `    listen ${incomingPort}${protocol === 'udp' ? ' udp' : ''};\n`;
+
+  if (protocol === 'tcp') {
+    config += `    listen [::]:${incomingPort};\n`;
+  }
+
   config += `    proxy_pass ${upstreamName};\n`;
-  
+
   if (proxyHost.advanced_config) {
     config += `\n`;
     proxyHost.advanced_config.split('\n').forEach(line => {
@@ -259,9 +266,9 @@ function generateStreamBlock(proxyHost) {
       }
     });
   }
-  
+
   config += `}\n`;
-  
+
   return config;
 }
 

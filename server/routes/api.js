@@ -563,10 +563,26 @@ function handleGetProxy(req, res, parsedUrl) {
 
 async function handleCreateProxy(req, res) {
   const body = await parseBody(req);
-  const { name, type, domain_names, forward_scheme, forward_host, forward_port, ssl_enabled, ssl_cert_id, advanced_config, module_ids } = body;
+  const { name, type, domain_names, forward_scheme, forward_host, forward_port, ssl_enabled, ssl_cert_id, advanced_config, module_ids, stream_protocol, incoming_port } = body;
 
-  if (!name || !domain_names || !forward_host || !forward_port) {
-    return sendJSON(res, { error: 'Missing required fields' }, 400);
+  // Validation based on type
+  if (!name) {
+    return sendJSON(res, { error: 'Name is required' }, 400);
+  }
+
+  if (type === 'stream') {
+    if (!forward_host || !forward_port || !incoming_port) {
+      return sendJSON(res, { error: 'Stream hosts require forward_host, forward_port, and incoming_port' }, 400);
+    }
+  } else if (type === '404') {
+    if (!domain_names) {
+      return sendJSON(res, { error: '404 hosts require domain_names' }, 400);
+    }
+  } else {
+    // Reverse proxy
+    if (!domain_names || !forward_host || !forward_port) {
+      return sendJSON(res, { error: 'Reverse proxy requires domain_names, forward_host, and forward_port' }, 400);
+    }
   }
 
   let proxyId = null;
@@ -580,10 +596,12 @@ async function handleCreateProxy(req, res) {
     // Insert proxy with initial status
     const result = db.prepare(`
       INSERT INTO proxy_hosts (name, type, domain_names, forward_scheme, forward_host, forward_port,
-                                ssl_enabled, ssl_cert_id, advanced_config, config_filename, config_status)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')
+                                ssl_enabled, ssl_cert_id, advanced_config, config_filename, config_status,
+                                stream_protocol, incoming_port)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)
     `).run(name, type || 'reverse', domain_names, forward_scheme || 'http', forward_host, forward_port,
-           ssl_enabled ? 1 : 0, ssl_cert_id || null, advanced_config || null, configFilename);
+           ssl_enabled ? 1 : 0, ssl_cert_id || null, advanced_config || null, configFilename,
+           stream_protocol || null, incoming_port || null);
 
     proxyId = result.lastInsertRowid;
 
@@ -687,19 +705,23 @@ async function handleUpdateProxy(req, res, parsedUrl) {
     return sendJSON(res, { error: 'Proxy not found' }, 404);
   }
 
-  const { name, domain_names, forward_scheme, forward_host, forward_port, ssl_enabled, ssl_cert_id, advanced_config, module_ids } = body;
+  const { name, domain_names, forward_scheme, forward_host, forward_port, ssl_enabled, ssl_cert_id, advanced_config, module_ids, stream_protocol, incoming_port } = body;
 
   try {
     db.prepare(`
-      UPDATE proxy_hosts 
+      UPDATE proxy_hosts
       SET name = ?, domain_names = ?, forward_scheme = ?, forward_host = ?, forward_port = ?,
-          ssl_enabled = ?, ssl_cert_id = ?, advanced_config = ?, updated_at = CURRENT_TIMESTAMP
+          ssl_enabled = ?, ssl_cert_id = ?, advanced_config = ?, stream_protocol = ?, incoming_port = ?,
+          updated_at = CURRENT_TIMESTAMP
       WHERE id = ?
     `).run(name || proxy.name, domain_names || proxy.domain_names, forward_scheme || proxy.forward_scheme,
-           forward_host || proxy.forward_host, forward_port || proxy.forward_port, 
+           forward_host || proxy.forward_host, forward_port || proxy.forward_port,
            ssl_enabled !== undefined ? (ssl_enabled ? 1 : 0) : proxy.ssl_enabled,
            ssl_cert_id !== undefined ? ssl_cert_id : proxy.ssl_cert_id,
-           advanced_config !== undefined ? advanced_config : proxy.advanced_config, id);
+           advanced_config !== undefined ? advanced_config : proxy.advanced_config,
+           stream_protocol !== undefined ? stream_protocol : proxy.stream_protocol,
+           incoming_port !== undefined ? incoming_port : proxy.incoming_port,
+           id);
 
     // Update modules
     if (module_ids !== undefined) {

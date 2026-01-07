@@ -62,6 +62,22 @@ export async function renderProxies(container) {
                   ? `${proxy.ssl_enabled ? 'https' : 'http'}://${firstDomain}`
                   : null;
 
+                // Build forward to display based on type
+                let forwardTo;
+                if (proxy.type === 'stream') {
+                  const protocol = (proxy.stream_protocol || 'tcp').toUpperCase();
+                  forwardTo = `${protocol}: ${proxy.incoming_port || '?'} → ${escapeHtml(proxy.forward_host)}:${proxy.forward_port}`;
+                } else if (proxy.type === '404') {
+                  forwardTo = '<span class="badge badge-secondary">404 Response</span>';
+                } else {
+                  forwardTo = `${escapeHtml(proxy.forward_scheme)}://${escapeHtml(proxy.forward_host)}:${proxy.forward_port}`;
+                }
+
+                // Domain display
+                const domainDisplay = (proxy.domain_names === 'N/A' || !proxy.domain_names)
+                  ? '<span class="badge badge-secondary">-</span>'
+                  : escapeHtml(proxy.domain_names);
+
                 return `
                 <tr ${proxy.config_status === 'error' ? 'style="background-color: rgba(220, 53, 69, 0.05);"' : ''}>
                   <td>
@@ -78,15 +94,16 @@ export async function renderProxies(container) {
                     ${proxy.config_error ? `<br><small style="color: var(--danger-color);" title="${escapeHtml(proxy.config_error)}">⚠️ ${escapeHtml(proxy.config_error)}</small>` : ''}
                   </td>
                   <td><span class="badge badge-info">${escapeHtml(proxy.type)}</span></td>
-                  <td>${escapeHtml(proxy.domain_names)}</td>
-                  <td>${escapeHtml(proxy.forward_scheme)}://${escapeHtml(proxy.forward_host)}:${proxy.forward_port}</td>
+                  <td>${domainDisplay}</td>
+                  <td>${forwardTo}</td>
                   <td>
-                    ${proxy.ssl_enabled ?
-                      `<span class="badge badge-success">✓ ${escapeHtml(proxy.ssl_cert_name || 'Enabled')}</span>` :
-                      '<span class="badge badge-danger">✗</span>'}
+                    ${proxy.type === 'stream' ? '<span class="badge badge-secondary">N/A</span>' :
+                      (proxy.ssl_enabled ?
+                        `<span class="badge badge-success">✓ ${escapeHtml(proxy.ssl_cert_name || 'Enabled')}</span>` :
+                        '<span class="badge badge-danger">✗</span>')}
                   </td>
                   <td>
-                    ${rateLimit ?
+                    ${proxy.type === 'reverse' && rateLimit ?
                       `<span class="badge badge-warning" title="Rate: ${rateLimit.rate}, Burst: ${rateLimit.burst}">⏱️ ${rateLimit.rate}</span>` :
                       '<span class="badge badge-secondary">-</span>'}
                   </td>
@@ -206,22 +223,41 @@ async function showProxyForm(id = null) {
               <label for="proxyName">Name *</label>
               <input type="text" id="proxyName" required value="${proxy?.name || ''}">
             </div>
-            
+
             <div class="form-group">
-              <label for="proxyType">Type</label>
+              <label for="proxyType">Host Type *</label>
               <select id="proxyType">
                 <option value="reverse" ${!proxy || proxy.type === 'reverse' ? 'selected' : ''}>Reverse Proxy</option>
                 <option value="stream" ${proxy?.type === 'stream' ? 'selected' : ''}>Stream (TCP/UDP)</option>
                 <option value="404" ${proxy?.type === '404' ? 'selected' : ''}>404 Host</option>
               </select>
+              <small class="field-help" id="typeHelp"></small>
             </div>
 
-            <div class="form-group">
+            <!-- Domain Names (Reverse & 404 only) -->
+            <div class="form-group" id="domainNamesGroup">
               <label for="domainNames">Domain Names * (comma-separated)</label>
-              <input type="text" id="domainNames" required value="${proxy?.domain_names || ''}" placeholder="example.com, www.example.com">
+              <input type="text" id="domainNames" value="${proxy?.domain_names || ''}" placeholder="example.com, www.example.com">
             </div>
 
-            <div class="form-group">
+            <!-- Stream Protocol (Stream only) -->
+            <div class="form-group" id="streamProtocolGroup" style="display: none;">
+              <label for="streamProtocol">Protocol *</label>
+              <select id="streamProtocol">
+                <option value="tcp" ${!proxy || proxy.stream_protocol === 'tcp' ? 'selected' : ''}>TCP</option>
+                <option value="udp" ${proxy?.stream_protocol === 'udp' ? 'selected' : ''}>UDP</option>
+              </select>
+            </div>
+
+            <!-- Incoming Port (Stream only) -->
+            <div class="form-group" id="incomingPortGroup" style="display: none;">
+              <label for="incomingPort">Incoming Port *</label>
+              <input type="number" id="incomingPort" value="${proxy?.incoming_port || ''}" min="1" max="65535" placeholder="8080">
+              <small>The port nginx will listen on</small>
+            </div>
+
+            <!-- Forward Scheme (Reverse only) -->
+            <div class="form-group" id="forwardSchemeGroup">
               <label for="forwardScheme">Forward Scheme</label>
               <select id="forwardScheme">
                 <option value="http" ${!proxy || proxy.forward_scheme === 'http' ? 'selected' : ''}>http</option>
@@ -229,14 +265,16 @@ async function showProxyForm(id = null) {
               </select>
             </div>
 
-            <div class="form-group">
+            <!-- Forward Host (Reverse & Stream only) -->
+            <div class="form-group" id="forwardHostGroup">
               <label for="forwardHost">Forward Host *</label>
-              <input type="text" id="forwardHost" required value="${proxy?.forward_host || ''}" placeholder="192.168.1.100 or hostname">
+              <input type="text" id="forwardHost" value="${proxy?.forward_host || ''}" placeholder="192.168.1.100 or hostname">
             </div>
 
-            <div class="form-group">
+            <!-- Forward Port (Reverse & Stream only) -->
+            <div class="form-group" id="forwardPortGroup">
               <label for="forwardPort">Forward Port *</label>
-              <input type="number" id="forwardPort" required value="${proxy?.forward_port || '80'}" min="1" max="65535">
+              <input type="number" id="forwardPort" value="${proxy?.forward_port || '80'}" min="1" max="65535">
             </div>
 
             <div class="checkbox-group">
@@ -382,6 +420,74 @@ async function showProxyForm(id = null) {
         closeModal();
       }
     });
+
+    // Type change handler - show/hide fields based on type
+    const updateFieldVisibility = () => {
+      const type = document.getElementById('proxyType').value;
+      const typeHelp = document.getElementById('typeHelp');
+
+      // Show/hide field groups based on type
+      const showElement = (id, show) => {
+        const el = document.getElementById(id);
+        if (el) el.style.display = show ? 'block' : 'none';
+      };
+
+      if (type === 'reverse') {
+        // Reverse Proxy: Domain, Scheme, Forward Host/Port, SSL
+        typeHelp.textContent = 'Routes HTTP/HTTPS traffic based on domain name';
+        showElement('domainNamesGroup', true);
+        showElement('forwardSchemeGroup', true);
+        showElement('forwardHostGroup', true);
+        showElement('forwardPortGroup', true);
+        showElement('streamProtocolGroup', false);
+        showElement('incomingPortGroup', false);
+        document.getElementById('sslEnabled').closest('.checkbox-group').style.display = 'block';
+        document.querySelectorAll('.form-group').forEach(el => {
+          if (el.querySelector('label')?.textContent?.includes('Modules') ||
+              el.querySelector('label')?.textContent?.includes('Rate Limiting')) {
+            el.style.display = 'block';
+          }
+        });
+      } else if (type === 'stream') {
+        // Stream: Protocol, Incoming Port, Forward Host/Port (no domain, no SSL)
+        typeHelp.textContent = 'TCP/UDP proxy - forwards traffic to backend port';
+        showElement('domainNamesGroup', false);
+        showElement('forwardSchemeGroup', false);
+        showElement('forwardHostGroup', true);
+        showElement('forwardPortGroup', true);
+        showElement('streamProtocolGroup', true);
+        showElement('incomingPortGroup', true);
+        document.getElementById('sslEnabled').closest('.checkbox-group').style.display = 'none';
+        document.querySelectorAll('.form-group').forEach(el => {
+          if (el.querySelector('label')?.textContent?.includes('Modules') ||
+              el.querySelector('label')?.textContent?.includes('Rate Limiting')) {
+            el.style.display = 'none';
+          }
+        });
+      } else if (type === '404') {
+        // 404 Host: Domain only
+        typeHelp.textContent = 'Returns 404 for specified domains';
+        showElement('domainNamesGroup', true);
+        showElement('forwardSchemeGroup', false);
+        showElement('forwardHostGroup', false);
+        showElement('forwardPortGroup', false);
+        showElement('streamProtocolGroup', false);
+        showElement('incomingPortGroup', false);
+        document.getElementById('sslEnabled').closest('.checkbox-group').style.display = 'block';
+        document.querySelectorAll('.form-group').forEach(el => {
+          if (el.querySelector('label')?.textContent?.includes('Modules') ||
+              el.querySelector('label')?.textContent?.includes('Rate Limiting')) {
+            el.style.display = 'none';
+          }
+        });
+      }
+    };
+
+    // Initial field visibility
+    updateFieldVisibility();
+
+    // Update on type change
+    document.getElementById('proxyType').addEventListener('change', updateFieldVisibility);
 
     // TLS checkbox handler
     document.getElementById('sslEnabled').addEventListener('change', (e) => {
@@ -736,29 +842,59 @@ async function showProxyForm(id = null) {
     document.getElementById('proxyForm').addEventListener('submit', async (e) => {
       e.preventDefault();
 
-      const selectedModules = Array.from(document.querySelectorAll('[id^="module_"]:checked'))
-        .map(cb => parseInt(cb.value));
+      const type = document.getElementById('proxyType').value;
 
+      // Build base data object
       const data = {
         name: document.getElementById('proxyName').value,
-        type: document.getElementById('proxyType').value,
-        domain_names: document.getElementById('domainNames').value,
-        forward_scheme: document.getElementById('forwardScheme').value,
-        forward_host: document.getElementById('forwardHost').value,
-        forward_port: parseInt(document.getElementById('forwardPort').value),
-        ssl_enabled: document.getElementById('sslEnabled').checked,
-        ssl_cert_id: document.getElementById('sslCert').value || null,
-        advanced_config: document.getElementById('advancedConfig').value || null,
-        module_ids: selectedModules
+        type: type
       };
 
-      // Collect rate limiting data
-      const rateLimitData = {
+      // Add type-specific fields
+      if (type === 'reverse') {
+        // Reverse proxy needs all standard fields
+        const selectedModules = Array.from(document.querySelectorAll('[id^="module_"]:checked'))
+          .map(cb => parseInt(cb.value));
+
+        data.domain_names = document.getElementById('domainNames').value;
+        data.forward_scheme = document.getElementById('forwardScheme').value;
+        data.forward_host = document.getElementById('forwardHost').value;
+        data.forward_port = parseInt(document.getElementById('forwardPort').value);
+        data.ssl_enabled = document.getElementById('sslEnabled').checked;
+        data.ssl_cert_id = document.getElementById('sslCert').value || null;
+        data.advanced_config = document.getElementById('advancedConfig').value || null;
+        data.module_ids = selectedModules;
+      } else if (type === 'stream') {
+        // Stream needs protocol, incoming port, forward host/port
+        data.domain_names = 'N/A'; // Not used for streams
+        data.stream_protocol = document.getElementById('streamProtocol').value;
+        data.incoming_port = parseInt(document.getElementById('incomingPort').value);
+        data.forward_scheme = 'tcp'; // Not used but required by schema
+        data.forward_host = document.getElementById('forwardHost').value;
+        data.forward_port = parseInt(document.getElementById('forwardPort').value);
+        data.ssl_enabled = false;
+        data.ssl_cert_id = null;
+        data.advanced_config = document.getElementById('advancedConfig').value || null;
+        data.module_ids = [];
+      } else if (type === '404') {
+        // 404 host only needs domain names
+        data.domain_names = document.getElementById('domainNames').value;
+        data.forward_scheme = 'http'; // Not used but required by schema
+        data.forward_host = 'localhost'; // Not used but required by schema
+        data.forward_port = 80; // Not used but required by schema
+        data.ssl_enabled = document.getElementById('sslEnabled').checked;
+        data.ssl_cert_id = document.getElementById('sslCert').value || null;
+        data.advanced_config = document.getElementById('advancedConfig').value || null;
+        data.module_ids = [];
+      }
+
+      // Collect rate limiting data (only for reverse proxies)
+      const rateLimitData = type === 'reverse' ? {
         enabled: document.getElementById('rateLimitEnabled').checked,
         rate: document.getElementById('rateLimitRate').value,
         burst: parseInt(document.getElementById('rateLimitBurst').value) || 5,
         nodelay: document.getElementById('rateLimitNodelay').checked ? 1 : 0
-      };
+      } : { enabled: false };
 
       // Update Advanced tab with latest Basic form data to keep in sync
       generateConfigFromBasic(false);
