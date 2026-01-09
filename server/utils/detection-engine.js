@@ -148,8 +148,12 @@ function startDetectionEngine() {
     return;
   }
 
+  // Get WAF database
+  const { getWAFDb } = require('../waf-db');
+  const wafDb = getWAFDb();
+
   // Get the last event ID from database on startup
-  const lastEvent = db.prepare('SELECT id FROM waf_events ORDER BY id DESC LIMIT 1').get();
+  const lastEvent = wafDb.prepare('SELECT id FROM waf_events ORDER BY id DESC LIMIT 1').get();
   lastProcessedEventId = lastEvent?.id || 0;
 
   console.log(`Starting detection engine from event ID: ${lastProcessedEventId}`);
@@ -158,7 +162,7 @@ function startDetectionEngine() {
   pollingInterval = setInterval(() => {
     try {
       // Get new events since last check
-      const events = db.prepare(`
+      const events = wafDb.prepare(`
         SELECT * FROM waf_events
         WHERE id > ?
         ORDER BY id ASC

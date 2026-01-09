@@ -25,14 +25,22 @@ const {
   refreshModuleCache
 } = require('../utils/nginx-ops');
 const {
+  reloadManager
+} = require('../utils/nginx-reload-manager');
+const {
+  getWAFDb
+} = require('../waf-db');
+const {
   parseCertificate,
   validateCertificateKeyPair,
   saveCertificateFiles,
   deleteCertificateFiles
 } = require('../utils/ssl-parser');
 const {
-  parseAccessLogs
-} = require('../utils/log-parser');
+  getCachedNginxStats,
+  getCachedTrafficStats,
+  manualRefresh: refreshStatsCache
+} = require('../utils/stats-cache-service');
 const {
   getNginxStatistics,
   getTopCountries
@@ -214,6 +222,10 @@ async function handleAPI(req, res, parsedUrl) {
 
     if (pathname === '/api/nginx/reload' && method === 'POST') {
       return handleNginxReload(req, res);
+    }
+
+    if (pathname.match(/^\/api\/nginx\/reload-status\/\d+$/) && method === 'GET') {
+      return handleNginxReloadStatus(req, res, parsedUrl);
     }
 
     if (pathname === '/api/nginx/status') {
@@ -859,11 +871,8 @@ async function handleCreateProxy(req, res) {
       throw new Error(`Nginx config test failed: ${testResult.error}`);
     }
 
-    // Reload nginx to apply changes
-    const reloadResult = safeReload();
-    if (!reloadResult.success) {
-      throw new Error(`Nginx reload failed: ${reloadResult.error}`);
-    }
+    // Queue nginx reload to apply changes
+    const { reloadId } = await reloadManager.queueReload();
 
     // Update status to active (keep the enabled state we already set)
     db.prepare(`
@@ -877,7 +886,7 @@ async function handleCreateProxy(req, res) {
     // Get updated proxy for response
     const updatedProxy = db.prepare('SELECT * FROM proxy_hosts WHERE id = ?').get(proxyId);
 
-    sendJSON(res, { success: true, id: proxyId, proxy: updatedProxy }, 201);
+    sendJSON(res, { success: true, id: proxyId, proxy: updatedProxy, reloadId }, 201);
   } catch (error) {
     console.error('Create proxy error:', error);
 
@@ -999,11 +1008,8 @@ async function handleUpdateProxy(req, res, parsedUrl) {
       throw new Error(`Nginx config test failed: ${testResult.error}`);
     }
 
-    // Reload nginx to apply changes
-    const reloadResult = safeReload();
-    if (!reloadResult.success) {
-      throw new Error(`Nginx reload failed: ${reloadResult.error}`);
-    }
+    // Queue nginx reload to apply changes
+    const { reloadId } = await reloadManager.queueReload();
 
     // Update config status
     db.prepare(`
@@ -1016,7 +1022,7 @@ async function handleUpdateProxy(req, res, parsedUrl) {
 
     // Get final proxy state
     const finalProxy = db.prepare('SELECT * FROM proxy_hosts WHERE id = ?').get(id);
-    sendJSON(res, { success: true, proxy: finalProxy });
+    sendJSON(res, { success: true, proxy: finalProxy, reloadId });
   } catch (error) {
     console.error('Update proxy error:', error);
 
@@ -1031,7 +1037,7 @@ async function handleUpdateProxy(req, res, parsedUrl) {
   }
 }
 
-function handleDeleteProxy(req, res, parsedUrl) {
+async function handleDeleteProxy(req, res, parsedUrl) {
   const id = parseInt(parsedUrl.pathname.split('/')[3]);
 
   const proxy = db.prepare('SELECT name, config_filename FROM proxy_hosts WHERE id = ?').get(id);
@@ -1046,19 +1052,19 @@ function handleDeleteProxy(req, res, parsedUrl) {
 
     db.prepare('DELETE FROM proxy_hosts WHERE id = ?').run(id);
 
-    // Reload nginx to apply deletion
-    safeReload();
+    // Queue nginx reload to apply deletion
+    const { reloadId } = await reloadManager.queueReload();
 
     logAudit(req.user.userId, 'delete', 'proxy', id, JSON.stringify({ name: proxy.name }), getClientIP(req));
 
-    sendJSON(res, { success: true });
+    sendJSON(res, { success: true, reloadId });
   } catch (error) {
     console.error('Delete proxy error:', error);
     sendJSON(res, { error: error.message }, 500);
   }
 }
 
-function handleToggleProxy(req, res, parsedUrl) {
+async function handleToggleProxy(req, res, parsedUrl) {
   const id = parseInt(parsedUrl.pathname.split('/')[3]);
 
   const proxy = db.prepare('SELECT name, enabled, config_filename FROM proxy_hosts WHERE id = ?').get(id);
@@ -1078,17 +1084,12 @@ function handleToggleProxy(req, res, parsedUrl) {
       disableNginxConfig(filename);
     }
 
-    // Reload nginx to apply change
-    const reloadResult = safeReload();
-    if (!reloadResult.success) {
-      // Rollback the change
-      db.prepare('UPDATE proxy_hosts SET enabled = ? WHERE id = ?').run(proxy.enabled, id);
-      throw new Error(`Nginx reload failed: ${reloadResult.error}`);
-    }
+    // Queue nginx reload to apply change
+    const { reloadId } = await reloadManager.queueReload();
 
     logAudit(req.user.userId, newEnabled ? 'enable' : 'disable', 'proxy', id, JSON.stringify({ name: proxy.name }), getClientIP(req));
 
-    sendJSON(res, { success: true, enabled: newEnabled });
+    sendJSON(res, { success: true, enabled: newEnabled, reloadId });
   } catch (error) {
     console.error('Toggle proxy error:', error);
     sendJSON(res, { error: error.message }, 500);
@@ -1387,7 +1388,7 @@ async function handleCreateCertificate(req, res) {
   }
 }
 
-function handleDeleteCertificate(req, res, parsedUrl) {
+async function handleDeleteCertificate(req, res, parsedUrl) {
   const id = parseInt(parsedUrl.pathname.split('/')[3]);
 
   const cert = db.prepare('SELECT name, cert_path, key_path FROM ssl_certificates WHERE id = ?').get(id);
@@ -1444,7 +1445,7 @@ function handleDeleteCertificate(req, res, parsedUrl) {
       // Test and reload nginx
       const testResult = testNginxConfig();
       if (testResult.success) {
-        safeReload();
+        await reloadManager.queueReload();
       }
     }
 
@@ -1490,16 +1491,18 @@ function handleNginxTest(req, res) {
   sendJSON(res, result);
 }
 
-function handleNginxReload(req, res) {
-  const result = safeReload();
+async function handleNginxReload(req, res) {
+  const { reloadId } = await reloadManager.queueReload();
 
-  if (result.success) {
-    logAudit(req.user.userId, 'reload_nginx', 'nginx', null, null, getClientIP(req));
-    // Refresh module cache after successful reload
-    refreshModuleCache();
-  }
+  logAudit(req.user.userId, 'reload_nginx', 'nginx', null, null, getClientIP(req));
 
-  sendJSON(res, result);
+  sendJSON(res, { success: true, reloadId, message: 'Reload queued' });
+}
+
+function handleNginxReloadStatus(req, res, parsedUrl) {
+  const reloadId = parseInt(parsedUrl.pathname.split('/').pop());
+  const status = reloadManager.getReloadStatus(reloadId);
+  sendJSON(res, status);
 }
 
 function handleNginxStatus(req, res) {
@@ -1578,7 +1581,7 @@ async function handleUpdateSettings(req, res) {
       initializeDefaultServer();
 
       // Reload nginx to apply changes
-      const reloadResult = safeReload();
+      const { reloadId } = await reloadManager.queueReload();
       if (!reloadResult.success) {
         return sendJSON(res, { error: `Settings saved but nginx reload failed: ${reloadResult.error}` }, 500);
       }
@@ -1757,10 +1760,7 @@ async function handleSaveCustomConfig(req, res) {
     }
 
     // Reload nginx to apply changes
-    const reloadResult = safeReload();
-    if (!reloadResult.success) {
-      throw new Error(`Nginx reload failed: ${reloadResult.error}`);
-    }
+    const { reloadId } = await reloadManager.queueReload();
 
     // Update status to active
     db.prepare(`
@@ -1813,21 +1813,54 @@ async function handleSaveCustomConfig(req, res) {
 // Statistics Handlers
 // ============================================================================
 
-function handleGetStatistics(req, res, parsedUrl) {
+async function handleGetStatistics(req, res, parsedUrl) {
   try {
     // Get query parameters
     const params = new URLSearchParams(parsedUrl.search);
     const timeRange = params.get('range') || '24h';
-    // Read entire log file by default (null = no line limit, reads since last rotation)
-    const maxLines = params.get('lines') ? parseInt(params.get('lines')) : null;
     // Allow forcing cache refresh via query parameter
     const forceRefresh = params.get('refresh') === 'true';
 
-    // Get proxy hosts for better host matching
-    const proxyHosts = db.prepare('SELECT id, name, domain_names FROM proxy_hosts').all();
+    // Force refresh if requested
+    if (forceRefresh) {
+      await refreshStatsCache();
+    }
 
-    // Parse access logs (uses 30-minute cache unless forceRefresh or maxLines specified)
-    const statistics = parseAccessLogs(proxyHosts, timeRange, maxLines, forceRefresh);
+    // Get traffic statistics from unified cache (5-minute refresh)
+    let statistics = getCachedTrafficStats(timeRange);
+
+    // If cache not ready yet, return empty stats
+    if (!statistics) {
+      statistics = {
+        totalRequests: 0,
+        uniqueVisitors: 0,
+        statusCodes: { '2xx': 0, '3xx': 0, '4xx': 0, '5xx': 0 },
+        errors4xx: 0,
+        errors5xx: 0,
+        errorRate4xx: '0.00',
+        errorRate5xx: '0.00',
+        topIPs: [],
+        topErrorIPs: [],
+        topHosts: [],
+        requestsByHour: Array(24).fill(0),
+        totalBytes: 0,
+        totalBytesFormatted: '0 B',
+        timeRangeStart: null,
+        timeRangeEnd: null
+      };
+    } else {
+      // Map to legacy format for backward compatibility
+      statistics = {
+        ...statistics,
+        uniqueVisitors: statistics.totalRequests, // Approximate
+        statusCodes: statistics.statusCategories,
+        errors4xx: statistics.statusCategories['4xx'] || 0,
+        errors5xx: statistics.statusCategories['5xx'] || 0,
+        errorRate4xx: statistics.errorRate,
+        errorRate5xx: statistics.errorRate
+        // topHosts is already included from statistics spread above
+      };
+    }
 
     sendJSON(res, statistics);
   } catch (error) {
@@ -1905,7 +1938,7 @@ async function handleCreateSecurityRule(req, res) {
 
     // Trigger nginx reload
     const { safeReload } = require('../utils/nginx-ops');
-    const reloadResult = safeReload();
+    const { reloadId } = await reloadManager.queueReload();
     if (!reloadResult.success) {
       console.error('Nginx reload error:', reloadResult.error);
     }
@@ -1960,7 +1993,7 @@ async function handleUpdateSecurityRule(req, res, parsedUrl) {
 
     // Trigger nginx reload
     const { safeReload } = require('../utils/nginx-ops');
-    const reloadResult = safeReload();
+    const { reloadId } = await reloadManager.queueReload();
     if (!reloadResult.success) {
       console.error('Nginx reload error:', reloadResult.error);
     }
@@ -1972,7 +2005,7 @@ async function handleUpdateSecurityRule(req, res, parsedUrl) {
   }
 }
 
-function handleDeleteSecurityRule(req, res, parsedUrl) {
+async function handleDeleteSecurityRule(req, res, parsedUrl) {
   try {
     const id = parseInt(parsedUrl.pathname.split('/')[4]);
 
@@ -1999,7 +2032,7 @@ function handleDeleteSecurityRule(req, res, parsedUrl) {
 
     // Trigger nginx reload
     const { safeReload } = require('../utils/nginx-ops');
-    const reloadResult = safeReload();
+    const { reloadId } = await reloadManager.queueReload();
     if (!reloadResult.success) {
       console.error('Nginx reload error:', reloadResult.error);
     }
@@ -2060,7 +2093,7 @@ async function handleBulkImportSecurityRules(req, res) {
 
     // Trigger nginx reload
     const { safeReload } = require('../utils/nginx-ops');
-    const reloadResult = safeReload();
+    const { reloadId } = await reloadManager.queueReload();
     if (!reloadResult.success) {
       console.error('Nginx reload error:', reloadResult.error);
     }
@@ -2180,7 +2213,7 @@ async function handleCreateRateLimit(req, res) {
 
     // Trigger nginx reload
     const { safeReload } = require('../utils/nginx-ops');
-    const reloadResult = safeReload();
+    const { reloadId } = await reloadManager.queueReload();
     if (!reloadResult.success) {
       console.error('Nginx reload error:', reloadResult.error);
     }
@@ -2266,7 +2299,7 @@ async function handleUpdateRateLimit(req, res, parsedUrl) {
 
     // Trigger nginx reload
     const { safeReload } = require('../utils/nginx-ops');
-    const reloadResult = safeReload();
+    const { reloadId } = await reloadManager.queueReload();
     if (!reloadResult.success) {
       console.error('Nginx reload error:', reloadResult.error);
     }
@@ -2278,7 +2311,7 @@ async function handleUpdateRateLimit(req, res, parsedUrl) {
   }
 }
 
-function handleDeleteRateLimit(req, res, parsedUrl) {
+async function handleDeleteRateLimit(req, res, parsedUrl) {
   try {
     const id = parseInt(parsedUrl.pathname.split('/')[4]);
 
@@ -2338,7 +2371,7 @@ function handleDeleteRateLimit(req, res, parsedUrl) {
 
     // Trigger nginx reload
     const { safeReload } = require('../utils/nginx-ops');
-    const reloadResult = safeReload();
+    const { reloadId } = await reloadManager.queueReload();
     if (!reloadResult.success) {
       console.error('Nginx reload error:', reloadResult.error);
     }
@@ -2427,7 +2460,7 @@ async function handleUpdateSecuritySettings(req, res) {
 
     // Trigger nginx reload
     const { safeReload } = require('../utils/nginx-ops');
-    const reloadResult = safeReload();
+    const { reloadId } = await reloadManager.queueReload();
     if (!reloadResult.success) {
       console.error('Nginx reload error:', reloadResult.error);
     }
@@ -3252,8 +3285,7 @@ async function handleUpdateWAFProfile(req, res, parsedUrl) {
       console.log(`Updated WAF exclusion file: ${exclusionPath}`);
 
       // Reload nginx to apply changes
-      const { safeReload } = require('../utils/nginx-ops');
-      safeReload();
+      await reloadManager.queueReload();
     } catch (err) {
       console.error('Failed to update WAF profile config:', err);
     }
@@ -3394,7 +3426,13 @@ function handleGetWAFEvents(req, res, parsedUrl) {
     query += ' ORDER BY e.timestamp DESC LIMIT ? OFFSET ?';
     queryParams.push(limit, offset);
 
-    const events = db.prepare(query).all(...queryParams);
+    // Use WAF database (main database is attached as 'maindb' at startup)
+    const wafDb = getWAFDb();
+
+    // Update query to use maindb.proxy_hosts
+    query = query.replace('LEFT JOIN proxy_hosts p', 'LEFT JOIN maindb.proxy_hosts p');
+
+    const events = wafDb.prepare(query).all(...queryParams);
 
     // Get total count for pagination (use same params except limit/offset)
     let countQuery = 'SELECT COUNT(*) as total FROM waf_events e WHERE 1=1';
@@ -3430,7 +3468,7 @@ function handleGetWAFEvents(req, res, parsedUrl) {
       countParams.push(blockedValue);
     }
 
-    const total = db.prepare(countQuery).get(...countParams).total;
+    const total = wafDb.prepare(countQuery).get(...countParams).total;
 
     sendJSON(res, { events, total, limit, offset });
   } catch (error) {
@@ -3448,25 +3486,27 @@ function handleGetWAFStats(req, res, parsedUrl) {
     const hours = parseInt(params.get('hours') || '24');
     const cutoffTime = new Date(Date.now() - hours * 60 * 60 * 1000).toISOString();
 
+    const wafDb = getWAFDb();
+
     // Total events
-    const totalEvents = db.prepare(`
+    const totalEvents = wafDb.prepare(`
       SELECT COUNT(*) as count FROM waf_events
       WHERE timestamp >= ?
     `).get(cutoffTime).count;
 
     // Blocked attacks
-    const blockedAttacks = db.prepare(`
+    const blockedAttacks = wafDb.prepare(`
       SELECT COUNT(*) as count FROM waf_events
       WHERE timestamp >= ? AND blocked = 1
     `).get(cutoffTime).count;
 
-    // Active profiles (single profile model)
+    // Active profiles (single profile model) - from main DB
     const activeProfiles = db.prepare(`
       SELECT COUNT(DISTINCT waf_profile_id) as count FROM proxy_hosts WHERE waf_profile_id IS NOT NULL
     `).get().count;
 
     // Events by attack type
-    const eventsByType = db.prepare(`
+    const eventsByType = wafDb.prepare(`
       SELECT attack_type, COUNT(*) as count
       FROM waf_events
       WHERE timestamp >= ?
@@ -3476,7 +3516,7 @@ function handleGetWAFStats(req, res, parsedUrl) {
     `).all(cutoffTime);
 
     // Top attacking IPs
-    const topIPs = db.prepare(`
+    const topIPs = wafDb.prepare(`
       SELECT client_ip, COUNT(*) as count
       FROM waf_events
       WHERE timestamp >= ?
@@ -3486,7 +3526,7 @@ function handleGetWAFStats(req, res, parsedUrl) {
     `).all(cutoffTime);
 
     // Events over time (hourly buckets)
-    const timeline = db.prepare(`
+    const timeline = wafDb.prepare(`
       SELECT
         strftime('%Y-%m-%d %H:00:00', timestamp) as hour,
         COUNT(*) as count,
@@ -3498,7 +3538,7 @@ function handleGetWAFStats(req, res, parsedUrl) {
     `).all(cutoffTime);
 
     // Events by severity
-    const bySeverity = db.prepare(`
+    const bySeverity = wafDb.prepare(`
       SELECT severity, COUNT(*) as count
       FROM waf_events
       WHERE timestamp >= ?
@@ -3507,8 +3547,12 @@ function handleGetWAFStats(req, res, parsedUrl) {
 
     sendJSON(res, {
       total_events: totalEvents,
+      totalEvents: totalEvents, // camelCase for frontend
       blocked_attacks: blockedAttacks,
+      blockedEvents: blockedAttacks, // camelCase for frontend
       active_profiles: activeProfiles,
+      profileCount: activeProfiles, // camelCase for frontend
+      enabled: activeProfiles > 0, // WAF is enabled if any profiles are active
       by_type: eventsByType,
       top_ips: topIPs,
       timeline,
@@ -3632,9 +3676,26 @@ function broadcastBanEvent(eventType, data) {
 /**
  * Helper: Regenerate configs for all proxies using a specific profile
  */
-function regenerateProfileProxyConfigs(profileId) {
+async function regenerateProfileProxyConfigs(profileId) {
   try {
     const { generateServerBlock, writeNginxConfig } = require('../utils/nginx-parser');
+    const { getProfileExclusions, generateExclusionConfig } = require('../utils/modsecurity-config-generator');
+    const path = require('path');
+
+    // Regenerate the exclusion file for this profile FIRST
+    // This ensures the exclusion file is up-to-date before proxy configs reference it
+    try {
+      const projectRoot = path.join(__dirname, '../..');
+      const profilesDir = path.join(projectRoot, 'data/modsec-profiles');
+      const exclusionPath = path.join(profilesDir, `exclusions_profile_${profileId}.conf`);
+
+      const exclusions = getProfileExclusions(db, profileId);
+      generateExclusionConfig(exclusions, exclusionPath);
+      console.log(`✓ Regenerated exclusion file: ${exclusionPath} (${exclusions.length} rules)`);
+    } catch (exclusionError) {
+      console.error('Failed to regenerate exclusion file:', exclusionError);
+      // Continue anyway - proxy configs can still be regenerated
+    }
 
     // Get all proxies using this profile
     const proxies = db.prepare(`
@@ -3670,8 +3731,7 @@ function regenerateProfileProxyConfigs(profileId) {
     }
 
     // Reload nginx to apply changes
-    const { safeReload } = require('../utils/nginx-ops');
-    safeReload();
+    await reloadManager.queueReload();
 
     console.log(`Regenerated configs for ${proxies.length} proxies using profile ${profileId}`);
   } catch (error) {
@@ -3740,7 +3800,7 @@ async function handleCreateWAFExclusion(req, res) {
            parameter_name || null, reason || null);
 
     // Regenerate all proxies using this profile
-    regenerateProfileProxyConfigs(profile_id);
+    await regenerateProfileProxyConfigs(profile_id);
 
     logAudit(req.user.id, 'create_waf_exclusion', 'waf_exclusion',
              result.lastInsertRowid, null, getClientIP(req));
@@ -3755,7 +3815,7 @@ async function handleCreateWAFExclusion(req, res) {
 /**
  * Delete WAF exclusion
  */
-function handleDeleteWAFExclusion(req, res, parsedUrl) {
+async function handleDeleteWAFExclusion(req, res, parsedUrl) {
   try {
     const id = parsedUrl.pathname.split('/')[4];
 
@@ -3765,7 +3825,7 @@ function handleDeleteWAFExclusion(req, res, parsedUrl) {
 
     // Regenerate configs for all proxies using this profile
     if (exclusion && exclusion.profile_id) {
-      regenerateProfileProxyConfigs(exclusion.profile_id);
+      await regenerateProfileProxyConfigs(exclusion.profile_id);
     }
 
     logAudit(req.user.id, 'delete_waf_exclusion', 'waf_exclusion', id,
@@ -3869,7 +3929,7 @@ async function handleAssignWAFProfile(req, res, parsedUrl) {
           disableNginxConfig(configFilename);
         }
 
-        await safeReload();
+        await reloadManager.queueReload();
       }
     } catch (err) {
       console.error('Failed to regenerate proxy config:', err);
@@ -3888,7 +3948,7 @@ async function handleAssignWAFProfile(req, res, parsedUrl) {
 /**
  * Remove WAF profile from proxy (single profile model)
  */
-function handleRemoveWAFProfile(req, res, parsedUrl) {
+async function handleRemoveWAFProfile(req, res, parsedUrl) {
   try {
     const proxyId = parsedUrl.pathname.split('/')[3];
 
@@ -3939,7 +3999,7 @@ function handleRemoveWAFProfile(req, res, parsedUrl) {
           disableNginxConfig(configFilename);
         }
 
-        safeReload();
+        await reloadManager.queueReload();
       }
     } catch (err) {
       console.error('Failed to regenerate proxy config:', err);

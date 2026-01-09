@@ -7,17 +7,28 @@
     "start": "node server/index.js",
     "dev": "NODE_ENV=development node server/index.js",
     "pm2:start": "pm2 start ecosystem.config.js",
+    "pm2:start:watch": "pm2 start ecosystem.config.js --watch",
     "pm2:stop": "pm2 stop nginx-proxy-orchestra",
     "pm2:restart": "pm2 restart nginx-proxy-orchestra",
-    "pm2:logs": "pm2 logs nginx-proxy-orchestra"
+    "pm2:reload": "pm2 reload nginx-proxy-orchestra",
+    "pm2:delete": "pm2 delete nginx-proxy-orchestra",
+    "pm2:logs": "pm2 logs nginx-proxy-orchestra --lines 100",
+    "pm2:status": "pm2 status nginx-proxy-orchestra",
+    "pm2:monit": "pm2 monit"
   },
-  "keywords": ["nginx", "reverse-proxy", "webui", "admin"],
+  "keywords": [
+    "nginx",
+    "reverse-proxy",
+    "webui",
+    "admin"
+  ],
   "author": "",
   "license": "MIT",
   "dependencies": {
-    "better-sqlite3": "^11.0.0",
     "bcrypt": "^5.0.0",
+    "better-sqlite3": "^11.0.0",
     "dotenv": "^16.0.0",
+    "ipaddr.js": "^2.3.0",
     "jsonwebtoken": "^9.0.0"
   },
   "devDependencies": {

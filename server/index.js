@@ -169,6 +169,12 @@ server.listen(HTTPS_PORT, () => {
   const { startCacheRefresh } = require('./utils/stats-cache-service');
   startCacheRefresh();
 
+  // Initialize WAF events database and start batcher
+  const { initializeWAFDatabase, batcher, startCleanupJob: startWAFCleanup } = require('./waf-db');
+  initializeWAFDatabase();
+  batcher.start();
+  startWAFCleanup();
+
   // Start WAF log parser daemon
   const wafLogParser = getWAFLogParser();
   wafLogParser.start().catch(err => {
@@ -241,6 +247,15 @@ function shutdown(signal) {
       stopCacheRefresh();
     } catch (err) {
       console.error('Error stopping stats cache:', err.message);
+    }
+
+    // Stop WAF event batcher
+    try {
+      const { batcher } = require('./waf-db');
+      batcher.stop();
+      console.log('✓ WAF event batcher flushed and stopped');
+    } catch (err) {
+      console.error('Error stopping WAF batcher:', err.message);
     }
 
     // Stop WAF log parser

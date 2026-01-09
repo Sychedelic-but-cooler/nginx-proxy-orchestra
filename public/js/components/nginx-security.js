@@ -1,24 +1,37 @@
 import api from '../api.js';
 import { showLoading, hideLoading, showError, showSuccess, setHeader } from '../app.js';
 
-export async function renderNginxTuning(container, excludePrivate = true) {
-  setHeader('Nginx Tuning');
+export async function renderNginxSecurity(container, excludePrivate = true) {
+  setHeader('Nginx Security');
   showLoading();
 
   try {
-    const stats = await api.getNginxTuningStats(24, excludePrivate);
+    const [stats, securityRules] = await Promise.all([
+      api.getNginxTuningStats(24, excludePrivate),
+      api.getSecurityRules().catch(() => ({ rules: [] }))
+    ]);
+
+    // Count active security rules by type
+    const ruleCounts = {
+      ipBlacklist: securityRules.rules?.filter(r => r.rule_type === 'ip_blacklist' && r.enabled === 1).length || 0,
+      geoBlock: securityRules.rules?.filter(r => r.rule_type === 'geo_block' && r.enabled === 1).length || 0,
+      userAgentFilter: securityRules.rules?.filter(r => r.rule_type === 'user_agent_filter' && r.enabled === 1).length || 0
+    };
+
+    const rateLimits = await api.getRateLimits().catch(() => ({ rateLimits: [] }));
+    const rateLimitCount = rateLimits.rateLimits?.filter(r => r.enabled === 1).length || 0;
 
     container.innerHTML = `
       <div class="info-banner" style="background: #e3f2fd; border-left: 4px solid #2196F3; padding: 12px 16px; margin-bottom: 20px; border-radius: 4px;">
-        <strong>ℹ️ Nginx Tuning:</strong> Analyze traffic patterns and take action to block suspicious IPs, user agents, or countries.
+        <strong>ℹ️ Security Rule Management:</strong> Analyze traffic patterns and configure security rules to block suspicious IPs, user agents, or countries.
         <br><small style="color: var(--text-secondary);">Showing data from the last 24 hours</small>
       </div>
 
-      <!-- Summary Stats -->
+      <!-- Security Metrics -->
       <div class="grid grid-3" style="margin-bottom: 30px;">
         <div class="stat-card">
           <div class="stat-value" style="color: var(--primary-color);">${stats.totalRequests.toLocaleString()}</div>
-          <div class="stat-label">Total Requests</div>
+          <div class="stat-label">Total Requests (24h)</div>
         </div>
         <div class="stat-card">
           <div class="stat-value" style="color: var(--danger-color);">${stats.blockedRequests.toLocaleString()}</div>
@@ -29,6 +42,38 @@ export async function renderNginxTuning(container, excludePrivate = true) {
           <div class="stat-label">Rate Limited</div>
         </div>
       </div>
+
+      <!-- Active Security Rules Summary -->
+      <div class="card" style="margin-bottom: 30px;">
+        <div class="card-header">
+          <h3 class="card-title">Active Security Rules</h3>
+        </div>
+        <div class="grid grid-4" style="padding: 20px; gap: 16px;">
+          <div style="text-align: center; padding: 16px; background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 4px;">
+            <div style="font-size: 32px; font-weight: bold; color: var(--primary-color);">${ruleCounts.ipBlacklist}</div>
+            <div style="font-size: 14px; color: var(--text-secondary); margin-top: 8px;">IP Blacklist Rules</div>
+            <a href="#/security/rules" style="font-size: 12px; margin-top: 8px; display: inline-block;">Manage →</a>
+          </div>
+          <div style="text-align: center; padding: 16px; background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 4px;">
+            <div style="font-size: 32px; font-weight: bold; color: var(--primary-color);">${ruleCounts.geoBlock}</div>
+            <div style="font-size: 14px; color: var(--text-secondary); margin-top: 8px;">Geo-Block Rules</div>
+            <a href="#/security/rules" style="font-size: 12px; margin-top: 8px; display: inline-block;">Manage →</a>
+          </div>
+          <div style="text-align: center; padding: 16px; background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 4px;">
+            <div style="font-size: 32px; font-weight: bold; color: var(--primary-color);">${ruleCounts.userAgentFilter}</div>
+            <div style="font-size: 14px; color: var(--text-secondary); margin-top: 8px;">User-Agent Filters</div>
+            <a href="#/security/rules" style="font-size: 12px; margin-top: 8px; display: inline-block;">Manage →</a>
+          </div>
+          <div style="text-align: center; padding: 16px; background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 4px;">
+            <div style="font-size: 32px; font-weight: bold; color: var(--primary-color);">${rateLimitCount}</div>
+            <div style="font-size: 14px; color: var(--text-secondary); margin-top: 8px;">Rate Limits</div>
+            <a href="#/security/rate-limit" style="font-size: 12px; margin-top: 8px; display: inline-block;">Manage →</a>
+          </div>
+        </div>
+      </div>
+
+      <!-- Threat Analysis Section -->
+      <h3 style="margin: 30px 0 20px 0; padding: 10px 0; border-bottom: 2px solid var(--border-color);">Threat Analysis (Last 24h)</h3>
 
       <!-- Top 10 IPs -->
       <div class="card" style="margin-bottom: 20px;">
@@ -207,7 +252,7 @@ function setupTuningHandlers(excludePrivate) {
   // Checkbox change handler
   document.getElementById('excludePrivateCheckbox')?.addEventListener('change', async (e) => {
     const newValue = e.target.checked;
-    await renderNginxTuning(document.getElementById('mainContent'), newValue);
+    await renderNginxSecurity(document.getElementById('mainContent'), newValue);
   });
 
   // Block IP buttons
@@ -233,7 +278,7 @@ function setupTuningHandlers(excludePrivate) {
         showSuccess(`Successfully blocked IP: ${ip}`);
 
         // Reload the tuning page
-        await renderNginxTuning(document.getElementById('mainContent'), excludePrivate);
+        await renderNginxSecurity(document.getElementById('mainContent'), excludePrivate);
       } catch (error) {
         hideLoading();
         showError(error.message);
@@ -265,7 +310,7 @@ function setupTuningHandlers(excludePrivate) {
         showSuccess(`Successfully blocked user agent`);
 
         // Reload the tuning page
-        await renderNginxTuning(document.getElementById('mainContent'), excludePrivate);
+        await renderNginxSecurity(document.getElementById('mainContent'), excludePrivate);
       } catch (error) {
         hideLoading();
         showError(error.message);
@@ -297,7 +342,7 @@ function setupTuningHandlers(excludePrivate) {
         showSuccess(`Successfully blocked country: ${name} (${code})`);
 
         // Reload the tuning page
-        await renderNginxTuning(document.getElementById('mainContent'), excludePrivate);
+        await renderNginxSecurity(document.getElementById('mainContent'), excludePrivate);
       } catch (error) {
         hideLoading();
         showError(error.message);

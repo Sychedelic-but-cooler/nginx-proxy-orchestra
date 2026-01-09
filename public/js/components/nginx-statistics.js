@@ -1,17 +1,29 @@
 import api from '../api.js';
 import { showLoading, hideLoading, showError, setHeader } from '../app.js';
 
-export async function renderNginxStatistics(container) {
-  setHeader('Nginx Statistics');
+export async function renderNginxStatistics(container, timeRange = '24h') {
+  setHeader('Traffic & Performance');
   showLoading();
 
   try {
-    const stats = await api.getNginxStatistics(24);
+    const hours = timeRange === '24h' ? 24 : 168;
+    const [stats, trafficStats, wafStats, banStats] = await Promise.all([
+      api.getNginxStatistics(hours),
+      api.getStatistics(timeRange),
+      api.getWAFStats(hours).catch(() => ({ totalEvents: 0, blockedEvents: 0 })),
+      api.getBanStats().catch(() => ({ totalBans: 0, activeBans: 0 }))
+    ]);
 
     container.innerHTML = `
-      <div class="info-banner" style="background: #e3f2fd; border-left: 4px solid #2196F3; padding: 12px 16px; margin-bottom: 20px; border-radius: 4px;">
-        <strong>ℹ️ Nginx Statistics:</strong> View effectiveness metrics and understand how your security rules are protecting your proxy hosts.
-        <br><small style="color: var(--text-secondary);">Showing data from the last 24 hours</small>
+      <!-- Time Range Selector -->
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+        <div class="info-banner" style="background: #e3f2fd; border-left: 4px solid #2196F3; padding: 12px 16px; border-radius: 4px; flex: 1; margin-right: 16px;">
+          <strong>ℹ️ Traffic & Performance Analytics:</strong> Deep-dive into traffic patterns, performance metrics, and security effectiveness.
+        </div>
+        <div style="display: flex; gap: 8px; background: var(--card-bg); padding: 4px; border-radius: 8px; border: 1px solid var(--border-color);">
+          <button id="range24h" class="btn ${timeRange === '24h' ? 'btn-primary' : 'btn-secondary'}" style="padding: 8px 16px; font-size: 14px;">24h</button>
+          <button id="range7d" class="btn ${timeRange === '7d' ? 'btn-primary' : 'btn-secondary'}" style="padding: 8px 16px; font-size: 14px;">7d</button>
+        </div>
       </div>
 
       <!-- Main Metrics -->
@@ -70,6 +82,16 @@ export async function renderNginxStatistics(container) {
               <div style="font-size: 13px; color: var(--text-secondary); margin-top: 4px;">Rate Limits</div>
             </div>
           </div>
+        </div>
+      </div>
+
+      <!-- Traffic Timeline -->
+      <div class="card" style="margin-bottom: 20px;">
+        <div class="card-header">
+          <h3 class="card-title">Requests by Hour</h3>
+        </div>
+        <div style="padding: 20px;">
+          ${trafficStats.totalRequests > 0 && trafficStats.requestsByHour ? renderHourlyChart(trafficStats.requestsByHour) : '<p style="color: var(--text-secondary);">No traffic data available</p>'}
         </div>
       </div>
 
@@ -134,6 +156,83 @@ export async function renderNginxStatistics(container) {
         </div>
       </div>
 
+      <!-- Top Traffic Sources -->
+      <div class="grid grid-2" style="margin-bottom: 20px;">
+        <!-- Top IPs -->
+        <div class="card">
+          <div class="card-header">
+            <h3 class="card-title">Top Connecting IPs</h3>
+          </div>
+          ${trafficStats.topIPs && trafficStats.topIPs.length > 0 ? `
+            <table class="table">
+              <thead>
+                <tr>
+                  <th>IP Address</th>
+                  <th>Requests</th>
+                  <th>% of Total</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${trafficStats.topIPs.map(ipData => {
+                  const percentage = trafficStats.totalRequests > 0 ? ((ipData.count / trafficStats.totalRequests) * 100).toFixed(2) : '0.00';
+                  return `
+                    <tr>
+                      <td><code>${ipData.item || ipData.ip}</code></td>
+                      <td>${ipData.count.toLocaleString()}</td>
+                      <td>
+                        <div style="display: flex; align-items: center; gap: 8px;">
+                          <div style="flex: 1; height: 6px; background: var(--border-color); border-radius: 3px; overflow: hidden;">
+                            <div style="width: ${percentage}%; height: 100%; background: var(--primary-color);"></div>
+                          </div>
+                          <span style="min-width: 45px; text-align: right; font-size: 12px;">${percentage}%</span>
+                        </div>
+                      </td>
+                    </tr>
+                  `;
+                }).join('')}
+              </tbody>
+            </table>
+          ` : '<p style="padding: 16px; color: var(--text-secondary);">No traffic data available</p>'}
+        </div>
+
+        <!-- Top Hosts -->
+        <div class="card">
+          <div class="card-header">
+            <h3 class="card-title">Top Hosts by Traffic</h3>
+          </div>
+          ${trafficStats.topHosts && trafficStats.topHosts.length > 0 ? `
+            <table class="table">
+              <thead>
+                <tr>
+                  <th>Host</th>
+                  <th>Requests</th>
+                  <th>% of Total</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${trafficStats.topHosts.map(host => {
+                  const percentage = trafficStats.totalRequests > 0 ? ((host.count / trafficStats.totalRequests) * 100).toFixed(2) : '0.00';
+                  return `
+                    <tr>
+                      <td><strong>${host.item}</strong></td>
+                      <td>${host.count.toLocaleString()}</td>
+                      <td>
+                        <div style="display: flex; align-items: center; gap: 8px;">
+                          <div style="flex: 1; height: 6px; background: var(--border-color); border-radius: 3px; overflow: hidden;">
+                            <div style="width: ${percentage}%; height: 100%; background: var(--primary-color);"></div>
+                          </div>
+                          <span style="min-width: 45px; text-align: right; font-size: 12px;">${percentage}%</span>
+                        </div>
+                      </td>
+                    </tr>
+                  `;
+                }).join('')}
+              </tbody>
+            </table>
+          ` : '<p style="padding: 16px; color: var(--text-secondary);">No host data available</p>'}
+        </div>
+      </div>
+
       <!-- Security Effectiveness -->
       <div class="grid grid-2" style="margin-bottom: 20px;">
         <!-- Protection Summary -->
@@ -162,13 +261,23 @@ export async function renderNginxStatistics(container) {
               </div>
             </div>
 
-            <div>
+            <div style="margin-bottom: 20px;">
               <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
-                <span style="font-weight: 500;">Successful Requests</span>
-                <span style="font-weight: 600; color: var(--success-color);">${stats.successfulRequests.toLocaleString()}</span>
+                <span style="font-weight: 500;">WAF Blocks</span>
+                <span style="font-weight: 600; color: var(--danger-color);">${(wafStats.blockedEvents || 0).toLocaleString()}</span>
               </div>
               <div style="background: var(--bg-color); border-radius: 4px; height: 8px; overflow: hidden;">
-                <div style="background: var(--success-color); height: 100%; width: ${stats.successRate}%;"></div>
+                <div style="background: var(--danger-color); height: 100%; width: ${wafStats.totalEvents > 0 ? ((wafStats.blockedEvents / wafStats.totalEvents) * 100).toFixed(0) : 0}%;"></div>
+              </div>
+            </div>
+
+            <div>
+              <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+                <span style="font-weight: 500;">Ban System Actions</span>
+                <span style="font-weight: 600; color: var(--danger-color);">${(banStats.activeBans || 0).toLocaleString()}</span>
+              </div>
+              <div style="background: var(--bg-color); border-radius: 4px; height: 8px; overflow: hidden;">
+                <div style="background: var(--danger-color); height: 100%; width: ${banStats.totalBans > 0 ? Math.min(((banStats.activeBans / banStats.totalBans) * 100), 100).toFixed(0) : 0}%;"></div>
               </div>
             </div>
           </div>
@@ -191,32 +300,32 @@ export async function renderNginxStatistics(container) {
           <h3 class="card-title">Quick Actions</h3>
         </div>
         <div style="padding: 20px; display: flex; gap: 12px; flex-wrap: wrap;">
-          <button class="btn btn-primary" id="goToTuningBtn">
+          <button class="btn btn-primary" id="goToSecurityBtn">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right: 8px;">
               <path d="M12 20v-6M6 20V10m12 10V4"></path>
             </svg>
-            Go to Nginx Tuning
+            Manage Security Rules
           </button>
-          <button class="btn btn-secondary" id="goToSettingsBtn">
+          <button class="btn btn-secondary" id="goToWAFBtn">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right: 8px;">
-              <circle cx="12" cy="12" r="3"></circle>
-              <path d="M12 1v6m0 6v6m5.66-14.66l-4.23 4.23m0 5.66l4.23 4.23M1 12h6m6 0h6M3.34 3.34l4.23 4.23m5.66 0l4.23-4.23M3.34 20.66l4.23-4.23m5.66 0l4.23 4.23"></path>
+              <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+              <line x1="9" y1="9" x2="15" y2="15"></line>
+              <line x1="15" y1="9" x2="9" y2="15"></line>
             </svg>
-            Security Settings
+            View WAF Events
           </button>
-          <button class="btn btn-secondary" id="refreshStatsBtn">
+          <button class="btn btn-secondary" id="goToBansBtn">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right: 8px;">
-              <polyline points="23 4 23 10 17 10"></polyline>
-              <polyline points="1 20 1 14 7 14"></polyline>
-              <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+              <circle cx="12" cy="12" r="10"></circle>
+              <line x1="4.93" y1="4.93" x2="19.07" y2="19.07"></line>
             </svg>
-            Refresh Statistics
+            View Banned IPs
           </button>
         </div>
       </div>
     `;
 
-    setupStatisticsHandlers();
+    setupStatisticsHandlers(timeRange);
 
   } catch (error) {
     container.innerHTML = `
@@ -290,16 +399,54 @@ function generateInsights(stats) {
   return insights.join('');
 }
 
-function setupStatisticsHandlers() {
-  document.getElementById('goToTuningBtn')?.addEventListener('click', () => {
+/**
+ * Render a simple hourly bar chart
+ */
+function renderHourlyChart(requestsByHour) {
+  const maxRequests = Math.max(...requestsByHour, 1);
+  const currentHour = new Date().getHours();
+
+  return `
+    <div style="display: flex; align-items: flex-end; gap: 4px; height: 200px; padding: 10px; background: var(--card-bg); border-radius: 4px;">
+      ${requestsByHour.map((count, hour) => {
+        const heightPercent = (count / maxRequests) * 100;
+        const isCurrentHour = hour === currentHour;
+        return `
+          <div style="flex: 1; display: flex; flex-direction: column; align-items: center; gap: 4px;">
+            <div style="width: 100%; height: ${heightPercent}%; background: ${isCurrentHour ? 'var(--primary-color)' : 'var(--secondary-color)'}; border-radius: 2px 2px 0 0; min-height: 2px; position: relative;" title="${count.toLocaleString()} requests at ${hour}:00">
+              ${count > 0 ? `<span style="position: absolute; top: -20px; left: 50%; transform: translateX(-50%); font-size: 10px; white-space: nowrap;">${count}</span>` : ''}
+            </div>
+            <div style="font-size: 10px; color: var(--text-secondary); ${isCurrentHour ? 'font-weight: bold; color: var(--primary-color);' : ''}">${hour}</div>
+          </div>
+        `;
+      }).join('')}
+    </div>
+    <div style="margin-top: 10px; text-align: center; font-size: 12px; color: var(--text-secondary);">
+      Hour of Day (0-23) · Current hour highlighted
+    </div>
+  `;
+}
+
+function setupStatisticsHandlers(timeRange) {
+  // Time range switchers
+  document.getElementById('range24h')?.addEventListener('click', async () => {
+    await renderNginxStatistics(document.getElementById('mainContent'), '24h');
+  });
+
+  document.getElementById('range7d')?.addEventListener('click', async () => {
+    await renderNginxStatistics(document.getElementById('mainContent'), '7d');
+  });
+
+  // Quick action buttons
+  document.getElementById('goToSecurityBtn')?.addEventListener('click', () => {
     window.location.hash = '#/security/tuning';
   });
 
-  document.getElementById('goToSettingsBtn')?.addEventListener('click', () => {
-    window.location.hash = '#/settings/security';
+  document.getElementById('goToWAFBtn')?.addEventListener('click', () => {
+    window.location.hash = '#/waf/events';
   });
 
-  document.getElementById('refreshStatsBtn')?.addEventListener('click', async () => {
-    await renderNginxStatistics(document.getElementById('mainContent'));
+  document.getElementById('goToBansBtn')?.addEventListener('click', () => {
+    window.location.hash = '#/waf/bans';
   });
 }

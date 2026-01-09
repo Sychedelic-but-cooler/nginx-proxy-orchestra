@@ -290,6 +290,14 @@ function initializeDatabase() {
     console.error('Ban system migration error:', error.message);
   }
 
+  // Run separate WAF database migration
+  const { runSeparateWAFDBMigration } = require('./migrations/009_separate_waf_db');
+  try {
+    runSeparateWAFDBMigration(db);
+  } catch (error) {
+    console.error('Separate WAF DB migration error:', error.message);
+  }
+
   // Create some default modules if none exist
   const modulesExist = db.prepare('SELECT COUNT(*) as count FROM modules').get();
   if (modulesExist.count === 0) {

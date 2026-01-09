@@ -6,27 +6,15 @@ export async function renderDashboard(container) {
   showLoading();
 
   try {
-    const [stats, trafficStatsRaw] = await Promise.all([
+    const [stats, quickMetrics, wafStats, banStats] = await Promise.all([
       api.getDashboardStats(),
-      api.getStatistics('24h')
+      api.getStatistics('24h'),
+      api.getWAFStats(24).catch(() => ({ totalEvents: 0, blockedEvents: 0, profileCount: 0, enabled: false })),
+      api.getBanStats().catch(() => ({ totalBans: 0, activeBans: 0, integrationCount: 0 }))
     ]);
 
-    // Ensure trafficStats has all required properties with default values
-    const trafficStats = {
-      totalRequests: 0,
-      uniqueVisitors: 0,
-      errors4xx: 0,
-      errors5xx: 0,
-      errorRate4xx: '0.00',
-      errorRate5xx: '0.00',
-      topIPs: [],
-      topErrorIPs: [],
-      topHosts: [],
-      requestsByHour: Array(24).fill(0),
-      ...trafficStatsRaw
-    };
-
     container.innerHTML = `
+      <!-- Status Cards -->
       <div class="grid grid-4">
         <div class="stat-card">
           <div class="stat-value">${stats.proxies.active}</div>
@@ -45,6 +33,42 @@ export async function renderDashboard(container) {
             ${stats.nginx.running ? '✓' : '✗'}
           </div>
           <div class="stat-label">Nginx Status</div>
+        </div>
+      </div>
+
+      <!-- WAF & Ban System Status -->
+      <div class="grid grid-2" style="margin-top: 20px;">
+        <div class="stat-card" style="background: var(--card-bg); border: 2px solid ${wafStats.enabled ? 'var(--success-color)' : 'var(--border-color)'};">
+          <div class="stat-value ${wafStats.enabled ? 'text-success' : 'text-muted'}">
+            ${wafStats.enabled ? '✓' : '○'}
+          </div>
+          <div class="stat-label">WAF ${wafStats.enabled ? 'Enabled' : 'Disabled'}</div>
+          <div style="font-size: 0.85em; color: var(--text-secondary); margin-top: 8px;">
+            ${wafStats.profileCount || 0} profile${wafStats.profileCount !== 1 ? 's' : ''} active
+          </div>
+        </div>
+        <div class="stat-card" style="background: var(--card-bg); border: 2px solid var(--border-color);">
+          <div class="stat-value">${banStats.activeBans || 0}</div>
+          <div class="stat-label">Active IP Bans</div>
+          <div style="font-size: 0.85em; color: var(--text-secondary); margin-top: 8px;">
+            ${banStats.integrationCount || 0} integration${banStats.integrationCount !== 1 ? 's' : ''} configured
+          </div>
+        </div>
+      </div>
+
+      <!-- Quick Metrics (24h) -->
+      <div class="grid grid-3" style="margin-top: 20px;">
+        <div class="stat-card" style="background: var(--card-bg); border: 1px solid var(--border-color);">
+          <div class="stat-value">${(quickMetrics.totalRequests || 0).toLocaleString()}</div>
+          <div class="stat-label">Total Requests (24h)</div>
+        </div>
+        <div class="stat-card" style="background: var(--card-bg); border: 1px solid var(--border-color);">
+          <div class="stat-value text-danger">${(quickMetrics.statusCategories ? quickMetrics.statusCategories['4xx'] + quickMetrics.statusCategories['5xx'] : 0).toLocaleString()}</div>
+          <div class="stat-label">Blocked/Errors (${quickMetrics.errorRate || '0.00'}%)</div>
+        </div>
+        <div class="stat-card" style="background: var(--card-bg); border: 1px solid var(--border-color);">
+          <div class="stat-value text-success">${quickMetrics.successRate || '0.00'}%</div>
+          <div class="stat-label">Success Rate (24h)</div>
         </div>
       </div>
 
@@ -142,123 +166,6 @@ export async function renderDashboard(container) {
           ` : '<p style="padding: 16px; color: var(--text-secondary);">No certificates expiring soon</p>'}
         </div>
       </div>
-
-      <!-- Traffic Statistics -->
-      <div class="card" style="margin-top: 20px;">
-        <div class="card-header">
-          <h3 class="card-title">Traffic Statistics (Since Last Log Rotation)</h3>
-        </div>
-        ${trafficStats.totalRequests > 0 || trafficStats.topIPs.length > 0 ? `
-          <div class="grid grid-4" style="padding: 20px; gap: 20px;">
-            <div class="stat-card" style="background: var(--card-bg); border: 1px solid var(--border-color);">
-              <div class="stat-value">${trafficStats.totalRequests.toLocaleString()}</div>
-              <div class="stat-label">Total Requests</div>
-            </div>
-            <div class="stat-card" style="background: var(--card-bg); border: 1px solid var(--border-color);">
-              <div class="stat-value">${trafficStats.uniqueVisitors.toLocaleString()}</div>
-              <div class="stat-label">Unique Visitors</div>
-            </div>
-            <div class="stat-card" style="background: var(--card-bg); border: 1px solid var(--border-color);">
-              <div class="stat-value text-warning">${trafficStats.errors4xx.toLocaleString()}</div>
-              <div class="stat-label">4XX Errors (${trafficStats.errorRate4xx}%)</div>
-            </div>
-            <div class="stat-card" style="background: var(--card-bg); border: 1px solid var(--border-color);">
-              <div class="stat-value text-danger">${trafficStats.errors5xx.toLocaleString()}</div>
-              <div class="stat-label">5XX Errors (${trafficStats.errorRate5xx}%)</div>
-            </div>
-          </div>
-        ` : `
-          <div style="padding: 30px; text-align: center; color: var(--text-secondary);">
-            <p style="margin-bottom: 10px;">📊 No traffic data available yet</p>
-            <p style="font-size: 0.9em;">Traffic statistics will appear here once nginx starts receiving requests.</p>
-            <p style="font-size: 0.85em; margin-top: 10px;">Make sure nginx access logs are available at <code>/var/log/nginx/access.log</code></p>
-          </div>
-        `}
-      </div>
-
-      <div class="grid grid-2" style="margin-top: 20px;">
-        <!-- Top Hosts -->
-        <div class="card">
-          <div class="card-header">
-            <h3 class="card-title">Top Hosts by Traffic</h3>
-          </div>
-          ${trafficStats.topHosts.length > 0 ? `
-            <table class="table">
-              <thead>
-                <tr>
-                  <th>Host</th>
-                  <th>Requests</th>
-                  <th>Share</th>
-                </tr>
-              </thead>
-              <tbody>
-                ${trafficStats.topHosts.map(host => {
-                  const percentage = ((host.count / trafficStats.totalRequests) * 100).toFixed(1);
-                  return `
-                    <tr>
-                      <td><strong>${escapeHtml(host.host)}</strong></td>
-                      <td>${host.count.toLocaleString()}</td>
-                      <td>
-                        <div style="display: flex; align-items: center; gap: 8px;">
-                          <div style="flex: 1; height: 8px; background: var(--border-color); border-radius: 4px; overflow: hidden;">
-                            <div style="width: ${percentage}%; height: 100%; background: var(--primary-color);"></div>
-                          </div>
-                          <span style="min-width: 45px; text-align: right;">${percentage}%</span>
-                        </div>
-                      </td>
-                    </tr>
-                  `;
-                }).join('')}
-              </tbody>
-            </table>
-          ` : '<p style="padding: 16px; color: var(--text-secondary);">No traffic data available</p>'}
-        </div>
-
-        <!-- Top IPs -->
-        <div class="card">
-          <div class="card-header">
-            <h3 class="card-title">Top Connecting IPs</h3>
-          </div>
-          ${trafficStats.topIPs.length > 0 ? `
-            <table class="table">
-              <thead>
-                <tr>
-                  <th>IP Address</th>
-                  <th>Requests</th>
-                  <th>Errors</th>
-                </tr>
-              </thead>
-              <tbody>
-                ${trafficStats.topIPs.map(ipData => {
-                  const errorData = trafficStats.topErrorIPs.find(e => e.ip === ipData.ip);
-                  const errorCount = errorData ? errorData.count : 0;
-                  return `
-                    <tr>
-                      <td><code>${escapeHtml(ipData.ip)}</code></td>
-                      <td>${ipData.count.toLocaleString()}</td>
-                      <td>
-                        ${errorCount > 0
-                          ? `<span class="badge badge-warning">${errorCount}</span>`
-                          : '<span class="badge badge-success">0</span>'}
-                      </td>
-                    </tr>
-                  `;
-                }).join('')}
-              </tbody>
-            </table>
-          ` : '<p style="padding: 16px; color: var(--text-secondary);">No traffic data available</p>'}
-        </div>
-      </div>
-
-      <!-- Requests by Hour Chart -->
-      <div class="card" style="margin-top: 20px;">
-        <div class="card-header">
-          <h3 class="card-title">Requests by Hour (24h)</h3>
-        </div>
-        <div style="padding: 20px;">
-          ${trafficStats.totalRequests > 0 ? renderHourlyChart(trafficStats.requestsByHour) : '<p style="color: var(--text-secondary);">No traffic data available</p>'}
-        </div>
-      </div>
     `;
 
     // Event listeners
@@ -294,32 +201,4 @@ export async function renderDashboard(container) {
   } finally {
     hideLoading();
   }
-}
-
-/**
- * Render a simple hourly bar chart
- */
-function renderHourlyChart(requestsByHour) {
-  const maxRequests = Math.max(...requestsByHour, 1);
-  const currentHour = new Date().getHours();
-
-  return `
-    <div style="display: flex; align-items: flex-end; gap: 4px; height: 200px; padding: 10px; background: var(--card-bg); border-radius: 4px;">
-      ${requestsByHour.map((count, hour) => {
-        const heightPercent = (count / maxRequests) * 100;
-        const isCurrentHour = hour === currentHour;
-        return `
-          <div style="flex: 1; display: flex; flex-direction: column; align-items: center; gap: 4px;">
-            <div style="width: 100%; height: ${heightPercent}%; background: ${isCurrentHour ? 'var(--primary-color)' : 'var(--secondary-color)'}; border-radius: 2px 2px 0 0; min-height: 2px; position: relative;" title="${count.toLocaleString()} requests at ${hour}:00">
-              ${count > 0 ? `<span style="position: absolute; top: -20px; left: 50%; transform: translateX(-50%); font-size: 10px; white-space: nowrap;">${count}</span>` : ''}
-            </div>
-            <div style="font-size: 10px; color: var(--text-secondary); ${isCurrentHour ? 'font-weight: bold; color: var(--primary-color);' : ''}">${hour}</div>
-          </div>
-        `;
-      }).join('')}
-    </div>
-    <div style="margin-top: 10px; text-align: center; font-size: 12px; color: var(--text-secondary);">
-      Hour of Day (0-23) · Current hour highlighted
-    </div>
-  `;
 }

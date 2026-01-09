@@ -284,15 +284,19 @@ function generateProxyWAFConfig(db, proxyId) {
 
   // Enable ModSecurity
   config += `  modsecurity on;\n`;
+
+  // IMPORTANT: Load exclusions BEFORE main CRS rules
+  // This allows ctl:ruleRemoveById to work properly by setting up exclusions
+  // before the rules they exclude are even defined
+  const exclusionPath = path.join(PROFILES_DIR, `exclusions_profile_${profile.id}.conf`);
+  config += `  modsecurity_rules_file ${exclusionPath};\n`;
+
+  // Now load main CRS rules
   config += `  modsecurity_rules_file ${MODSEC_DIR}/main.conf;\n`;
 
   // Include profile-specific rules (contains SecRuleEngine directive)
   const profilePath = path.join(PROFILES_DIR, `profile_${profile.id}.conf`);
   config += `  modsecurity_rules_file ${profilePath};\n`;
-
-  // Always include exclusion file (created for all profiles, even if empty)
-  const exclusionPath = path.join(PROFILES_DIR, `exclusions_profile_${profile.id}.conf`);
-  config += `  modsecurity_rules_file ${exclusionPath};\n`;
 
   config += `\n`;
 
@@ -334,13 +338,21 @@ function generateExclusionConfig(exclusions, outputPath) {
 
     if (exclusion.path_pattern && exclusion.parameter_name) {
       // Exclude specific parameter on specific path
+      // Strip wildcards from path pattern since @beginsWith is already a prefix match
+      const cleanPath = exclusion.path_pattern.replace(/\*+$/, '');
       config += `SecRuleUpdateTargetById ${exclusion.rule_id} "!REQUEST_COOKIES:${exclusion.parameter_name}" \\
   "chain,id:${900000 + exclusion.id}"\n`;
-      config += `  SecRule REQUEST_URI "@beginsWith ${exclusion.path_pattern}"\n\n`;
+      config += `  SecRule REQUEST_URI "@beginsWith ${cleanPath}"\n\n`;
     } else if (exclusion.path_pattern) {
       // Exclude rule on specific path
-      config += `SecRule REQUEST_URI "@beginsWith ${exclusion.path_pattern}" \\
-  "id:${900000 + exclusion.id},phase:1,pass,ctl:ruleRemoveById=${exclusion.rule_id}"\n\n`;
+      // Strip wildcards from path pattern since @beginsWith is already a prefix match
+      const cleanPath = exclusion.path_pattern.replace(/\*+$/, '');
+
+      // Use ctl:ruleRemoveById with skipAfter to prevent the rule from firing
+      // This runs in phase:1 BEFORE the target rule can fire
+      config += `SecRule REQUEST_URI "@beginsWith ${cleanPath}" \\
+  "id:${900000 + exclusion.id},phase:1,pass,nolog,ctl:ruleRemoveById=${exclusion.rule_id}"\n\n`;
+
     } else if (exclusion.parameter_name) {
       // Exclude specific parameter globally
       config += `SecRuleUpdateTargetById ${exclusion.rule_id} "!REQUEST_COOKIES:${exclusion.parameter_name}"\n\n`;

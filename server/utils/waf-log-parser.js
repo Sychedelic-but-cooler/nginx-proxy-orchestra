@@ -128,11 +128,14 @@ class WAFLogParser {
    */
   backfillHTTP3Events() {
     try {
-      if (!db) return;
+      const { getWAFDb } = require('../waf-db');
+      const wafDb = getWAFDb();
+
+      if (!wafDb) return;
 
       // Get unresolved events (last 10 minutes only to avoid processing old data)
       const tenMinsAgo = new Date(Date.now() - 600000).toISOString();
-      const unresolved = db.prepare(`
+      const unresolved = wafDb.prepare(`
         SELECT id, client_ip, timestamp
         FROM waf_events
         WHERE proxy_id IS NULL
@@ -151,7 +154,7 @@ class WAFLogParser {
         const windowEnd = new Date(eventTime + timeWindow).toISOString();
 
         // Find events from same client IP within time window that HAVE a proxy_id
-        const nearby = db.prepare(`
+        const nearby = wafDb.prepare(`
           SELECT proxy_id, COUNT(*) as count
           FROM waf_events
           WHERE client_ip = ?
@@ -164,7 +167,7 @@ class WAFLogParser {
         `).get(event.client_ip, windowStart, windowEnd);
 
         if (nearby && nearby.proxy_id) {
-          db.prepare(`
+          wafDb.prepare(`
             UPDATE waf_events
             SET proxy_id = ?
             WHERE id = ?
@@ -362,44 +365,24 @@ class WAFLogParser {
    */
   insertEvent(event) {
     try {
-      if (!db) return null;
+      const { batcher } = require('../waf-db');
 
-      const stmt = db.prepare(`
-        INSERT INTO waf_events (
-          proxy_id, timestamp, client_ip, request_uri, request_method,
-          attack_type, rule_id, severity, message, raw_log, blocked
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `);
+      // Add event to batch buffer
+      batcher.addEvent(event);
 
-      const result = stmt.run(
-        event.proxy_id,
-        event.timestamp,
-        event.client_ip,
-        event.request_uri,
-        event.request_method,
-        event.attack_type,
-        event.rule_id,
-        event.severity,
-        event.message,
-        event.raw_log,
-        event.blocked
-      );
-
-      const eventId = result.lastInsertRowid;
-
-      // Broadcast to SSE clients
+      // Broadcast to SSE clients (without ID since batching is async)
       if (this.broadcastFunction) {
         this.broadcastFunction({
-          id: eventId,
+          id: null, // ID will be assigned during batch flush
           ...event
         });
       }
 
-      return eventId;
+      return true;
 
     } catch (error) {
-      console.error('Error inserting WAF event:', error);
-      return null;
+      console.error('Error buffering WAF event:', error);
+      return false;
     }
   }
 
@@ -467,11 +450,14 @@ class WAFLogParser {
    */
   getRecentBlockedEvents(minutes) {
     try {
-      if (!db) return 0;
+      const { getWAFDb } = require('../waf-db');
+      const wafDb = getWAFDb();
+
+      if (!wafDb) return 0;
 
       const cutoffTime = new Date(Date.now() - minutes * 60 * 1000).toISOString();
 
-      const result = db.prepare(`
+      const result = wafDb.prepare(`
         SELECT COUNT(*) as count FROM waf_events
         WHERE timestamp >= ? AND blocked = 1
       `).get(cutoffTime);

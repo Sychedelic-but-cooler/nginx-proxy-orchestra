@@ -23,6 +23,7 @@ let statsCache = {
 // Cache refresh interval (5 minutes)
 const CACHE_REFRESH_INTERVAL = 5 * 60 * 1000;
 let refreshInterval = null;
+let isFirstRefresh = true; // Track if this is the first refresh after startup
 
 /**
  * Get security rule counts from database
@@ -57,12 +58,46 @@ function getSecurityRuleCounts() {
  */
 async function refreshNginxStatsCache() {
   try {
-    console.log('[Stats Cache] Refreshing nginx statistics...');
+    const isInitial = isFirstRefresh;
+    if (isFirstRefresh) {
+      console.log('[Stats Cache] Initial refresh - populating cache with historical data...');
+      isFirstRefresh = false;
+    } else {
+      console.log('[Stats Cache] Refreshing nginx statistics...');
+    }
 
-    // Parse logs for both 24h and 7d (168h)
+    // On first refresh, force 24h to use full parse to populate cache with historical data
+    // After that, 24h uses incremental parse (efficient)
+    // 7d always uses full parse (getNginxStatistics automatically chooses based on hoursBack)
+    const { getNginxStatistics: getNginxStatsFunc, parseAccessLogs } = require('./nginx-log-parser');
+
     const [stats24h, stats7d] = await Promise.all([
-      getNginxStatistics(24, false), // Get all IPs for internal use
-      getNginxStatistics(168, false) // 7 days
+      isInitial
+        ? (async () => {
+            // First run: do full parse for 24h to get historical data
+            const accessStats = await parseAccessLogs('/var/log/nginx/access.log', 24);
+            // Build full stats object like getNginxStatistics does
+            return {
+              totalRequests: accessStats.totalRequests,
+              topIPs: require('./nginx-log-parser').getTopNIPs(accessStats.ipCounts, 10, false),
+              topUserAgents: require('./nginx-log-parser').getTopN(accessStats.userAgentCounts, 10),
+              topHosts: require('./nginx-log-parser').getTopN(accessStats.vhostCounts, 10),
+              topErrorIPs: require('./nginx-log-parser').getTopNIPs(accessStats.errorIPCounts, 10, false),
+              requestsByHour: accessStats.requestsByHour,
+              totalBytes: accessStats.totalBytes,
+              totalBytesFormatted: require('./nginx-log-parser').formatBytes(accessStats.totalBytes),
+              statusCategories: accessStats.statusCategories,
+              requestsByStatus: accessStats.requestsByStatus,
+              statusCounts: accessStats.statusCounts,
+              blockedRequests: accessStats.requestsByStatus['403'],
+              rateLimitedRequests: accessStats.requestsByStatus['429'],
+              successfulRequests: accessStats.requestsByStatus['200'],
+              ipCounts: accessStats.ipCounts,
+              uniqueIPCount: Object.keys(accessStats.ipCounts).length
+            };
+          })()
+        : getNginxStatsFunc(24, false), // Subsequent runs: use efficient incremental parse
+      getNginxStatsFunc(168, false) // 7 days always uses full parse
     ]);
 
     // Get country data
@@ -255,6 +290,40 @@ function getCachedSecurityStats(timeRange = '24h') {
 }
 
 /**
+ * Get cached traffic statistics (for detailed analytics dashboards)
+ * @param {string} timeRange - '24h' or '7d'
+ * @returns {object} Traffic metrics including hourly distribution, bytes, error IPs
+ */
+function getCachedTrafficStats(timeRange = '24h') {
+  const stats = statsCache.nginx[timeRange];
+
+  if (!stats) {
+    return null;
+  }
+
+  // Extract traffic-specific metrics
+  return {
+    timeRange,
+    totalRequests: stats.totalRequests,
+    requestsByHour: stats.requestsByHour || Array(24).fill(0),
+    totalBytes: stats.totalBytes || 0,
+    totalBytesFormatted: stats.totalBytesFormatted || '0 B',
+    statusCategories: stats.statusCategories || { '2xx': 0, '3xx': 0, '4xx': 0, '5xx': 0 },
+    topErrorIPs: stats.topErrorIPs || [],
+    topIPs: stats.topIPs || [],
+    topUserAgents: stats.topUserAgents || [],
+    topHosts: stats.topHosts || [], // NEW: Top virtual hosts by traffic
+    errorRate: stats.requestsByStatus ?
+      ((stats.requestsByStatus['403'] + stats.requestsByStatus['404'] + stats.requestsByStatus['500']) / stats.totalRequests * 100).toFixed(2) :
+      '0.00',
+    successRate: stats.requestsByStatus && stats.totalRequests > 0 ?
+      ((stats.requestsByStatus['200'] / stats.totalRequests) * 100).toFixed(2) :
+      '0.00',
+    lastUpdate: statsCache.nginx.lastUpdate
+  };
+}
+
+/**
  * Get cache age in seconds
  */
 function getCacheAge() {
@@ -308,6 +377,7 @@ async function manualRefresh() {
 module.exports = {
   getCachedNginxStats,
   getCachedSecurityStats,
+  getCachedTrafficStats,
   getCacheAge,
   isCacheStale,
   startCacheRefresh,

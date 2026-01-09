@@ -2,13 +2,6 @@ const fs = require('fs');
 const path = require('path');
 const { execSync } = require('child_process');
 
-// Cache for parsed statistics
-let statsCache = {
-  data: null,
-  timestamp: null,
-  cacheLifetime: 30 * 60 * 1000 // 30 minutes in milliseconds
-};
-
 /**
  * Get nginx access log path
  */
@@ -326,43 +319,14 @@ function formatBytes(bytes) {
   return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
 }
 
-/**
- * Check if cached statistics are still valid
- */
-function isCacheValid() {
-  if (!statsCache.data || !statsCache.timestamp) {
-    return false;
-  }
-
-  const now = Date.now();
-  const age = now - statsCache.timestamp;
-
-  return age < statsCache.cacheLifetime;
-}
-
-/**
- * Clear the statistics cache (useful for testing or forcing refresh)
- */
-function clearCache() {
-  statsCache.data = null;
-  statsCache.timestamp = null;
-  console.log('📊 Statistics cache cleared');
-}
 
 /**
  * Parse nginx access logs and return statistics
  * @param {Array} proxyHosts - Array of proxy host objects
  * @param {string} timeRange - Time range filter (e.g., '24h', '7d', 'all')
  * @param {number|null} maxLines - Max lines to read (null = entire file since last rotation)
- * @param {boolean} forceRefresh - Force cache refresh (default: false)
  */
-function parseAccessLogs(proxyHosts = [], timeRange = '24h', maxLines = null, forceRefresh = false) {
-  // Check cache first (unless force refresh or reading specific line count)
-  if (!forceRefresh && maxLines === null && isCacheValid()) {
-    console.log('📊 Returning cached statistics (age: ' + Math.floor((Date.now() - statsCache.timestamp) / 1000) + 's)');
-    return statsCache.data;
-  }
-
+function parseAccessLogs(proxyHosts = [], timeRange = '24h', maxLines = null) {
   console.log('📊 Parsing nginx access logs...');
   const startTime = Date.now();
 
@@ -385,18 +349,10 @@ function parseAccessLogs(proxyHosts = [], timeRange = '24h', maxLines = null, fo
   const parseTime = Date.now() - startTime;
   console.log(`📊 Parsed ${entries.length} log entries in ${parseTime}ms`);
 
-  // Cache the results (only if reading full file)
-  if (maxLines === null) {
-    statsCache.data = stats;
-    statsCache.timestamp = Date.now();
-    console.log('📊 Statistics cached for 30 minutes');
-  }
-
   return stats;
 }
 
 module.exports = {
   parseAccessLogs,
-  getAccessLogPath,
-  clearCache
+  getAccessLogPath
 };

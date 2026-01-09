@@ -3,7 +3,7 @@ import state from './state.js';
 import api from './api.js';
 import { renderDashboard } from './components/dashboard.js';
 import { renderSecurityDashboard } from './components/security-dashboard.js';
-import { renderNginxTuning } from './components/nginx-tuning.js';
+import { renderNginxSecurity } from './components/nginx-security.js';
 import { renderNginxStatistics } from './components/nginx-statistics.js';
 import { renderProxies } from './components/proxy-list.js';
 import { renderCertificates } from './components/ssl-manager.js';
@@ -135,12 +135,18 @@ router.register('/dashboard', async () => {
 // Security sub-routes
 router.register('/security/tuning', async () => {
   updateNavigation('security/tuning');
-  await renderNginxTuning(mainContent);
+  await renderNginxSecurity(mainContent);
+});
+
+// Alias for renamed route
+router.register('/security/nginx', async () => {
+  updateNavigation('security/nginx');
+  await renderNginxSecurity(mainContent);
 });
 
 router.register('/security/statistics', async () => {
   updateNavigation('security/statistics');
-  setHeader('Nginx Dashboard');
+  setHeader('Traffic & Performance');
   await renderNginxStatistics(mainContent);
 });
 
