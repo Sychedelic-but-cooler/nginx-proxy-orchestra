@@ -6,11 +6,26 @@ export async function renderDashboard(container) {
   showLoading();
 
   try {
-    const [stats, trafficStats] = await Promise.all([
+    const [stats, trafficStatsRaw] = await Promise.all([
       api.getDashboardStats(),
       api.getStatistics('24h')
     ]);
-    
+
+    // Ensure trafficStats has all required properties with default values
+    const trafficStats = {
+      totalRequests: 0,
+      uniqueVisitors: 0,
+      errors4xx: 0,
+      errors5xx: 0,
+      errorRate4xx: '0.00',
+      errorRate5xx: '0.00',
+      topIPs: [],
+      topErrorIPs: [],
+      topHosts: [],
+      requestsByHour: Array(24).fill(0),
+      ...trafficStatsRaw
+    };
+
     container.innerHTML = `
       <div class="grid grid-4">
         <div class="stat-card">
@@ -51,6 +66,39 @@ export async function renderDashboard(container) {
                 </span>
               </td>
             </tr>
+            ${stats.nginx.modules && (stats.nginx.modules.dynamic.length > 0 || stats.nginx.modules.builtin.length > 0) ? `
+              <tr>
+                <td colspan="2" style="padding-top: 16px;">
+                  <strong>Loaded Modules:</strong>
+                  <div style="margin-top: 8px;">
+                    ${stats.nginx.modules.dynamic.length > 0 ? `
+                      <div style="margin-bottom: 12px;">
+                        <div style="font-size: 0.9em; color: var(--text-secondary); margin-bottom: 4px;">Dynamic Modules:</div>
+                        <div style="display: flex; flex-wrap: wrap; gap: 6px;">
+                          ${stats.nginx.modules.dynamic.map(mod => `
+                            <span class="badge badge-primary" style="font-size: 0.85em;" title="${mod.file}${mod.size ? ' (' + mod.size + ' KB)' : ''}">
+                              ${escapeHtml(mod.name)}
+                            </span>
+                          `).join('')}
+                        </div>
+                      </div>
+                    ` : ''}
+                    ${stats.nginx.modules.builtin.length > 0 ? `
+                      <div>
+                        <div style="font-size: 0.9em; color: var(--text-secondary); margin-bottom: 4px;">Built-in Modules:</div>
+                        <div style="display: flex; flex-wrap: wrap; gap: 6px;">
+                          ${stats.nginx.modules.builtin.map(mod => `
+                            <span class="badge" style="background: var(--border-color); color: var(--text-primary); font-size: 0.85em;">
+                              ${escapeHtml(mod.name)}
+                            </span>
+                          `).join('')}
+                        </div>
+                      </div>
+                    ` : ''}
+                  </div>
+                </td>
+              </tr>
+            ` : ''}
           </table>
           <div style="margin-top: 16px;">
             <button id="testNginxBtn" class="btn btn-secondary btn-sm">Test Config</button>
@@ -98,26 +146,34 @@ export async function renderDashboard(container) {
       <!-- Traffic Statistics -->
       <div class="card" style="margin-top: 20px;">
         <div class="card-header">
-          <h3 class="card-title">Traffic Statistics (Last 24 Hours)</h3>
+          <h3 class="card-title">Traffic Statistics (Since Last Log Rotation)</h3>
         </div>
-        <div class="grid grid-4" style="padding: 20px; gap: 20px;">
-          <div class="stat-card" style="background: var(--card-bg); border: 1px solid var(--border-color);">
-            <div class="stat-value">${trafficStats.totalRequests.toLocaleString()}</div>
-            <div class="stat-label">Total Requests</div>
+        ${trafficStats.totalRequests > 0 || trafficStats.topIPs.length > 0 ? `
+          <div class="grid grid-4" style="padding: 20px; gap: 20px;">
+            <div class="stat-card" style="background: var(--card-bg); border: 1px solid var(--border-color);">
+              <div class="stat-value">${trafficStats.totalRequests.toLocaleString()}</div>
+              <div class="stat-label">Total Requests</div>
+            </div>
+            <div class="stat-card" style="background: var(--card-bg); border: 1px solid var(--border-color);">
+              <div class="stat-value">${trafficStats.uniqueVisitors.toLocaleString()}</div>
+              <div class="stat-label">Unique Visitors</div>
+            </div>
+            <div class="stat-card" style="background: var(--card-bg); border: 1px solid var(--border-color);">
+              <div class="stat-value text-warning">${trafficStats.errors4xx.toLocaleString()}</div>
+              <div class="stat-label">4XX Errors (${trafficStats.errorRate4xx}%)</div>
+            </div>
+            <div class="stat-card" style="background: var(--card-bg); border: 1px solid var(--border-color);">
+              <div class="stat-value text-danger">${trafficStats.errors5xx.toLocaleString()}</div>
+              <div class="stat-label">5XX Errors (${trafficStats.errorRate5xx}%)</div>
+            </div>
           </div>
-          <div class="stat-card" style="background: var(--card-bg); border: 1px solid var(--border-color);">
-            <div class="stat-value">${trafficStats.uniqueVisitors.toLocaleString()}</div>
-            <div class="stat-label">Unique Visitors</div>
+        ` : `
+          <div style="padding: 30px; text-align: center; color: var(--text-secondary);">
+            <p style="margin-bottom: 10px;">📊 No traffic data available yet</p>
+            <p style="font-size: 0.9em;">Traffic statistics will appear here once nginx starts receiving requests.</p>
+            <p style="font-size: 0.85em; margin-top: 10px;">Make sure nginx access logs are available at <code>/var/log/nginx/access.log</code></p>
           </div>
-          <div class="stat-card" style="background: var(--card-bg); border: 1px solid var(--border-color);">
-            <div class="stat-value text-warning">${trafficStats.errors4xx.toLocaleString()}</div>
-            <div class="stat-label">4XX Errors (${trafficStats.errorRate4xx}%)</div>
-          </div>
-          <div class="stat-card" style="background: var(--card-bg); border: 1px solid var(--border-color);">
-            <div class="stat-value text-danger">${trafficStats.errors5xx.toLocaleString()}</div>
-            <div class="stat-label">5XX Errors (${trafficStats.errorRate5xx}%)</div>
-          </div>
-        </div>
+        `}
       </div>
 
       <div class="grid grid-2" style="margin-top: 20px;">

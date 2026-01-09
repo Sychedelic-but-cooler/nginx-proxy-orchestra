@@ -31,43 +31,235 @@ body {
 
 /* Login page */
 .login-page {
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
   min-height: 100vh;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: linear-gradient(135deg, #3b82f6 0%, #93c5fd 50%, #ffffff 100%);
+  overflow: hidden;
+}
+
+/* Animated background elements */
+.login-bg-animation {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  z-index: 0;
+}
+
+.floating-shape {
+  position: absolute;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(10px);
+  animation: float 20s infinite ease-in-out;
+}
+
+.shape-1 {
+  width: 300px;
+  height: 300px;
+  top: -100px;
+  left: -100px;
+  animation-delay: 0s;
+  animation-duration: 25s;
+}
+
+.shape-2 {
+  width: 200px;
+  height: 200px;
+  top: 60%;
+  right: -50px;
+  animation-delay: 5s;
+  animation-duration: 20s;
+}
+
+.shape-3 {
+  width: 150px;
+  height: 150px;
+  bottom: 10%;
+  left: 10%;
+  animation-delay: 10s;
+  animation-duration: 30s;
+}
+
+.shape-4 {
+  width: 250px;
+  height: 250px;
+  top: 20%;
+  right: 15%;
+  animation-delay: 15s;
+  animation-duration: 22s;
+}
+
+@keyframes float {
+  0%, 100% {
+    transform: translate(0, 0) scale(1);
+    opacity: 0.3;
+  }
+  25% {
+    transform: translate(30px, -30px) scale(1.1);
+    opacity: 0.4;
+  }
+  50% {
+    transform: translate(-20px, 20px) scale(0.9);
+    opacity: 0.5;
+  }
+  75% {
+    transform: translate(40px, 30px) scale(1.05);
+    opacity: 0.35;
+  }
 }
 
 .login-container {
+  position: relative;
+  z-index: 1;
   width: 100%;
-  max-width: 400px;
+  max-width: 480px;
   padding: 20px;
+  animation: fadeInUp 0.6s ease-out;
+}
+
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(30px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .login-card {
-  background: var(--card-bg);
-  border-radius: 12px;
-  padding: 40px;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+  background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(20px);
+  border-radius: 16px;
+  padding: 50px 45px;
+  box-shadow: 0 20px 60px rgba(59, 130, 246, 0.25), 0 0 0 1px rgba(255, 255, 255, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.5);
 }
 
 .login-card h1 {
   text-align: center;
   margin-bottom: 8px;
   color: var(--text-primary);
+  font-size: 28px;
+  font-weight: 600;
 }
 
 .login-card .subtitle {
   text-align: center;
   color: var(--text-secondary);
-  margin-bottom: 30px;
-  font-size: 13px;
+  margin-bottom: 35px;
+  font-size: 14px;
 }
 
 .login-footer {
-  margin-top: 20px;
+  margin-top: 24px;
   text-align: center;
   color: var(--text-secondary);
+  font-size: 12px;
+}
+
+/* GitHub Attribution Box */
+.github-attribution {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  z-index: 2;
+  background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(20px);
+  border-radius: 12px;
+  padding: 14px 18px;
+  box-shadow: 0 10px 30px rgba(59, 130, 246, 0.2), 0 0 0 1px rgba(255, 255, 255, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  animation: fadeInRight 0.8s ease-out 0.3s both;
+}
+
+@keyframes fadeInRight {
+  from {
+    opacity: 0;
+    transform: translateX(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.github-attribution a {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  text-decoration: none;
+  color: var(--text-primary);
+  font-size: 13px;
+  transition: all 0.2s ease;
+}
+
+.github-attribution a:hover {
+  color: var(--primary-color);
+  transform: translateY(-1px);
+}
+
+.github-link svg {
+  transition: transform 0.3s ease;
+}
+
+.github-link:hover svg {
+  transform: rotate(360deg);
+}
+
+.attribution-divider {
+  width: 1px;
+  height: 20px;
+  background: var(--border-color);
+}
+
+.developer-link {
+  font-weight: 400;
+}
+
+.developer-link strong {
+  font-weight: 600;
+  color: var(--primary-color);
+}
+
+/* Mobile responsive */
+@media (max-width: 768px) {
+  .login-container {
+    max-width: 100%;
+    padding: 15px;
+  }
+
+  .login-card {
+    padding: 35px 25px;
+  }
+
+  .github-attribution {
+    bottom: 15px;
+    right: 15px;
+    left: 15px;
+    flex-direction: column;
+    gap: 8px;
+    padding: 12px 15px;
+    text-align: center;
+  }
+
+  .attribution-divider {
+    display: none;
+  }
+
+  .floating-shape {
+    display: none;
+  }
 }
 
 /* Form elements */
@@ -641,6 +833,16 @@ body {
 
 .checkbox-group input[type="checkbox"] {
   width: auto;
+}
+
+.checkbox-group input[type="checkbox"]:disabled:checked {
+  opacity: 0.8;
+  cursor: not-allowed;
+}
+
+.checkbox-group input[type="checkbox"]:disabled + label {
+  opacity: 0.9;
+  cursor: not-allowed;
 }
 
 /* Action buttons in table */

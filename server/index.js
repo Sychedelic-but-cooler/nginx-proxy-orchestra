@@ -6,7 +6,8 @@ const { handleAPI } = require('./routes/api');
 const { initializeDefaultServer } = require('./utils/default-server');
 const { ensureAdminCert, getActiveCertPaths } = require('./utils/admin-cert');
 const { initializeACMEWebroot } = require('./utils/acme-setup');
-const { db } = require('./db');
+const { db, getSetting } = require('./db');
+const { getWAFLogParser } = require('./utils/waf-log-parser');
 
 // Initialize ACME webroot for Let's Encrypt challenges
 initializeACMEWebroot();
@@ -61,7 +62,7 @@ function serveStatic(req, res, filePath) {
     res.setHeader('X-XSS-Protection', '1; mode=block');
     
     if (ext === '.html') {
-      res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:;");
+      res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' https://cdn.jsdelivr.net;");
     }
 
     res.writeHead(200);
@@ -159,6 +160,56 @@ server.listen(HTTPS_PORT, () => {
   console.log('');
   console.log('═══════════════════════════════════════════════════════════');
   console.log('');
+
+  // Load nginx module information at startup
+  const { loadModuleInfo } = require('./utils/nginx-ops');
+  loadModuleInfo();
+
+  // Start statistics cache service
+  const { startCacheRefresh } = require('./utils/stats-cache-service');
+  startCacheRefresh();
+
+  // Start WAF log parser daemon
+  const wafLogParser = getWAFLogParser();
+  wafLogParser.start().catch(err => {
+    console.error('Failed to start WAF log parser:', err.message);
+  });
+
+  // Start ban system services
+  const wafEnabled = getSetting('waf_enabled');
+  if (wafEnabled === '1') {
+    try {
+      const { startDetectionEngine, startCleanupJob } = require('./utils/detection-engine');
+      const { getBanQueue } = require('./utils/ban-queue');
+      const { cleanupExpiredBans } = require('./utils/ban-service');
+
+      // Start detection engine (polls WAF events every 5 seconds)
+      startDetectionEngine();
+      startCleanupJob();
+      console.log('✓ Detection engine started');
+
+      // Start ban queue processor (processes every 60 seconds)
+      const banQueue = getBanQueue();
+      banQueue.start();
+      console.log('✓ Ban queue processor started');
+
+      // Cleanup expired bans every hour
+      setInterval(async () => {
+        try {
+          const cleaned = await cleanupExpiredBans();
+          if (cleaned > 0) {
+            console.log(`✓ Cleaned up ${cleaned} expired bans`);
+          }
+        } catch (error) {
+          console.error('Error cleaning up expired bans:', error);
+        }
+      }, 60 * 60 * 1000);
+
+      console.log('✓ Ban system services started');
+    } catch (error) {
+      console.error('Failed to start ban system:', error.message);
+    }
+  }
 });
 
 // Graceful shutdown
@@ -180,9 +231,38 @@ function shutdown(signal) {
     process.exit(1);
   }, 5000); // 5 second timeout
 
-  server.close(() => {
+  server.close(async () => {
     clearTimeout(forceExitTimeout);
     console.log('HTTPS server closed');
+
+    // Stop statistics cache service
+    try {
+      const { stopCacheRefresh } = require('./utils/stats-cache-service');
+      stopCacheRefresh();
+    } catch (err) {
+      console.error('Error stopping stats cache:', err.message);
+    }
+
+    // Stop WAF log parser
+    try {
+      const wafLogParser = getWAFLogParser();
+      await wafLogParser.stop();
+    } catch (err) {
+      console.error('Error stopping WAF log parser:', err.message);
+    }
+
+    // Stop ban system services
+    try {
+      const { stopDetectionEngine } = require('./utils/detection-engine');
+      const { getBanQueue } = require('./utils/ban-queue');
+
+      stopDetectionEngine();
+      const banQueue = getBanQueue();
+      await banQueue.stop();
+      console.log('✓ Ban system stopped');
+    } catch (err) {
+      console.error('Error stopping ban system:', err.message);
+    }
 
     // Close database connection
     try {

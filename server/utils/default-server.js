@@ -57,8 +57,14 @@ ${httpAction}
 
 # Catch all HTTPS requests to undefined domains
 server {
-    listen 443 ssl http2 default_server;
-    listen [::]:443 ssl http2 default_server;
+    # QUIC/HTTP3 listeners with reuseport (declared once for all virtual hosts)
+    listen 443 quic reuseport default_server;
+    listen [::]:443 quic default_server;
+
+    # Standard HTTPS listeners
+    listen 443 ssl default_server;
+    listen [::]:443 ssl default_server;
+
     server_name _;
 
     # Use a self-signed certificate for the default server
@@ -67,6 +73,9 @@ server {
     ssl_certificate_key /etc/nginx/ssl/default.key;
     ssl_protocols TLSv1.2 TLSv1.3;
     ssl_ciphers HIGH:!aNULL:!MD5;
+
+    # HTTP/3 advertisement header
+    add_header Alt-Svc 'h3=":443"; ma=86400' always;
 
 ${httpsAction}
 }

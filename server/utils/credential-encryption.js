@@ -8,19 +8,20 @@ const KEY_LENGTH = 32; // 256 bits
 
 /**
  * Get or generate encryption key
- * Stored in .env as CERT_ENCRYPTION_KEY
+ * Stored in .env as CREDENTIALS_ENCRYPTION_KEY (or legacy CERT_ENCRYPTION_KEY)
  * If not found, generates a new one
  */
 function getEncryptionKey() {
-  let key = process.env.CERT_ENCRYPTION_KEY;
+  // Try new variable name first, fallback to legacy name
+  let key = process.env.CREDENTIALS_ENCRYPTION_KEY || process.env.CERT_ENCRYPTION_KEY;
 
   if (!key) {
-    console.warn('CERT_ENCRYPTION_KEY not found in environment, generating new key...');
+    console.warn('CREDENTIALS_ENCRYPTION_KEY not found in environment, generating new key...');
     console.warn('⚠️  IMPORTANT: Add this to your .env file to persist across restarts:');
 
     // Generate random key
     key = crypto.randomBytes(KEY_LENGTH).toString('hex');
-    console.warn(`CERT_ENCRYPTION_KEY=${key}`);
+    console.warn(`CREDENTIALS_ENCRYPTION_KEY=${key}`);
     console.warn('');
   }
 
@@ -107,7 +108,7 @@ function generateEncryptionKey() {
  */
 function isEncryptionConfigured() {
   try {
-    const key = process.env.CERT_ENCRYPTION_KEY;
+    const key = process.env.CREDENTIALS_ENCRYPTION_KEY || process.env.CERT_ENCRYPTION_KEY;
     if (!key) return false;
 
     // Clean and validate

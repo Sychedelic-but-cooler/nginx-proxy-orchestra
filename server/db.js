@@ -242,6 +242,54 @@ function initializeDatabase() {
     console.error('Certbot migration error:', error.message);
   }
 
+  // Run WAF enhancements migration
+  const { runWAFEnhancementsMigration } = require('./migrations/003_waf_enhancements');
+  try {
+    runWAFEnhancementsMigration(db);
+  } catch (error) {
+    console.error('WAF enhancements migration error:', error.message);
+  }
+
+  // Run modular config migration
+  const { runModularConfigMigration } = require('./migrations/004_modular_config');
+  try {
+    runModularConfigMigration(db);
+  } catch (error) {
+    console.error('Modular config migration error:', error.message);
+  }
+
+  // Run single WAF profile migration
+  const { runSingleWAFProfileMigration } = require('./migrations/005_single_waf_profile');
+  try {
+    runSingleWAFProfileMigration(db);
+  } catch (error) {
+    console.error('Single WAF profile migration error:', error.message);
+  }
+
+  // Run profile-level WAF exclusions migration
+  const { runProfileExclusionsMigration } = require('./migrations/006_profile_exclusions');
+  try {
+    runProfileExclusionsMigration(db);
+  } catch (error) {
+    console.error('Profile exclusions migration error:', error.message);
+  }
+
+  // Run unified credentials migration
+  const { runUnifiedCredentialsMigration } = require('./migrations/007_unified_credentials');
+  try {
+    runUnifiedCredentialsMigration(db);
+  } catch (error) {
+    console.error('Unified credentials migration error:', error.message);
+  }
+
+  // Run ban system migration
+  const { runBanSystemMigration } = require('./migrations/008_ban_system');
+  try {
+    runBanSystemMigration(db);
+  } catch (error) {
+    console.error('Ban system migration error:', error.message);
+  }
+
   // Create some default modules if none exist
   const modulesExist = db.prepare('SELECT COUNT(*) as count FROM modules').get();
   if (modulesExist.count === 0) {

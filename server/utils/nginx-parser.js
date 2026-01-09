@@ -120,6 +120,111 @@ function sanitizeFilename(name) {
 }
 
 /**
+ * Generate listen directives based on SSL settings (without hardcoded http2)
+ * @param {Object} proxyHost - Proxy configuration
+ * @param {Array} modules - Array of modules (not used yet, for future extensibility)
+ * @returns {string} - Listen directives
+ */
+function generateListenDirectives(proxyHost, modules) {
+  let directives = '';
+
+  if (proxyHost.ssl_enabled) {
+    // Check if HTTP/3 (QUIC) module is enabled
+    const hasHTTP3 = modules.some(m => m.name === 'HTTP/3 (QUIC)');
+
+    if (hasHTTP3) {
+      // Add QUIC listeners first (no reuseport to avoid conflicts with multiple proxies)
+      directives += `    listen 443 quic;\n`;
+      directives += `    listen [::]:443 quic;\n`;
+    }
+
+    // Add SSL listeners
+    directives += `    listen 443 ssl;\n`;
+    directives += `    listen [::]:443 ssl;\n`;
+  } else {
+    directives += `    listen 80;\n`;
+    directives += `    listen [::]:80;\n`;
+  }
+
+  return directives;
+}
+
+/**
+ * Render Force HTTPS redirect block (special redirect module)
+ * @param {string} domains - Space-separated domain names
+ * @param {string} acmeWebroot - ACME challenge webroot path
+ * @returns {string} - Complete redirect server block
+ */
+function renderForceHTTPSRedirect(domains, acmeWebroot) {
+  let config = `# HTTP to HTTPS redirect\n`;
+  config += `server {\n`;
+  config += `    listen 80;\n`;
+  config += `    listen [::]:80;\n`;
+  config += `    server_name ${domains};\n`;
+  config += `\n`;
+  config += `    # ACME challenge for Let's Encrypt\n`;
+  config += `    location /.well-known/acme-challenge/ {\n`;
+  config += `        root ${acmeWebroot};\n`;
+  config += `        allow all;\n`;
+  config += `    }\n`;
+  config += `\n`;
+  config += `    # Redirect all other HTTP traffic to HTTPS\n`;
+  config += `    location / {\n`;
+  config += `        return 301 https://$server_name$request_uri;\n`;
+  config += `    }\n`;
+  config += `}\n\n`;
+
+  return config;
+}
+
+/**
+ * Render server-level modules (HSTS, Security Headers, HTTP/2, HTTP/3, etc.)
+ * @param {Array} modules - Array of module objects with level property
+ * @param {Object} proxyHost - Proxy configuration (unused, for future extensibility)
+ * @returns {string} - Server-level module configuration
+ */
+function renderServerLevelModules(modules, proxyHost) {
+  const serverModules = modules.filter(m => m.level === 'server');
+  let config = '';
+
+  for (const module of serverModules) {
+    config += `    # Module: ${module.name}\n`;
+    module.content.split('\n').forEach(line => {
+      if (line.trim()) {
+        config += `    ${line.trim()}\n`;
+      }
+    });
+    config += `\n`;
+  }
+
+  return config;
+}
+
+/**
+ * Render location-level modules (WebSocket, Brotli, Real IP, etc.)
+ * @param {Array} modules - Array of module objects with level property
+ * @param {Object} proxyHost - Proxy configuration (unused, for future extensibility)
+ * @returns {string} - Location-level module configuration
+ */
+function renderLocationLevelModules(modules, proxyHost) {
+  const locationModules = modules.filter(m => m.level === 'location');
+  let config = '';
+
+  // Skip Gzip Compression module as it's always enabled by default
+  for (const module of locationModules.filter(m => m.name !== 'Gzip Compression')) {
+    config += `        # Module: ${module.name}\n`;
+    module.content.split('\n').forEach(line => {
+      if (line.trim()) {
+        config += `        ${line.trim()}\n`;
+      }
+    });
+    config += `\n`;
+  }
+
+  return config;
+}
+
+/**
  * Generate nginx server block configuration
  */
 function generateServerBlock(proxyHost, modules = [], db = null) {
@@ -127,17 +232,18 @@ function generateServerBlock(proxyHost, modules = [], db = null) {
   const upstreamUrl = `${proxyHost.forward_scheme}://${proxyHost.forward_host}:${proxyHost.forward_port}`;
 
   let config = `# Proxy: ${proxyHost.name}\n`;
-  config += `server {\n`;
 
-  // Listen directives
-  if (proxyHost.ssl_enabled) {
-    config += `    listen 443 ssl http2;\n`;
-    config += `    listen [::]:443 ssl http2;\n`;
-  } else {
-    config += `    listen 80;\n`;
-    config += `    listen [::]:80;\n`;
+  // Render Force HTTPS redirect module if present and SSL enabled
+  const forceHTTPSModule = modules.find(m => m.level === 'redirect');
+  if (proxyHost.ssl_enabled && forceHTTPSModule) {
+    config += renderForceHTTPSRedirect(domains, ACME_WEBROOT);
   }
 
+  // Main server block
+  config += `server {\n`;
+
+  // Listen directives (no hardcoded http2)
+  config += generateListenDirectives(proxyHost, modules);
   config += `\n`;
   config += `    server_name ${domains};\n`;
   config += `\n`;
@@ -157,24 +263,18 @@ function generateServerBlock(proxyHost, modules = [], db = null) {
   if (db) {
     const { generateServerSecurityConfig } = require('./security-config-generator');
     config += generateServerSecurityConfig(db, proxyHost.id);
-  }
 
-  // Modules that belong at server level (headers, SSL settings, etc.)
-  const serverLevelModules = ['HSTS', 'Security Headers', 'HTTP/3 (QUIC)'];
-  const locationLevelModules = ['WebSocket Support', 'Real IP', 'Gzip Compression', 'Brotli Compression'];
-
-  // Include server-level modules
-  for (const module of modules) {
-    if (serverLevelModules.includes(module.name)) {
-      config += `    # Module: ${module.name}\n`;
-      module.content.split('\n').forEach(line => {
-        if (line.trim()) {
-          config += `    ${line.trim()}\n`;
-        }
-      });
-      config += `\n`;
+    // WAF features (ModSecurity)
+    try {
+      const { generateProxyWAFConfig } = require('./modsecurity-config-generator');
+      config += generateProxyWAFConfig(db, proxyHost.id);
+    } catch (error) {
+      console.error('Error generating WAF config:', error.message);
     }
   }
+
+  // Server-level modules (HSTS, Security Headers, HTTP/2, HTTP/3)
+  config += renderServerLevelModules(modules, proxyHost);
 
   // ACME challenge location for Let's Encrypt certificate validation
   config += `    # ACME challenge for Let's Encrypt\n`;
@@ -188,6 +288,7 @@ function generateServerBlock(proxyHost, modules = [], db = null) {
   config += `    location / {\n`;
   config += `        proxy_pass ${upstreamUrl};\n`;
   config += `        proxy_set_header Host $host;\n`;
+  config += `        proxy_set_header X-Proxy-Target $server_name;\n`;
 
   // Only set default forwarding headers if Real IP module is not enabled
   const hasRealIPModule = modules.some(m => m.name === 'Real IP');
@@ -196,6 +297,23 @@ function generateServerBlock(proxyHost, modules = [], db = null) {
     config += `        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;\n`;
     config += `        proxy_set_header X-Forwarded-Proto $scheme;\n`;
   }
+  config += `\n`;
+
+  // Security: Hide backend server information headers
+  config += `        # Security: Remove information disclosure headers\n`;
+  config += `        proxy_hide_header X-Powered-By;\n`;
+  config += `        proxy_hide_header Server;\n`;
+  config += `        proxy_hide_header X-AspNet-Version;\n`;
+  config += `        proxy_hide_header X-AspNetMvc-Version;\n`;
+  config += `        proxy_hide_header X-Generator;\n`;
+  config += `        proxy_hide_header X-Runtime;\n`;
+  config += `        proxy_hide_header X-Drupal-Cache;\n`;
+  config += `        proxy_hide_header X-Drupal-Dynamic-Cache;\n`;
+  config += `        proxy_hide_header X-Varnish;\n`;
+  config += `        proxy_hide_header Via;\n`;
+  config += `        proxy_hide_header X-Application-Context;\n`;
+  config += `        proxy_hide_header X-Mod-Pagespeed;\n`;
+  config += `        proxy_hide_header X-Page-Speed;\n`;
   config += `\n`;
 
   // Always enable Gzip compression (default for all hosts)
@@ -207,19 +325,8 @@ function generateServerBlock(proxyHost, modules = [], db = null) {
   config += `        gzip_types text/plain text/css text/xml text/javascript application/json application/javascript application/xml+rss application/rss+xml font/truetype font/opentype application/vnd.ms-fontobject image/svg+xml;\n`;
   config += `\n`;
 
-  // Include location-level modules (proxy settings, WebSocket, Brotli compression)
-  // Note: Gzip module is ignored as it's always enabled by default
-  for (const module of modules) {
-    if (locationLevelModules.includes(module.name) && module.name !== 'Gzip Compression') {
-      config += `        # Module: ${module.name}\n`;
-      module.content.split('\n').forEach(line => {
-        if (line.trim()) {
-          config += `        ${line.trim()}\n`;
-        }
-      });
-      config += `\n`;
-    }
-  }
+  // Location-level modules (WebSocket, Brotli, Real IP, etc.)
+  config += renderLocationLevelModules(modules, proxyHost);
 
   // Advanced config
   if (proxyHost.advanced_config) {
@@ -232,7 +339,7 @@ function generateServerBlock(proxyHost, modules = [], db = null) {
 
   config += `    }\n`;
   config += `}\n`;
-  
+
   return config;
 }
 
@@ -284,8 +391,8 @@ function generate404Block(proxyHost) {
   config += `    listen [::]:80;\n`;
   
   if (proxyHost.ssl_enabled) {
-    config += `    listen 443 ssl http2;\n`;
-    config += `    listen [::]:443 ssl http2;\n`;
+    config += `    listen 443 ssl;\n`;
+    config += `    listen [::]:443 ssl;\n`;
   }
   
   config += `\n`;
@@ -309,26 +416,101 @@ function generate404Block(proxyHost) {
 }
 
 /**
+ * Clean up old backup files for a specific config
+ * Keeps only the most recent N backups
+ */
+function cleanupBackups(filename, keepCount = 3) {
+  const configDir = getConfigDir();
+  const configPath = path.join(configDir, filename);
+
+  try {
+    // Find all backup files for this config
+    const backupPattern = `${filename}.backup.`;
+    const allFiles = fs.readdirSync(configDir);
+
+    const backupFiles = allFiles
+      .filter(file => file.startsWith(backupPattern))
+      .map(file => {
+        const fullPath = path.join(configDir, file);
+        const stats = fs.statSync(fullPath);
+        return {
+          name: file,
+          path: fullPath,
+          mtime: stats.mtime.getTime()
+        };
+      })
+      .sort((a, b) => b.mtime - a.mtime); // Sort by modification time, newest first
+
+    // Delete old backups (keep only the most recent N)
+    if (backupFiles.length > keepCount) {
+      const filesToDelete = backupFiles.slice(keepCount);
+      filesToDelete.forEach(file => {
+        try {
+          fs.unlinkSync(file.path);
+          console.log(`Cleaned up old backup: ${file.name}`);
+        } catch (err) {
+          console.error(`Failed to delete backup ${file.name}:`, err.message);
+        }
+      });
+    }
+  } catch (error) {
+    console.error(`Error cleaning up backups for ${filename}:`, error.message);
+  }
+}
+
+/**
+ * Clean up old .deleted files older than specified days
+ */
+function cleanupDeletedFiles(daysOld = 7) {
+  const configDir = getConfigDir();
+  const cutoffTime = Date.now() - (daysOld * 24 * 60 * 60 * 1000);
+
+  try {
+    const allFiles = fs.readdirSync(configDir);
+    const deletedFiles = allFiles.filter(file => file.includes('.deleted.'));
+
+    deletedFiles.forEach(file => {
+      const fullPath = path.join(configDir, file);
+      const stats = fs.statSync(fullPath);
+
+      if (stats.mtime.getTime() < cutoffTime) {
+        try {
+          fs.unlinkSync(fullPath);
+          console.log(`Cleaned up old deleted file: ${file}`);
+        } catch (err) {
+          console.error(`Failed to delete ${file}:`, err.message);
+        }
+      }
+    });
+  } catch (error) {
+    console.error('Error cleaning up deleted files:', error.message);
+  }
+}
+
+/**
  * Write nginx configuration file
  */
 function writeNginxConfig(filename, content) {
   const configDir = getConfigDir();
-  
+
   // Create directory if it doesn't exist
   if (!fs.existsSync(configDir)) {
     console.warn(`Nginx config directory does not exist: ${configDir}`);
     console.warn('Creating directory...');
     fs.mkdirSync(configDir, { recursive: true });
   }
-  
+
   const configPath = path.join(configDir, filename);
-  
+
   // Create backup if file exists
   if (fs.existsSync(configPath)) {
     const backupPath = `${configPath}.backup.${Date.now()}`;
     fs.copyFileSync(configPath, backupPath);
+
+    // Clean up old backups (keep only last 3)
+    cleanupBackups(filename, 3);
   }
-  
+
   fs.writeFileSync(configPath, content, 'utf8');
   return configPath;
 }
@@ -353,12 +535,15 @@ function readNginxConfig(filename) {
 function deleteNginxConfig(filename) {
   const configDir = getConfigDir();
   const configPath = path.join(configDir, filename);
-  
+
   // Remove config file
   if (fs.existsSync(configPath)) {
     // Create backup before deleting
     const backupPath = `${configPath}.deleted.${Date.now()}`;
     fs.renameSync(configPath, backupPath);
+
+    // Clean up old deleted files (older than 7 days)
+    cleanupDeletedFiles(7);
   }
 }
 
@@ -408,5 +593,7 @@ module.exports = {
   deleteNginxConfig,
   enableNginxConfig,
   disableNginxConfig,
-  sanitizeFilename
+  sanitizeFilename,
+  cleanupBackups,
+  cleanupDeletedFiles
 };

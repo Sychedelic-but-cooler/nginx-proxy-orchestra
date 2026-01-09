@@ -21,7 +21,8 @@ const {
 const {
   getNginxStatus,
   safeReload,
-  testNginxConfig
+  testNginxConfig,
+  refreshModuleCache
 } = require('../utils/nginx-ops');
 const {
   parseCertificate,
@@ -130,15 +131,20 @@ async function handleAPI(req, res, parsedUrl) {
       return handleLogout(req, res);
     }
 
+    // SSE routes handle their own authentication (token via query param)
+    if (pathname === '/api/waf/events/stream' && method === 'GET') {
+      return handleWAFEventsStream(req, res, parsedUrl);
+    }
+
     // All other routes require authentication
     const authHeader = req.headers.authorization;
     const token = extractToken(authHeader);
     const user = verifyToken(token);
-    
+
     if (!user) {
       return sendJSON(res, { error: 'Unauthorized' }, 401);
     }
-    
+
     req.user = user;
 
     // Dashboard routes
@@ -308,6 +314,175 @@ async function handleAPI(req, res, parsedUrl) {
       return handleGetRecentBlocks(req, res, parsedUrl);
     }
 
+    // WAF routes
+    // WAF Profiles
+    if (pathname === '/api/waf/profiles' && method === 'GET') {
+      return handleGetWAFProfiles(req, res);
+    }
+
+    if (pathname === '/api/waf/profiles' && method === 'POST') {
+      return await handleCreateWAFProfile(req, res);
+    }
+
+    if (pathname.match(/^\/api\/waf\/profiles\/\d+$/) && method === 'PUT') {
+      return await handleUpdateWAFProfile(req, res, parsedUrl);
+    }
+
+    if (pathname.match(/^\/api\/waf\/profiles\/\d+$/) && method === 'DELETE') {
+      return handleDeleteWAFProfile(req, res, parsedUrl);
+    }
+
+    if (pathname.match(/^\/api\/waf\/profiles\/\d+\/config$/) && method === 'GET') {
+      return handleGetWAFProfileConfig(req, res, parsedUrl);
+    }
+
+    // WAF Events
+    if (pathname === '/api/waf/events' && method === 'GET') {
+      return handleGetWAFEvents(req, res, parsedUrl);
+    }
+
+    if (pathname === '/api/waf/stats' && method === 'GET') {
+      return handleGetWAFStats(req, res, parsedUrl);
+    }
+
+    // WAF Exclusions
+    if (pathname === '/api/waf/exclusions' && method === 'GET') {
+      return handleGetWAFExclusions(req, res, parsedUrl);
+    }
+
+    if (pathname === '/api/waf/exclusions' && method === 'POST') {
+      return await handleCreateWAFExclusion(req, res);
+    }
+
+    if (pathname.match(/^\/api\/waf\/exclusions\/\d+$/) && method === 'DELETE') {
+      return handleDeleteWAFExclusion(req, res, parsedUrl);
+    }
+
+    // Proxy WAF Assignment
+    if (pathname.match(/^\/api\/proxies\/\d+\/waf$/) && method === 'GET') {
+      return handleGetProxyWAFProfiles(req, res, parsedUrl);
+    }
+
+    if (pathname.match(/^\/api\/proxies\/\d+\/waf$/) && method === 'POST') {
+      return await handleAssignWAFProfile(req, res, parsedUrl);
+    }
+
+    if (pathname.match(/^\/api\/proxies\/\d+\/waf$/) && method === 'DELETE') {
+      return handleRemoveWAFProfile(req, res, parsedUrl);
+    }
+
+    // Credentials Management Routes
+    if (pathname === '/api/credentials' && method === 'GET') {
+      return handleGetCredentials(req, res, parsedUrl);
+    }
+
+    if (pathname === '/api/credentials' && method === 'POST') {
+      return await handleCreateCredential(req, res);
+    }
+
+    if (pathname.match(/^\/api\/credentials\/\d+$/) && method === 'PUT') {
+      return await handleUpdateCredential(req, res, parsedUrl);
+    }
+
+    if (pathname.match(/^\/api\/credentials\/\d+$/) && method === 'DELETE') {
+      return handleDeleteCredential(req, res, parsedUrl);
+    }
+
+    // Ban System Routes
+    // Ban Integrations
+    if (pathname === '/api/ban/integrations' && method === 'GET') {
+      return handleGetBanIntegrations(req, res);
+    }
+
+    if (pathname === '/api/ban/integrations' && method === 'POST') {
+      return await handleCreateBanIntegration(req, res);
+    }
+
+    if (pathname.match(/^\/api\/ban\/integrations\/\d+$/) && method === 'PUT') {
+      return await handleUpdateBanIntegration(req, res, parsedUrl);
+    }
+
+    if (pathname.match(/^\/api\/ban\/integrations\/\d+$/) && method === 'DELETE') {
+      return handleDeleteBanIntegration(req, res, parsedUrl);
+    }
+
+    if (pathname.match(/^\/api\/ban\/integrations\/\d+\/test$/) && method === 'POST') {
+      return await handleTestBanIntegration(req, res, parsedUrl);
+    }
+
+    // IP Bans
+    if (pathname === '/api/ban/bans' && method === 'GET') {
+      return handleGetBans(req, res, parsedUrl);
+    }
+
+    if (pathname === '/api/ban/bans' && method === 'POST') {
+      return await handleCreateBan(req, res);
+    }
+
+    if (pathname.match(/^\/api\/ban\/bans\/\d+$/) && method === 'DELETE') {
+      return await handleUnban(req, res, parsedUrl);
+    }
+
+    if (pathname.match(/^\/api\/ban\/bans\/\d+\/permanent$/) && method === 'PUT') {
+      return handleMakeBanPermanent(req, res, parsedUrl);
+    }
+
+    if (pathname === '/api/ban/bans/stats' && method === 'GET') {
+      return handleGetBanStats(req, res);
+    }
+
+    // IP Whitelist
+    if (pathname === '/api/ban/whitelist' && method === 'GET') {
+      return handleGetWhitelist(req, res);
+    }
+
+    if (pathname === '/api/ban/whitelist' && method === 'POST') {
+      return await handleAddToWhitelist(req, res);
+    }
+
+    if (pathname.match(/^\/api\/ban\/whitelist\/\d+$/) && method === 'DELETE') {
+      return handleRemoveFromWhitelist(req, res, parsedUrl);
+    }
+
+    // Detection Rules
+    if (pathname === '/api/ban/detection-rules' && method === 'GET') {
+      return handleGetDetectionRules(req, res);
+    }
+
+    if (pathname === '/api/ban/detection-rules' && method === 'POST') {
+      return await handleCreateDetectionRule(req, res);
+    }
+
+    if (pathname.match(/^\/api\/ban\/detection-rules\/\d+$/) && method === 'PUT') {
+      return await handleUpdateDetectionRule(req, res, parsedUrl);
+    }
+
+    if (pathname.match(/^\/api\/ban\/detection-rules\/\d+$/) && method === 'DELETE') {
+      return handleDeleteDetectionRule(req, res, parsedUrl);
+    }
+
+    if (pathname.match(/^\/api\/ban\/detection-rules\/\d+\/toggle$/) && method === 'POST') {
+      return handleToggleDetectionRule(req, res, parsedUrl);
+    }
+
+    // Queue Status
+    if (pathname === '/api/ban/queue/status' && method === 'GET') {
+      return handleGetQueueStatus(req, res);
+    }
+
+    // Notification Settings
+    if (pathname === '/api/settings/notifications' && method === 'GET') {
+      return handleGetNotificationSettings(req, res);
+    }
+
+    if (pathname === '/api/settings/notifications' && method === 'PUT') {
+      return await handleUpdateNotificationSettings(req, res);
+    }
+
+    if (pathname === '/api/notifications/test' && method === 'POST') {
+      return await handleTestNotification(req, res);
+    }
+
     // Nginx tuning and statistics routes
     if (pathname === '/api/nginx/tuning-stats' && method === 'GET') {
       return await handleGetNginxTuningStats(req, res, parsedUrl);
@@ -390,14 +565,23 @@ async function handleLogin(req, res) {
 
   logAudit(user.id, 'login', 'user', user.id, null, ip);
 
-  sendJSON(res, { 
+  // Auto-whitelist admin IPs for safety
+  try {
+    const { autoWhitelistAdmin } = require('../utils/ip-utils');
+    autoWhitelistAdmin(ip, user.id);
+  } catch (error) {
+    console.error('Failed to auto-whitelist admin IP:', error.message);
+    // Don't block login if whitelist fails
+  }
+
+  sendJSON(res, {
     success: true,
     token,
-    user: { 
-      id: user.id, 
-      username: user.username, 
-      role: user.role 
-    } 
+    user: {
+      id: user.id,
+      username: user.username,
+      role: user.role
+    }
   });
 }
 
@@ -526,10 +710,14 @@ function handleGetProxies(req, res) {
   const proxies = db.prepare(`
     SELECT
       ph.*,
-      sc.name as ssl_cert_name
+      sc.name as ssl_cert_name,
+      wp.id as waf_profile_id,
+      wp.name as waf_profile_name,
+      wp.paranoia_level as waf_profile_paranoia
     FROM proxy_hosts ph
     LEFT JOIN ssl_certificates sc ON ph.ssl_cert_id = sc.id
-    ORDER BY ph.created_at DESC
+    LEFT JOIN waf_profiles wp ON ph.waf_profile_id = wp.id
+    ORDER BY ph.name COLLATE NOCASE ASC
   `).all();
 
   sendJSON(res, proxies);
@@ -538,9 +726,16 @@ function handleGetProxies(req, res) {
 function handleGetProxy(req, res, parsedUrl) {
   const id = parseInt(parsedUrl.pathname.split('/').pop());
   const proxy = db.prepare(`
-    SELECT ph.*, sc.name as ssl_cert_name
+    SELECT
+      ph.*,
+      sc.name as ssl_cert_name,
+      wp.id as waf_profile_id,
+      wp.name as waf_profile_name,
+      wp.paranoia_level as waf_profile_paranoia,
+      wp.enabled as waf_profile_enabled
     FROM proxy_hosts ph
     LEFT JOIN ssl_certificates sc ON ph.ssl_cert_id = sc.id
+    LEFT JOIN waf_profiles wp ON ph.waf_profile_id = wp.id
     WHERE ph.id = ?
   `).get(id);
 
@@ -563,7 +758,7 @@ function handleGetProxy(req, res, parsedUrl) {
 
 async function handleCreateProxy(req, res) {
   const body = await parseBody(req);
-  const { name, type, domain_names, forward_scheme, forward_host, forward_port, ssl_enabled, ssl_cert_id, advanced_config, module_ids, stream_protocol, incoming_port } = body;
+  const { name, type, domain_names, forward_scheme, forward_host, forward_port, ssl_enabled, ssl_cert_id, advanced_config, module_ids, stream_protocol, incoming_port, enabled } = body;
 
   // Validation based on type
   if (!name) {
@@ -593,15 +788,16 @@ async function handleCreateProxy(req, res) {
     const safeFilename = sanitizeFilename(name);
     configFilename = `${safeFilename}.conf`;
 
-    // Insert proxy with initial status
+    // Insert proxy with initial status (default to enabled if not specified)
+    const isEnabled = enabled !== undefined ? (enabled ? 1 : 0) : 1;
     const result = db.prepare(`
       INSERT INTO proxy_hosts (name, type, domain_names, forward_scheme, forward_host, forward_port,
                                 ssl_enabled, ssl_cert_id, advanced_config, config_filename, config_status,
-                                stream_protocol, incoming_port)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)
+                                stream_protocol, incoming_port, enabled)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?)
     `).run(name, type || 'reverse', domain_names, forward_scheme || 'http', forward_host, forward_port,
            ssl_enabled ? 1 : 0, ssl_cert_id || null, advanced_config || null, configFilename,
-           stream_protocol || null, incoming_port || null);
+           stream_protocol || null, incoming_port || null, isEnabled);
 
     proxyId = result.lastInsertRowid;
 
@@ -610,6 +806,17 @@ async function handleCreateProxy(req, res) {
       const insertModule = db.prepare('INSERT INTO proxy_modules (proxy_id, module_id) VALUES (?, ?)');
       for (const moduleId of module_ids) {
         insertModule.run(proxyId, moduleId);
+      }
+    }
+
+    // Auto-enable Force HTTPS module for SSL-enabled proxies
+    if (ssl_enabled) {
+      const forceHTTPSModule = db.prepare('SELECT id FROM modules WHERE name = ?').get('Force HTTPS');
+      if (forceHTTPSModule) {
+        db.prepare(`
+          INSERT OR IGNORE INTO proxy_modules (proxy_id, module_id)
+          VALUES (?, ?)
+        `).run(proxyId, forceHTTPSModule.id);
       }
     }
 
@@ -638,9 +845,13 @@ async function handleCreateProxy(req, res) {
       }
     }
 
-    // Write and enable nginx config
+    // Write nginx config and enable/disable based on enabled flag
     writeNginxConfig(configFilename, config);
-    enableNginxConfig(configFilename);
+    if (isEnabled) {
+      enableNginxConfig(configFilename);
+    } else {
+      disableNginxConfig(configFilename);
+    }
 
     // Test nginx configuration
     const testResult = testNginxConfig();
@@ -654,10 +865,10 @@ async function handleCreateProxy(req, res) {
       throw new Error(`Nginx reload failed: ${reloadResult.error}`);
     }
 
-    // Update status to active
+    // Update status to active (keep the enabled state we already set)
     db.prepare(`
       UPDATE proxy_hosts
-      SET config_status = 'active', config_error = NULL, enabled = 1
+      SET config_status = 'active', config_error = NULL
       WHERE id = ?
     `).run(proxyId);
 
@@ -734,6 +945,18 @@ async function handleUpdateProxy(req, res, parsedUrl) {
       }
     }
 
+    // Auto-enable Force HTTPS module if SSL is being enabled
+    const finalSSLState = ssl_enabled !== undefined ? ssl_enabled : proxy.ssl_enabled;
+    if (finalSSLState) {
+      const forceHTTPSModule = db.prepare('SELECT id FROM modules WHERE name = ?').get('Force HTTPS');
+      if (forceHTTPSModule) {
+        db.prepare(`
+          INSERT OR IGNORE INTO proxy_modules (proxy_id, module_id)
+          VALUES (?, ?)
+        `).run(id, forceHTTPSModule.id);
+      }
+    }
+
     // Regenerate config
     const updatedProxy = db.prepare('SELECT * FROM proxy_hosts WHERE id = ?').get(id);
     const modules = db.prepare(`
@@ -762,6 +985,13 @@ async function handleUpdateProxy(req, res, parsedUrl) {
     // Use stored config filename (or generate if missing for legacy records)
     const filename = updatedProxy.config_filename || `${sanitizeFilename(updatedProxy.name)}.conf`;
     writeNginxConfig(filename, config);
+
+    // Ensure the config file has correct extension based on enabled state
+    if (updatedProxy.enabled) {
+      enableNginxConfig(filename);
+    } else {
+      disableNginxConfig(filename);
+    }
 
     // Test nginx configuration
     const testResult = testNginxConfig();
@@ -1199,6 +1429,13 @@ function handleDeleteCertificate(req, res, parsedUrl) {
 
           const filename = updatedProxy.config_filename || `${sanitizeFilename(updatedProxy.name)}.conf`;
           writeNginxConfig(filename, config);
+
+          // Ensure correct file extension based on enabled state
+          if (updatedProxy.enabled) {
+            enableNginxConfig(filename);
+          } else {
+            disableNginxConfig(filename);
+          }
         } catch (configError) {
           console.error(`Failed to regenerate config for proxy ${proxy.name}:`, configError);
         }
@@ -1255,11 +1492,13 @@ function handleNginxTest(req, res) {
 
 function handleNginxReload(req, res) {
   const result = safeReload();
-  
+
   if (result.success) {
     logAudit(req.user.userId, 'reload_nginx', 'nginx', null, null, getClientIP(req));
+    // Refresh module cache after successful reload
+    refreshModuleCache();
   }
-  
+
   sendJSON(res, result);
 }
 
@@ -1499,7 +1738,17 @@ async function handleSaveCustomConfig(req, res) {
 
     // Write nginx config
     writeNginxConfig(configFilename, config);
-    enableNginxConfig(configFilename);
+
+    // Get the proxy to check its enabled state
+    const proxy = db.prepare('SELECT enabled FROM proxy_hosts WHERE id = ?').get(proxyId);
+    if (proxy && proxy.enabled) {
+      enableNginxConfig(configFilename);
+    } else if (proxy && !proxy.enabled) {
+      disableNginxConfig(configFilename);
+    } else {
+      // New proxy, default to enabled
+      enableNginxConfig(configFilename);
+    }
 
     // Test nginx configuration
     const testResult = testNginxConfig();
@@ -1569,13 +1818,16 @@ function handleGetStatistics(req, res, parsedUrl) {
     // Get query parameters
     const params = new URLSearchParams(parsedUrl.search);
     const timeRange = params.get('range') || '24h';
-    const maxLines = parseInt(params.get('lines') || '10000');
+    // Read entire log file by default (null = no line limit, reads since last rotation)
+    const maxLines = params.get('lines') ? parseInt(params.get('lines')) : null;
+    // Allow forcing cache refresh via query parameter
+    const forceRefresh = params.get('refresh') === 'true';
 
     // Get proxy hosts for better host matching
     const proxyHosts = db.prepare('SELECT id, name, domain_names FROM proxy_hosts').all();
 
-    // Parse access logs
-    const statistics = parseAccessLogs(proxyHosts, timeRange, maxLines);
+    // Parse access logs (uses 30-minute cache unless forceRefresh or maxLines specified)
+    const statistics = parseAccessLogs(proxyHosts, timeRange, maxLines, forceRefresh);
 
     sendJSON(res, statistics);
   } catch (error) {
@@ -1909,6 +2161,13 @@ async function handleCreateRateLimit(req, res) {
     const filename = updatedProxy.config_filename || `${updatedProxy.id}.conf`;
     writeNginxConfig(filename, config);
 
+    // Ensure correct file extension based on enabled state
+    if (updatedProxy.enabled) {
+      enableNginxConfig(filename);
+    } else {
+      disableNginxConfig(filename);
+    }
+
     // Log audit
     logAudit(
       req.user.id,
@@ -1988,6 +2247,13 @@ async function handleUpdateRateLimit(req, res, parsedUrl) {
     const filename = proxy.config_filename || `${proxy.id}.conf`;
     writeNginxConfig(filename, config);
 
+    // Ensure correct file extension based on enabled state
+    if (proxy.enabled) {
+      enableNginxConfig(filename);
+    } else {
+      disableNginxConfig(filename);
+    }
+
     // Log audit
     logAudit(
       req.user.id,
@@ -2051,6 +2317,13 @@ function handleDeleteRateLimit(req, res, parsedUrl) {
 
       const filename = proxy.config_filename || `${proxy.id}.conf`;
       writeNginxConfig(filename, config);
+
+      // Ensure correct file extension based on enabled state
+      if (proxy.enabled) {
+        enableNginxConfig(filename);
+      } else {
+        disableNginxConfig(filename);
+      }
     }
 
     // Log audit
@@ -2172,51 +2445,59 @@ async function handleUpdateSecuritySettings(req, res) {
 
 function handleGetSecurityStats(req, res, parsedUrl) {
   try {
-    // For now, return mock data since we need to implement log parsing for security events
-    // In the future, parse nginx logs for 403 responses and correlate with security rules
+    const { getCachedSecurityStats } = require('../utils/stats-cache-service');
     const params = new URLSearchParams(parsedUrl.search);
     const timeRange = params.get('range') || '24h';
 
-    // Get counts of security rules
-    const ipBlacklistCount = db.prepare(
-      "SELECT COUNT(*) as count FROM security_rules WHERE rule_type = 'ip_blacklist' AND enabled = 1"
-    ).get().count;
+    // Get cached stats
+    const stats = getCachedSecurityStats(timeRange);
 
-    const geoBlockCount = db.prepare(
-      "SELECT COUNT(*) as count FROM security_rules WHERE rule_type = 'geo_block' AND enabled = 1"
-    ).get().count;
+    if (!stats) {
+      // Cache not ready yet, return basic rule counts
+      const ipBlacklistCount = db.prepare(
+        "SELECT COUNT(*) as count FROM security_rules WHERE rule_type = 'ip_blacklist' AND enabled = 1"
+      ).get().count;
 
-    const uaFilterCount = db.prepare(
-      "SELECT COUNT(*) as count FROM security_rules WHERE rule_type = 'user_agent_filter' AND enabled = 1"
-    ).get().count;
+      const geoBlockCount = db.prepare(
+        "SELECT COUNT(*) as count FROM security_rules WHERE rule_type = 'geo_block' AND enabled = 1"
+      ).get().count;
 
-    const rateLimitCount = db.prepare(
-      "SELECT COUNT(*) as count FROM rate_limits WHERE enabled = 1"
-    ).get().count;
+      const uaFilterCount = db.prepare(
+        "SELECT COUNT(*) as count FROM security_rules WHERE rule_type = 'user_agent_filter' AND enabled = 1"
+      ).get().count;
 
-    const stats = {
-      timeRange,
-      blocked: {
-        total: 0, // Parse from logs in future
-        byRule: {
-          ip_blacklist: 0,
-          geo_block: 0,
-          user_agent_filter: 0,
-          rate_limit: 0
-        }
-      },
-      topBlockedIPs: [],
-      topBlockedCountries: [],
-      rateLimitHits: 0,
-      activeRules: {
-        ipBlacklist: ipBlacklistCount,
-        geoBlock: geoBlockCount,
-        userAgentFilter: uaFilterCount,
-        rateLimit: rateLimitCount
-      }
-    };
+      const rateLimitCount = db.prepare(
+        "SELECT COUNT(*) as count FROM rate_limits WHERE enabled = 1"
+      ).get().count;
 
-    sendJSON(res, stats);
+      return sendJSON(res, {
+        timeRange,
+        blocked: {
+          total: 0,
+          byRule: {
+            ip_blacklist: 0,
+            geo_block: 0,
+            user_agent_filter: 0,
+            rate_limit: 0
+          }
+        },
+        topBlockedIPs: [],
+        topBlockedCountries: [],
+        rateLimitHits: 0,
+        activeRules: {
+          ipBlacklist: ipBlacklistCount,
+          geoBlock: geoBlockCount,
+          userAgentFilter: uaFilterCount,
+          rateLimit: rateLimitCount
+        },
+        cacheStatus: 'loading'
+      });
+    }
+
+    sendJSON(res, {
+      ...stats,
+      cacheStatus: 'ready'
+    });
   } catch (error) {
     console.error('Get security stats error:', error);
     sendJSON(res, { error: error.message || 'Failed to get security stats' }, 500);
@@ -2248,55 +2529,44 @@ function handleGetRecentBlocks(req, res, parsedUrl) {
  */
 async function handleGetNginxTuningStats(req, res, parsedUrl) {
   try {
+    const { getCachedNginxStats, getCacheAge } = require('../utils/stats-cache-service');
     const params = new URLSearchParams(parsedUrl.search);
     const hoursBack = parseInt(params.get('hours') || '24');
     const excludePrivate = params.get('excludePrivate') !== 'false'; // Default true
 
-    const stats = await getNginxStatistics(hoursBack, excludePrivate);
+    // Determine cache key based on hours
+    const timeRange = hoursBack === 24 ? '24h' : '7d';
 
-    // Get top countries if available
-    const countryStats = await getTopCountries(hoursBack);
+    // Get cached stats
+    const stats = getCachedNginxStats(timeRange, excludePrivate);
 
-    // Get current security rules for cross-referencing
-    const existingIPBlocks = db.prepare(
-      "SELECT rule_value FROM security_rules WHERE rule_type = 'ip_blacklist' AND enabled = 1"
-    ).all().map(r => r.rule_value);
-
-    const existingGeoBlocks = db.prepare(
-      "SELECT rule_value FROM security_rules WHERE rule_type = 'geo_block' AND enabled = 1"
-    ).all().map(r => r.rule_value);
-
-    const existingUABlocks = db.prepare(
-      "SELECT rule_value FROM security_rules WHERE rule_type = 'user_agent_filter' AND enabled = 1"
-    ).all().map(r => r.rule_value);
-
-    // Augment top lists with block status
-    const topIPsWithStatus = stats.topIPs.map(ip => ({
-      ...ip,
-      isBlocked: existingIPBlocks.includes(ip.item)
-    }));
-
-    const topUserAgentsWithStatus = stats.topUserAgents.map(ua => ({
-      ...ua,
-      isBlocked: existingUABlocks.some(pattern => {
-        try {
-          const regex = new RegExp(pattern, 'i');
-          return regex.test(ua.item);
-        } catch {
-          return pattern === ua.item;
-        }
-      })
-    }));
+    if (!stats) {
+      // Cache not ready yet, return minimal response
+      return sendJSON(res, {
+        timeRange: `${hoursBack}h`,
+        topIPs: [],
+        topUserAgents: [],
+        topCountries: [],
+        totalRequests: 0,
+        uniqueIPCount: 0,
+        blockedRequests: 0,
+        rateLimitedRequests: 0,
+        cacheStatus: 'loading',
+        message: 'Statistics are being generated. Please refresh in a few seconds.'
+      });
+    }
 
     sendJSON(res, {
       timeRange: `${hoursBack}h`,
-      topIPs: topIPsWithStatus,
-      topUserAgents: topUserAgentsWithStatus,
-      topCountries: countryStats.topCountries || [],
+      topIPs: stats.topIPs,
+      topUserAgents: stats.topUserAgents,
+      topCountries: stats.topCountries || [],
       totalRequests: stats.totalRequests,
       uniqueIPCount: stats.uniqueIPCount,
       blockedRequests: stats.blockedRequests,
-      rateLimitedRequests: stats.rateLimitedRequests
+      rateLimitedRequests: stats.rateLimitedRequests,
+      cacheStatus: 'ready',
+      cacheAge: getCacheAge()
     });
   } catch (error) {
     console.error('Get nginx tuning stats error:', error);
@@ -2309,10 +2579,44 @@ async function handleGetNginxTuningStats(req, res, parsedUrl) {
  */
 async function handleGetNginxStatistics(req, res, parsedUrl) {
   try {
+    const { getCachedNginxStats, getCacheAge } = require('../utils/stats-cache-service');
     const params = new URLSearchParams(parsedUrl.search);
     const hoursBack = parseInt(params.get('hours') || '24');
 
-    const stats = await getNginxStatistics(hoursBack);
+    // Determine cache key based on hours
+    const timeRange = hoursBack === 24 ? '24h' : '7d';
+
+    // Get cached stats
+    const stats = getCachedNginxStats(timeRange, false); // Don't exclude private IPs for this endpoint
+
+    if (!stats) {
+      // Cache not ready yet
+      return sendJSON(res, {
+        timeRange: `${hoursBack}h`,
+        totalRequests: 0,
+        successfulRequests: 0,
+        blockedRequests: 0,
+        rateLimitedRequests: 0,
+        successRate: '0.00',
+        blockedPercentage: '0.00',
+        rateLimitedPercentage: '0.00',
+        statusBreakdown: {},
+        errorStats: {},
+        activeRules: {
+          ipBlacklist: 0,
+          geoBlock: 0,
+          userAgentFilter: 0,
+          rateLimit: 0
+        },
+        metrics: {
+          avgRequestsPerHour: 0,
+          avgBlocksPerHour: 0,
+          avgRateLimitsPerHour: 0
+        },
+        cacheStatus: 'loading',
+        message: 'Statistics are being generated. Please refresh in a few seconds.'
+      });
+    }
 
     // Calculate additional metrics
     const successRate = stats.totalRequests > 0
@@ -2359,7 +2663,9 @@ async function handleGetNginxStatistics(req, res, parsedUrl) {
         avgRequestsPerHour: (stats.totalRequests / hoursBack).toFixed(0),
         avgBlocksPerHour: (stats.blockedRequests / hoursBack).toFixed(0),
         avgRateLimitsPerHour: (stats.rateLimitedRequests / hoursBack).toFixed(0)
-      }
+      },
+      cacheStatus: 'ready',
+      cacheAge: getCacheAge()
     });
   } catch (error) {
     console.error('Get nginx statistics error:', error);
@@ -2401,15 +2707,16 @@ function handleGetDNSCredentials(req, res) {
       }, 500);
     }
 
+    // Use unified credentials table with dns credential_type filter
     const credentials = db.prepare(`
       SELECT
         id,
         name,
         provider,
         created_at,
-        updated_at,
-        created_by
-      FROM dns_credentials
+        updated_at
+      FROM credentials
+      WHERE credential_type = 'dns'
       ORDER BY created_at DESC
     `).all();
 
@@ -2801,6 +3108,1644 @@ async function handleGetCertbotStatus(req, res) {
   }
 }
 
+// ============================================================================
+// WAF ENDPOINT HANDLERS
+// ============================================================================
+
+// Global SSE clients map for real-time event streaming
+const sseClients = new Map();
+
+/**
+ * Get all WAF profiles
+ */
+function handleGetWAFProfiles(req, res) {
+  try {
+    const profiles = db.prepare(`
+      SELECT
+        p.*,
+        COUNT(DISTINCT ph.id) as proxy_count
+      FROM waf_profiles p
+      LEFT JOIN proxy_hosts ph ON p.id = ph.waf_profile_id
+      GROUP BY p.id
+      ORDER BY p.name
+    `).all();
+
+    sendJSON(res, { profiles });
+  } catch (error) {
+    console.error('Get WAF profiles error:', error);
+    sendJSON(res, { error: error.message }, 500);
+  }
+}
+
+/**
+ * Create new WAF profile
+ */
+async function handleCreateWAFProfile(req, res) {
+  try {
+    const body = await parseBody(req);
+    const { name, description, ruleset, paranoia_level, config_json } = body;
+
+    console.log('Creating WAF profile:', { name, ruleset, paranoia_level });
+    console.log('Config JSON:', JSON.stringify(config_json, null, 2));
+
+    // Validation
+    if (!name || !ruleset || paranoia_level < 1 || paranoia_level > 4) {
+      return sendJSON(res, { error: 'Invalid profile data' }, 400);
+    }
+
+    const result = db.prepare(`
+      INSERT INTO waf_profiles (name, description, ruleset, paranoia_level, config_json, enabled)
+      VALUES (?, ?, ?, ?, ?, 1)
+    `).run(name, description || '', ruleset, paranoia_level, JSON.stringify(config_json || {}));
+
+    // Regenerate profile config and create empty exclusion file
+    try {
+      const { generateProfileConfig, generateExclusionConfig, getProfileExclusions } = require('../utils/modsecurity-config-generator');
+      const fs = require('fs');
+      const path = require('path');
+
+      // Get the newly created profile
+      const newProfile = db.prepare('SELECT * FROM waf_profiles WHERE id = ?').get(result.lastInsertRowid);
+
+      // Generate profile config
+      const profileConfig = generateProfileConfig(newProfile);
+      const profilesDir = path.join(__dirname, '../../data/modsec-profiles');
+
+      // Ensure directory exists
+      if (!fs.existsSync(profilesDir)) {
+        fs.mkdirSync(profilesDir, { recursive: true });
+      }
+
+      // Write profile config
+      const profilePath = path.join(profilesDir, `profile_${newProfile.id}.conf`);
+      fs.writeFileSync(profilePath, profileConfig, 'utf8');
+      console.log(`Generated WAF profile config: ${profilePath}`);
+
+      // Create empty exclusion file
+      const exclusions = getProfileExclusions(db, newProfile.id);
+      const exclusionPath = path.join(profilesDir, `exclusions_profile_${newProfile.id}.conf`);
+      generateExclusionConfig(exclusions, exclusionPath);
+      console.log(`Generated WAF exclusion file: ${exclusionPath}`);
+    } catch (err) {
+      console.error('Failed to generate WAF profile config:', err);
+    }
+
+    logAudit(req.user.id, 'create_waf_profile', 'waf_profile', result.lastInsertRowid,
+             null, getClientIP(req));
+
+    sendJSON(res, {
+      success: true,
+      profile: { id: result.lastInsertRowid, name }
+    }, 201);
+  } catch (error) {
+    console.error('Create WAF profile error:', error);
+    sendJSON(res, { error: error.message }, 500);
+  }
+}
+
+/**
+ * Update WAF profile
+ */
+async function handleUpdateWAFProfile(req, res, parsedUrl) {
+  try {
+    const id = parsedUrl.pathname.split('/')[4];
+    const body = await parseBody(req);
+
+    console.log(`Updating WAF profile ${id}:`, { name: body.name, ruleset: body.ruleset, paranoia_level: body.paranoia_level });
+    console.log('Config JSON:', JSON.stringify(body.config_json, null, 2));
+
+    db.prepare(`
+      UPDATE waf_profiles
+      SET name = ?, description = ?, ruleset = ?,
+          paranoia_level = ?, config_json = ?, updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `).run(body.name, body.description || '', body.ruleset,
+           body.paranoia_level, JSON.stringify(body.config_json || {}), id);
+
+    // Regenerate profile config and exclusion file
+    try {
+      const { generateProfileConfig, generateExclusionConfig, getProfileExclusions } = require('../utils/modsecurity-config-generator');
+      const fs = require('fs');
+      const path = require('path');
+
+      // Get the updated profile
+      const updatedProfile = db.prepare('SELECT * FROM waf_profiles WHERE id = ?').get(id);
+
+      // Generate profile config
+      const profileConfig = generateProfileConfig(updatedProfile);
+      const profilesDir = path.join(__dirname, '../../data/modsec-profiles');
+
+      // Ensure directory exists
+      if (!fs.existsSync(profilesDir)) {
+        fs.mkdirSync(profilesDir, { recursive: true });
+      }
+
+      // Write profile config
+      const profilePath = path.join(profilesDir, `profile_${updatedProfile.id}.conf`);
+      fs.writeFileSync(profilePath, profileConfig, 'utf8');
+      console.log(`Updated WAF profile config: ${profilePath}`);
+
+      // Ensure exclusion file exists
+      const exclusions = getProfileExclusions(db, updatedProfile.id);
+      const exclusionPath = path.join(profilesDir, `exclusions_profile_${updatedProfile.id}.conf`);
+      generateExclusionConfig(exclusions, exclusionPath);
+      console.log(`Updated WAF exclusion file: ${exclusionPath}`);
+
+      // Reload nginx to apply changes
+      const { safeReload } = require('../utils/nginx-ops');
+      safeReload();
+    } catch (err) {
+      console.error('Failed to update WAF profile config:', err);
+    }
+
+    logAudit(req.user.id, 'update_waf_profile', 'waf_profile', id, null, getClientIP(req));
+    sendJSON(res, { success: true });
+  } catch (error) {
+    console.error('Update WAF profile error:', error);
+    sendJSON(res, { error: error.message }, 500);
+  }
+}
+
+/**
+ * Delete WAF profile
+ */
+function handleDeleteWAFProfile(req, res, parsedUrl) {
+  try {
+    const id = parsedUrl.pathname.split('/')[4];
+
+    // Check if profile is in use (single profile model)
+    const inUse = db.prepare('SELECT COUNT(*) as count FROM proxy_hosts WHERE waf_profile_id = ?')
+                    .get(id);
+
+    if (inUse.count > 0) {
+      return sendJSON(res, {
+        error: `Profile is assigned to ${inUse.count} proxy(s). Remove assignments first.`
+      }, 400);
+    }
+
+    db.prepare('DELETE FROM waf_profiles WHERE id = ?').run(id);
+
+    logAudit(req.user.id, 'delete_waf_profile', 'waf_profile', id, null, getClientIP(req));
+    sendJSON(res, { success: true });
+  } catch (error) {
+    console.error('Delete WAF profile error:', error);
+    sendJSON(res, { error: error.message }, 500);
+  }
+}
+
+/**
+ * Get WAF profile config file content
+ */
+function handleGetWAFProfileConfig(req, res, parsedUrl) {
+  try {
+    const id = parsedUrl.pathname.split('/')[4];
+    const fs = require('fs');
+    const path = require('path');
+
+    // Check if profile exists
+    const profile = db.prepare('SELECT * FROM waf_profiles WHERE id = ?').get(id);
+    if (!profile) {
+      return sendJSON(res, { error: 'Profile not found' }, 404);
+    }
+
+    // Read the profile config file
+    const profilePath = path.join(__dirname, '../../data/modsec-profiles', `profile_${id}.conf`);
+
+    if (!fs.existsSync(profilePath)) {
+      return sendJSON(res, {
+        error: 'Profile config file not found',
+        message: 'The configuration file has not been generated yet. Try editing and saving the profile.'
+      }, 404);
+    }
+
+    const configContent = fs.readFileSync(profilePath, 'utf8');
+
+    sendJSON(res, {
+      profile_id: id,
+      profile_name: profile.name,
+      config_path: profilePath,
+      config_content: configContent
+    });
+  } catch (error) {
+    console.error('Get WAF profile config error:', error);
+    sendJSON(res, { error: error.message }, 500);
+  }
+}
+
+/**
+ * Get WAF events with filtering
+ */
+function handleGetWAFEvents(req, res, parsedUrl) {
+  try {
+    const params = parsedUrl.searchParams;
+    const limit = parseInt(params.get('limit') || '100');
+    const offset = parseInt(params.get('offset') || '0');
+    const proxyId = params.get('proxy_id');
+    const severity = params.get('severity');
+    const attackType = params.get('attack_type');
+    const clientIp = params.get('client_ip');
+    const startDate = params.get('start_date');
+    const endDate = params.get('end_date');
+    const blocked = params.get('blocked');
+
+    let query = `
+      SELECT
+        e.*,
+        p.name as proxy_name,
+        p.domain_names,
+        json_extract(e.raw_log, '$.transaction.response.http_code') as http_status
+      FROM waf_events e
+      LEFT JOIN proxy_hosts p ON e.proxy_id = p.id
+      WHERE 1=1
+    `;
+    const queryParams = [];
+
+    if (proxyId) {
+      query += ' AND e.proxy_id = ?';
+      queryParams.push(proxyId);
+    }
+    if (severity) {
+      query += ' AND e.severity = ?';
+      queryParams.push(severity);
+    }
+    if (attackType) {
+      query += ' AND LOWER(e.attack_type) = LOWER(?)';
+      queryParams.push(attackType);
+    }
+    if (clientIp) {
+      query += ' AND e.client_ip = ?';
+      queryParams.push(clientIp);
+    }
+    if (startDate) {
+      query += ' AND e.timestamp >= ?';
+      queryParams.push(startDate);
+    }
+    if (endDate) {
+      query += ' AND e.timestamp <= ?';
+      queryParams.push(endDate);
+    }
+    if (blocked !== null && blocked !== undefined && blocked !== '') {
+      query += ' AND e.blocked = ?';
+      // Convert string "true"/"false" to 1/0
+      const blockedValue = blocked === 'true' || blocked === true ? 1 : 0;
+      queryParams.push(blockedValue);
+    }
+
+    query += ' ORDER BY e.timestamp DESC LIMIT ? OFFSET ?';
+    queryParams.push(limit, offset);
+
+    const events = db.prepare(query).all(...queryParams);
+
+    // Get total count for pagination (use same params except limit/offset)
+    let countQuery = 'SELECT COUNT(*) as total FROM waf_events e WHERE 1=1';
+    const countParams = [];
+
+    if (proxyId) {
+      countQuery += ' AND e.proxy_id = ?';
+      countParams.push(proxyId);
+    }
+    if (severity) {
+      countQuery += ' AND e.severity = ?';
+      countParams.push(severity);
+    }
+    if (attackType) {
+      countQuery += ' AND LOWER(e.attack_type) = LOWER(?)';
+      countParams.push(attackType);
+    }
+    if (clientIp) {
+      countQuery += ' AND e.client_ip = ?';
+      countParams.push(clientIp);
+    }
+    if (startDate) {
+      countQuery += ' AND e.timestamp >= ?';
+      countParams.push(startDate);
+    }
+    if (endDate) {
+      countQuery += ' AND e.timestamp <= ?';
+      countParams.push(endDate);
+    }
+    if (blocked !== null && blocked !== undefined && blocked !== '') {
+      countQuery += ' AND e.blocked = ?';
+      const blockedValue = blocked === 'true' || blocked === true ? 1 : 0;
+      countParams.push(blockedValue);
+    }
+
+    const total = db.prepare(countQuery).get(...countParams).total;
+
+    sendJSON(res, { events, total, limit, offset });
+  } catch (error) {
+    console.error('Get WAF events error:', error);
+    sendJSON(res, { error: error.message }, 500);
+  }
+}
+
+/**
+ * Get WAF statistics
+ */
+function handleGetWAFStats(req, res, parsedUrl) {
+  try {
+    const params = parsedUrl.searchParams;
+    const hours = parseInt(params.get('hours') || '24');
+    const cutoffTime = new Date(Date.now() - hours * 60 * 60 * 1000).toISOString();
+
+    // Total events
+    const totalEvents = db.prepare(`
+      SELECT COUNT(*) as count FROM waf_events
+      WHERE timestamp >= ?
+    `).get(cutoffTime).count;
+
+    // Blocked attacks
+    const blockedAttacks = db.prepare(`
+      SELECT COUNT(*) as count FROM waf_events
+      WHERE timestamp >= ? AND blocked = 1
+    `).get(cutoffTime).count;
+
+    // Active profiles (single profile model)
+    const activeProfiles = db.prepare(`
+      SELECT COUNT(DISTINCT waf_profile_id) as count FROM proxy_hosts WHERE waf_profile_id IS NOT NULL
+    `).get().count;
+
+    // Events by attack type
+    const eventsByType = db.prepare(`
+      SELECT attack_type, COUNT(*) as count
+      FROM waf_events
+      WHERE timestamp >= ?
+      GROUP BY attack_type
+      ORDER BY count DESC
+      LIMIT 10
+    `).all(cutoffTime);
+
+    // Top attacking IPs
+    const topIPs = db.prepare(`
+      SELECT client_ip, COUNT(*) as count
+      FROM waf_events
+      WHERE timestamp >= ?
+      GROUP BY client_ip
+      ORDER BY count DESC
+      LIMIT 10
+    `).all(cutoffTime);
+
+    // Events over time (hourly buckets)
+    const timeline = db.prepare(`
+      SELECT
+        strftime('%Y-%m-%d %H:00:00', timestamp) as hour,
+        COUNT(*) as count,
+        SUM(CASE WHEN blocked = 1 THEN 1 ELSE 0 END) as blocked_count
+      FROM waf_events
+      WHERE timestamp >= ?
+      GROUP BY hour
+      ORDER BY hour
+    `).all(cutoffTime);
+
+    // Events by severity
+    const bySeverity = db.prepare(`
+      SELECT severity, COUNT(*) as count
+      FROM waf_events
+      WHERE timestamp >= ?
+      GROUP BY severity
+    `).all(cutoffTime);
+
+    sendJSON(res, {
+      total_events: totalEvents,
+      blocked_attacks: blockedAttacks,
+      active_profiles: activeProfiles,
+      by_type: eventsByType,
+      top_ips: topIPs,
+      timeline,
+      by_severity: bySeverity
+    });
+  } catch (error) {
+    console.error('Get WAF stats error:', error);
+    sendJSON(res, { error: error.message }, 500);
+  }
+}
+
+/**
+ * SSE endpoint for real-time WAF event streaming
+ */
+function handleWAFEventsStream(req, res, parsedUrl) {
+  // Verify authentication - check both Authorization header and query parameter
+  // EventSource doesn't support custom headers, so we accept token via query param
+  const authHeader = req.headers.authorization;
+  let token = extractToken(authHeader);
+
+  // If no token in header, check query parameter
+  if (!token) {
+    token = parsedUrl.searchParams.get('token');
+  }
+
+  console.log('[SSE] Token received:', token ? 'Yes (length: ' + token.length + ')' : 'No');
+
+  const user = verifyToken(token);
+
+  console.log('[SSE] User verified:', user ? 'Yes (user: ' + user.username + ')' : 'No');
+
+  if (!user) {
+    console.log('[SSE] Authentication failed - sending 401');
+    res.writeHead(401, { 'Content-Type': 'text/plain' });
+    res.end('Unauthorized');
+    return;
+  }
+
+  // Setup SSE
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache',
+    'Connection': 'keep-alive',
+    'X-Accel-Buffering': 'no' // Disable nginx buffering
+  });
+
+  // Send initial connection message
+  res.write('data: {"type":"connected"}\n\n');
+
+  // Generate unique client ID
+  const clientId = `${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+
+  // Store client
+  sseClients.set(clientId, { res, user });
+
+  // Keep-alive ping every 30 seconds
+  const keepAliveInterval = setInterval(() => {
+    try {
+      res.write(': keep-alive\n\n');
+    } catch (error) {
+      clearInterval(keepAliveInterval);
+      sseClients.delete(clientId);
+    }
+  }, 30000);
+
+  // Cleanup on disconnect
+  req.on('close', () => {
+    clearInterval(keepAliveInterval);
+    sseClients.delete(clientId);
+    console.log(`SSE client ${clientId} disconnected`);
+  });
+
+  console.log(`SSE client ${clientId} connected`);
+}
+
+/**
+ * Broadcast WAF event to all SSE clients
+ * This is called by the log parser daemon
+ */
+function broadcastWAFEvent(event) {
+  const message = JSON.stringify({
+    type: 'waf_event',
+    event
+  });
+
+  for (const [clientId, client] of sseClients.entries()) {
+    try {
+      client.res.write(`data: ${message}\n\n`);
+    } catch (error) {
+      console.error(`Failed to send to SSE client ${clientId}:`, error.message);
+      sseClients.delete(clientId);
+    }
+  }
+}
+
+// Make broadcastWAFEvent available to log parser
+const { getWAFLogParser } = require('../utils/waf-log-parser');
+const wafLogParser = getWAFLogParser();
+wafLogParser.setBroadcastFunction(broadcastWAFEvent);
+
+/**
+ * Broadcast ban event to all SSE clients for real-time updates
+ */
+function broadcastBanEvent(eventType, data) {
+  const message = JSON.stringify({
+    type: 'ban_event',
+    eventType, // 'ban_created', 'ban_removed', 'ban_updated'
+    data
+  });
+
+  for (const [clientId, client] of sseClients.entries()) {
+    try {
+      client.res.write(`data: ${message}\n\n`);
+    } catch (error) {
+      console.error(`Failed to send ban event to SSE client ${clientId}:`, error.message);
+      sseClients.delete(clientId);
+    }
+  }
+}
+
+/**
+ * Helper: Regenerate configs for all proxies using a specific profile
+ */
+function regenerateProfileProxyConfigs(profileId) {
+  try {
+    const { generateServerBlock, writeNginxConfig } = require('../utils/nginx-parser');
+
+    // Get all proxies using this profile
+    const proxies = db.prepare(`
+      SELECT * FROM proxy_hosts WHERE waf_profile_id = ?
+    `).all(profileId);
+
+    for (const proxy of proxies) {
+      // Get modules for this proxy
+      const modules = db.prepare(`
+        SELECT m.* FROM modules m
+        JOIN proxy_modules pm ON m.id = pm.module_id
+        WHERE pm.proxy_id = ?
+      `).all(proxy.id);
+
+      // Generate full server block config
+      let config = generateServerBlock(proxy, modules, db);
+
+      // Replace SSL placeholders if needed
+      if (proxy.ssl_enabled && proxy.ssl_cert_id) {
+        const cert = db.prepare('SELECT cert_path, key_path FROM ssl_certificates WHERE id = ?')
+          .get(proxy.ssl_cert_id);
+        if (cert) {
+          config = config.replace('{{SSL_CERT_PATH}}', cert.cert_path);
+          config = config.replace('{{SSL_KEY_PATH}}', cert.key_path);
+        }
+      }
+
+      // Write the config file
+      const filename = proxy.config_filename || `${proxy.id}.conf`;
+      writeNginxConfig(filename, config);
+
+      console.log(`✓ Regenerated config for proxy: ${proxy.domain_names}`);
+    }
+
+    // Reload nginx to apply changes
+    const { safeReload } = require('../utils/nginx-ops');
+    safeReload();
+
+    console.log(`Regenerated configs for ${proxies.length} proxies using profile ${profileId}`);
+  } catch (error) {
+    console.error('Failed to regenerate profile proxy configs:', error);
+  }
+}
+
+/**
+ * Get WAF exclusions
+ */
+function handleGetWAFExclusions(req, res, parsedUrl) {
+  try {
+    const profileId = parsedUrl.searchParams.get('profile_id');
+
+    let query = `
+      SELECT
+        e.*,
+        p.name as profile_name
+      FROM waf_exclusions e
+      LEFT JOIN waf_profiles p ON e.profile_id = p.id
+    `;
+
+    const params = [];
+    if (profileId) {
+      query += ' WHERE e.profile_id = ?';
+      params.push(profileId);
+    }
+
+    query += ' ORDER BY e.created_at DESC';
+
+    const exclusions = db.prepare(query).all(...params);
+    sendJSON(res, { exclusions });
+  } catch (error) {
+    console.error('Get WAF exclusions error:', error);
+    sendJSON(res, { error: error.message }, 500);
+  }
+}
+
+/**
+ * Create WAF exclusion
+ */
+async function handleCreateWAFExclusion(req, res) {
+  try {
+    const body = await parseBody(req);
+    let { profile_id, proxy_id, rule_id, path_pattern, parameter_name, reason } = body;
+
+    if (!rule_id) {
+      return sendJSON(res, { error: 'Rule ID is required' }, 400);
+    }
+
+    // Auto-detect profile from proxy if not specified
+    if (!profile_id && proxy_id) {
+      const proxy = db.prepare('SELECT waf_profile_id FROM proxy_hosts WHERE id = ?').get(proxy_id);
+      profile_id = proxy?.waf_profile_id;
+    }
+
+    if (!profile_id) {
+      return sendJSON(res, { error: 'Profile ID is required (or provide proxy_id to auto-detect)' }, 400);
+    }
+
+    const result = db.prepare(`
+      INSERT INTO waf_exclusions
+      (profile_id, rule_id, path_pattern, parameter_name, reason)
+      VALUES (?, ?, ?, ?, ?)
+    `).run(profile_id, rule_id, path_pattern || null,
+           parameter_name || null, reason || null);
+
+    // Regenerate all proxies using this profile
+    regenerateProfileProxyConfigs(profile_id);
+
+    logAudit(req.user.id, 'create_waf_exclusion', 'waf_exclusion',
+             result.lastInsertRowid, null, getClientIP(req));
+
+    sendJSON(res, { success: true, id: result.lastInsertRowid }, 201);
+  } catch (error) {
+    console.error('Create WAF exclusion error:', error);
+    sendJSON(res, { error: error.message }, 500);
+  }
+}
+
+/**
+ * Delete WAF exclusion
+ */
+function handleDeleteWAFExclusion(req, res, parsedUrl) {
+  try {
+    const id = parsedUrl.pathname.split('/')[4];
+
+    const exclusion = db.prepare('SELECT profile_id FROM waf_exclusions WHERE id = ?').get(id);
+
+    db.prepare('DELETE FROM waf_exclusions WHERE id = ?').run(id);
+
+    // Regenerate configs for all proxies using this profile
+    if (exclusion && exclusion.profile_id) {
+      regenerateProfileProxyConfigs(exclusion.profile_id);
+    }
+
+    logAudit(req.user.id, 'delete_waf_exclusion', 'waf_exclusion', id,
+             null, getClientIP(req));
+    sendJSON(res, { success: true });
+  } catch (error) {
+    console.error('Delete WAF exclusion error:', error);
+    sendJSON(res, { error: error.message }, 500);
+  }
+}
+
+/**
+ * Get WAF profile assigned to a proxy (single profile model)
+ */
+function handleGetProxyWAFProfiles(req, res, parsedUrl) {
+  try {
+    const proxyId = parsedUrl.pathname.split('/')[3];
+
+    // Get assigned profile (single)
+    const profile = db.prepare(`
+      SELECT
+        p.id,
+        p.name,
+        p.description,
+        p.paranoia_level,
+        p.enabled
+      FROM waf_profiles p
+      INNER JOIN proxy_hosts ph ON p.id = ph.waf_profile_id
+      WHERE ph.id = ?
+    `).get(proxyId);
+
+    sendJSON(res, { profile: profile || null });
+  } catch (error) {
+    console.error('Get proxy WAF profile error:', error);
+    sendJSON(res, { error: error.message }, 500);
+  }
+}
+
+/**
+ * Assign WAF profile to proxy (single profile model - replaces existing)
+ */
+async function handleAssignWAFProfile(req, res, parsedUrl) {
+  try {
+    const proxyId = parsedUrl.pathname.split('/')[3];
+    const body = await parseBody(req);
+    const { profile_id } = body;
+
+    // Validate profile exists
+    const profileExists = db.prepare(`
+      SELECT id FROM waf_profiles WHERE id = ?
+    `).get(profile_id);
+
+    if (!profileExists) {
+      return sendJSON(res, { error: 'WAF profile not found' }, 404);
+    }
+
+    // Update proxy with the profile (replaces any existing assignment)
+    db.prepare(`
+      UPDATE proxy_hosts
+      SET waf_profile_id = ?
+      WHERE id = ?
+    `).run(profile_id, proxyId);
+
+    // Regenerate proxy nginx config with WAF
+    try {
+      const proxy = db.prepare('SELECT * FROM proxy_hosts WHERE id = ?').get(proxyId);
+      if (proxy) {
+        // Fetch modules for this proxy
+        const modules = db.prepare(`
+          SELECT m.* FROM modules m
+          INNER JOIN proxy_modules pm ON m.id = pm.module_id
+          WHERE pm.proxy_id = ?
+        `).all(proxyId);
+
+        const configFilename = sanitizeFilename(proxy.name) + '.conf';
+
+        let config;
+        if (proxy.type === 'stream') {
+          config = generateStreamBlock(proxy);
+        } else if (proxy.type === '404') {
+          config = generate404Block(proxy);
+        } else {
+          config = generateServerBlock(proxy, modules, db);
+        }
+
+        // Replace SSL cert placeholders if needed
+        if (proxy.ssl_enabled && proxy.ssl_cert_id) {
+          const cert = db.prepare('SELECT cert_path, key_path FROM ssl_certificates WHERE id = ?').get(proxy.ssl_cert_id);
+          if (cert) {
+            config = config.replace('{{SSL_CERT_PATH}}', cert.cert_path);
+            config = config.replace('{{SSL_KEY_PATH}}', cert.key_path);
+          }
+        }
+
+        writeNginxConfig(configFilename, config);
+
+        // Ensure correct file extension based on enabled state
+        if (proxy.enabled) {
+          enableNginxConfig(configFilename);
+        } else {
+          disableNginxConfig(configFilename);
+        }
+
+        await safeReload();
+      }
+    } catch (err) {
+      console.error('Failed to regenerate proxy config:', err);
+    }
+
+    logAudit(req.user.id, 'assign_waf_profile', 'proxy', proxyId,
+             `Assigned profile ${profile_id}`, getClientIP(req));
+
+    sendJSON(res, { success: true });
+  } catch (error) {
+    console.error('Assign WAF profile error:', error);
+    sendJSON(res, { error: error.message }, 500);
+  }
+}
+
+/**
+ * Remove WAF profile from proxy (single profile model)
+ */
+function handleRemoveWAFProfile(req, res, parsedUrl) {
+  try {
+    const proxyId = parsedUrl.pathname.split('/')[3];
+
+    // Clear the waf_profile_id column
+    db.prepare(`
+      UPDATE proxy_hosts
+      SET waf_profile_id = NULL
+      WHERE id = ?
+    `).run(proxyId);
+
+    // Regenerate proxy config
+    try {
+      const proxy = db.prepare('SELECT * FROM proxy_hosts WHERE id = ?').get(proxyId);
+      if (proxy) {
+        // Fetch modules for this proxy
+        const modules = db.prepare(`
+          SELECT m.* FROM modules m
+          INNER JOIN proxy_modules pm ON m.id = pm.module_id
+          WHERE pm.proxy_id = ?
+        `).all(proxyId);
+
+        const configFilename = sanitizeFilename(proxy.name) + '.conf';
+
+        let config;
+        if (proxy.type === 'stream') {
+          config = generateStreamBlock(proxy);
+        } else if (proxy.type === '404') {
+          config = generate404Block(proxy);
+        } else {
+          config = generateServerBlock(proxy, modules, db);
+        }
+
+        // Replace SSL cert placeholders if needed
+        if (proxy.ssl_enabled && proxy.ssl_cert_id) {
+          const cert = db.prepare('SELECT cert_path, key_path FROM ssl_certificates WHERE id = ?').get(proxy.ssl_cert_id);
+          if (cert) {
+            config = config.replace('{{SSL_CERT_PATH}}', cert.cert_path);
+            config = config.replace('{{SSL_KEY_PATH}}', cert.key_path);
+          }
+        }
+
+        writeNginxConfig(configFilename, config);
+
+        // Ensure correct file extension based on enabled state
+        if (proxy.enabled) {
+          enableNginxConfig(configFilename);
+        } else {
+          disableNginxConfig(configFilename);
+        }
+
+        safeReload();
+      }
+    } catch (err) {
+      console.error('Failed to regenerate proxy config:', err);
+    }
+
+    logAudit(req.user.id, 'remove_waf_profile', 'proxy', proxyId,
+             'Removed WAF profile', getClientIP(req));
+
+    sendJSON(res, { success: true });
+  } catch (error) {
+    console.error('Remove WAF profile error:', error);
+    sendJSON(res, { error: error.message }, 500);
+  }
+}
+
+/**
+ * Get notification settings
+ */
+function handleGetNotificationSettings(req, res) {
+  try {
+    const settings = {
+      enabled: getSetting('notifications_enabled') === '1',
+      apprise_urls: JSON.parse(getSetting('notification_apprise_urls') || '[]'),
+      triggers: {
+        waf_blocks: getSetting('notification_waf_blocks') === '1',
+        waf_high_severity: getSetting('notification_waf_high_severity') === '1',
+        waf_threshold: parseInt(getSetting('notification_waf_threshold') || '10'),
+        waf_threshold_minutes: parseInt(getSetting('notification_waf_threshold_minutes') || '5'),
+        system_errors: getSetting('notification_system_errors') === '1',
+        proxy_changes: getSetting('notification_proxy_changes') === '1',
+        cert_expiry: getSetting('notification_cert_expiry') === '1',
+        cert_expiry_days: parseInt(getSetting('notification_cert_expiry_days') || '7')
+      }
+    };
+
+    sendJSON(res, settings);
+  } catch (error) {
+    console.error('Get notification settings error:', error);
+    sendJSON(res, { error: error.message }, 500);
+  }
+}
+
+/**
+ * Update notification settings
+ */
+async function handleUpdateNotificationSettings(req, res) {
+  try {
+    const body = await parseBody(req);
+
+    setSetting('notifications_enabled', body.enabled ? '1' : '0');
+    setSetting('notification_apprise_urls', JSON.stringify(body.apprise_urls || []));
+
+    if (body.triggers) {
+      setSetting('notification_waf_blocks', body.triggers.waf_blocks ? '1' : '0');
+      setSetting('notification_waf_high_severity', body.triggers.waf_high_severity ? '1' : '0');
+      setSetting('notification_waf_threshold', String(body.triggers.waf_threshold || 10));
+      setSetting('notification_waf_threshold_minutes', String(body.triggers.waf_threshold_minutes || 5));
+      setSetting('notification_system_errors', body.triggers.system_errors ? '1' : '0');
+      setSetting('notification_proxy_changes', body.triggers.proxy_changes ? '1' : '0');
+      setSetting('notification_cert_expiry', body.triggers.cert_expiry ? '1' : '0');
+      setSetting('notification_cert_expiry_days', String(body.triggers.cert_expiry_days || 7));
+    }
+
+    logAudit(req.user.id, 'update_notification_settings', 'settings', null,
+             null, getClientIP(req));
+
+    sendJSON(res, { success: true });
+  } catch (error) {
+    console.error('Update notification settings error:', error);
+    sendJSON(res, { error: error.message }, 500);
+  }
+}
+
+/**
+ * Test notification
+ */
+async function handleTestNotification(req, res) {
+  try {
+    const { sendTestNotification } = require('../utils/notification-service');
+    const result = await sendTestNotification();
+
+    if (result.success) {
+      sendJSON(res, { success: true, message: 'Test notification sent' });
+    } else {
+      // Check both 'reason' and 'error' properties for consistent error handling
+      const errorMessage = result.reason || result.error || 'Unknown error';
+      sendJSON(res, {
+        success: false,
+        error: `Failed to send: ${errorMessage}`
+      }, 400);
+    }
+  } catch (error) {
+    console.error('Test notification error:', error);
+    sendJSON(res, { error: error.message }, 500);
+  }
+}
+
+// ============================================================================
+// END WAF ENDPOINT HANDLERS
+// ============================================================================
+
+// ============================================================================
+// BAN SYSTEM HANDLERS
+// ============================================================================
+
+const {
+  banIP,
+  unbanIP,
+  makeBanPermanent: makeBanPermanentService,
+  getBanDetails,
+  getActiveBans,
+  getBanStatistics
+} = require('../utils/ban-service');
+
+const { getProviderInfo } = require('../utils/ban-providers');
+const { getBanQueue } = require('../utils/ban-queue');
+const { getDetectionStats, getTrackedIPs } = require('../utils/detection-engine');
+
+// ============================================================================
+// Ban Integrations Handlers
+// ============================================================================
+
+// ============================================================================
+// Credentials Management Handlers
+// ============================================================================
+
+function handleGetCredentials(req, res, parsedUrl) {
+  try {
+    const type = parsedUrl.searchParams.get('type');
+
+    let query = 'SELECT id, name, credential_type, provider, created_at, updated_at FROM credentials';
+    const params = [];
+
+    if (type) {
+      query += ' WHERE credential_type = ?';
+      params.push(type);
+    }
+
+    query += ' ORDER BY created_at DESC';
+
+    const credentials = db.prepare(query).all(...params);
+
+    sendJSON(res, { credentials });
+  } catch (error) {
+    console.error('Get credentials error:', error);
+    sendJSON(res, { error: error.message }, 500);
+  }
+}
+
+async function handleCreateCredential(req, res) {
+  try {
+    const body = await parseBody(req);
+    const { name, credential_type, provider, credentials } = body;
+
+    if (!name || !credential_type || !credentials) {
+      return sendJSON(res, { error: 'Name, credential_type, and credentials are required' }, 400);
+    }
+
+    // Encrypt credentials
+    const encryptedData = encryptCredentials(credentials);
+
+    const result = db.prepare(`
+      INSERT INTO credentials (name, credential_type, provider, credentials_encrypted)
+      VALUES (?, ?, ?, ?)
+    `).run(name, credential_type, provider || null, encryptedData);
+
+    logAudit(req.user.id, 'create_credential', 'credential', result.lastInsertRowid, null, getClientIP(req));
+
+    sendJSON(res, { success: true, id: result.lastInsertRowid }, 201);
+  } catch (error) {
+    console.error('Create credential error:', error);
+    sendJSON(res, { error: error.message }, 500);
+  }
+}
+
+async function handleUpdateCredential(req, res, parsedUrl) {
+  try {
+    const id = parsedUrl.pathname.split('/')[3];
+    const body = await parseBody(req);
+    const { name, credential_type, provider, credentials } = body;
+
+    if (!name || !credential_type) {
+      return sendJSON(res, { error: 'Name and credential_type are required' }, 400);
+    }
+
+    // If credentials provided, encrypt them
+    let updateFields = ['name = ?', 'credential_type = ?', 'provider = ?', 'updated_at = CURRENT_TIMESTAMP'];
+    let params = [name, credential_type, provider || null];
+
+    if (credentials) {
+      const encryptedData = encryptCredentials(credentials);
+      updateFields.push('credentials_encrypted = ?');
+      params.push(encryptedData);
+    }
+
+    params.push(id);
+
+    db.prepare(`
+      UPDATE credentials
+      SET ${updateFields.join(', ')}
+      WHERE id = ?
+    `).run(...params);
+
+    logAudit(req.user.id, 'update_credential', 'credential', id, null, getClientIP(req));
+
+    sendJSON(res, { success: true });
+  } catch (error) {
+    console.error('Update credential error:', error);
+    sendJSON(res, { error: error.message }, 500);
+  }
+}
+
+function handleDeleteCredential(req, res, parsedUrl) {
+  try {
+    const id = parsedUrl.pathname.split('/')[3];
+
+    // Check if credential is in use
+    const inUse = db.prepare(`
+      SELECT COUNT(*) as count FROM ban_integrations WHERE credential_id = ?
+    `).get(id);
+
+    if (inUse && inUse.count > 0) {
+      return sendJSON(res, { error: 'Cannot delete credential that is in use by integrations' }, 400);
+    }
+
+    db.prepare('DELETE FROM credentials WHERE id = ?').run(id);
+
+    logAudit(req.user.id, 'delete_credential', 'credential', id, null, getClientIP(req));
+
+    sendJSON(res, { success: true });
+  } catch (error) {
+    console.error('Delete credential error:', error);
+    sendJSON(res, { error: error.message }, 500);
+  }
+}
+
+// ============================================================================
+// Ban System Handlers
+// ============================================================================
+
+function handleGetBanIntegrations(req, res) {
+  try {
+    const integrations = db.prepare(`
+      SELECT
+        i.*,
+        c.name as credential_name,
+        c.credential_type,
+        (SELECT COUNT(*) FROM ip_bans WHERE integrations_notified LIKE '%"id":' || i.id || '%') as bans_sent
+      FROM ban_integrations i
+      LEFT JOIN credentials c ON i.credential_id = c.id
+      ORDER BY i.created_at DESC
+    `).all();
+
+    // Get provider info for each integration
+    const integrationsWithInfo = integrations.map(integration => {
+      const info = getProviderInfo(integration.type);
+      return {
+        ...integration,
+        provider_info: info,
+        config: JSON.parse(integration.config_json || '{}')
+      };
+    });
+
+    sendJSON(res, { integrations: integrationsWithInfo });
+  } catch (error) {
+    console.error('Get ban integrations error:', error);
+    sendJSON(res, { error: error.message }, 500);
+  }
+}
+
+async function handleCreateBanIntegration(req, res) {
+  try {
+    const body = await parseBody(req);
+    const { name, type, credential_id, config_json, enabled } = body;
+
+    if (!name || !type) {
+      return sendJSON(res, { error: 'Name and type are required' }, 400);
+    }
+
+    // Validate provider type
+    const providerInfo = getProviderInfo(type);
+    if (!providerInfo) {
+      return sendJSON(res, { error: `Unknown provider type: ${type}` }, 400);
+    }
+
+    const result = db.prepare(`
+      INSERT INTO ban_integrations (name, type, credential_id, config_json, enabled)
+      VALUES (?, ?, ?, ?, ?)
+    `).run(name, type, credential_id || null, config_json || '{}', enabled ? 1 : 0);
+
+    logAudit(req.user.userId, 'create_ban_integration', 'ban_integration', result.lastInsertRowid, null, getClientIP(req));
+
+    sendJSON(res, {
+      success: true,
+      id: result.lastInsertRowid,
+      message: 'Ban integration created successfully'
+    }, 201);
+  } catch (error) {
+    console.error('Create ban integration error:', error);
+    sendJSON(res, { error: error.message }, 500);
+  }
+}
+
+async function handleUpdateBanIntegration(req, res, parsedUrl) {
+  try {
+    const id = parsedUrl.pathname.split('/')[4];
+    const body = await parseBody(req);
+    const { name, credential_id, config_json, enabled } = body;
+
+    const existing = db.prepare('SELECT * FROM ban_integrations WHERE id = ?').get(id);
+    if (!existing) {
+      return sendJSON(res, { error: 'Integration not found' }, 404);
+    }
+
+    db.prepare(`
+      UPDATE ban_integrations
+      SET name = ?, credential_id = ?, config_json = ?, enabled = ?, updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `).run(
+      name || existing.name,
+      credential_id !== undefined ? credential_id : existing.credential_id,
+      config_json || existing.config_json,
+      enabled !== undefined ? (enabled ? 1 : 0) : existing.enabled,
+      id
+    );
+
+    logAudit(req.user.userId, 'update_ban_integration', 'ban_integration', id, null, getClientIP(req));
+
+    sendJSON(res, { success: true, message: 'Integration updated successfully' });
+  } catch (error) {
+    console.error('Update ban integration error:', error);
+    sendJSON(res, { error: error.message }, 500);
+  }
+}
+
+function handleDeleteBanIntegration(req, res, parsedUrl) {
+  try {
+    const id = parsedUrl.pathname.split('/')[4];
+
+    const existing = db.prepare('SELECT * FROM ban_integrations WHERE id = ?').get(id);
+    if (!existing) {
+      return sendJSON(res, { error: 'Integration not found' }, 404);
+    }
+
+    db.prepare('DELETE FROM ban_integrations WHERE id = ?').run(id);
+
+    logAudit(req.user.userId, 'delete_ban_integration', 'ban_integration', id, null, getClientIP(req));
+
+    sendJSON(res, { success: true, message: 'Integration deleted successfully' });
+  } catch (error) {
+    console.error('Delete ban integration error:', error);
+    sendJSON(res, { error: error.message }, 500);
+  }
+}
+
+async function handleTestBanIntegration(req, res, parsedUrl) {
+  try {
+    const id = parsedUrl.pathname.split('/')[4];
+
+    const integration = db.prepare('SELECT * FROM ban_integrations WHERE id = ?').get(id);
+    if (!integration) {
+      return sendJSON(res, { error: 'Integration not found' }, 404);
+    }
+
+    // Test connection using provider
+    const { getProvider } = require('../utils/ban-providers');
+
+    try {
+      const provider = getProvider(integration);
+      const testResult = await provider.testConnection();
+
+      sendJSON(res, {
+        success: testResult.success,
+        message: testResult.message
+      });
+    } catch (error) {
+      sendJSON(res, {
+        success: false,
+        message: error.message
+      }, 400);
+    }
+  } catch (error) {
+    console.error('Test ban integration error:', error);
+    sendJSON(res, { error: error.message }, 500);
+  }
+}
+
+// ============================================================================
+// IP Bans Handlers
+// ============================================================================
+
+function handleGetBans(req, res, parsedUrl) {
+  try {
+    const limit = parseInt(parsedUrl.searchParams.get('limit')) || 100;
+    const bans = getActiveBans(limit);
+
+    sendJSON(res, { bans });
+  } catch (error) {
+    console.error('Get bans error:', error);
+    sendJSON(res, { error: error.message }, 500);
+  }
+}
+
+async function handleCreateBan(req, res) {
+  try {
+    const body = await parseBody(req);
+    const { ip_address, reason, duration, severity } = body;
+
+    if (!ip_address) {
+      return sendJSON(res, { error: 'IP address is required' }, 400);
+    }
+
+    if (!reason) {
+      return sendJSON(res, { error: 'Reason is required' }, 400);
+    }
+
+    const result = await banIP(ip_address, {
+      reason,
+      severity: severity || 'MEDIUM',
+      ban_duration: duration || null,  // null = permanent
+      auto_banned: false,
+      banned_by: req.user.userId
+    });
+
+    if (!result.success) {
+      return sendJSON(res, { error: result.message }, 400);
+    }
+
+    logAudit(req.user.userId, 'manual_ban', 'ip_ban', result.ban_id, JSON.stringify({ ip_address, reason }), getClientIP(req));
+
+    // Broadcast ban event for real-time updates
+    broadcastBanEvent('ban_created', {
+      ip_address,
+      reason,
+      severity: severity || 'MEDIUM',
+      ban_id: result.ban_id
+    });
+
+    sendJSON(res, {
+      success: true,
+      ban_id: result.ban_id,
+      message: result.message,
+      integrations_queued: result.integrations_queued
+    }, 201);
+  } catch (error) {
+    console.error('Create ban error:', error);
+    sendJSON(res, { error: error.message }, 500);
+  }
+}
+
+async function handleUnban(req, res, parsedUrl) {
+  try {
+    const id = parsedUrl.pathname.split('/')[4];
+
+    const ban = db.prepare('SELECT ip_address FROM ip_bans WHERE id = ?').get(id);
+    if (!ban) {
+      return sendJSON(res, { error: 'Ban not found' }, 404);
+    }
+
+    const result = await unbanIP(ban.ip_address, req.user.userId);
+
+    if (!result.success) {
+      return sendJSON(res, { error: result.message }, 400);
+    }
+
+    logAudit(req.user.userId, 'manual_unban', 'ip_ban', id, JSON.stringify({ ip_address: ban.ip_address }), getClientIP(req));
+
+    // Broadcast ban event for real-time updates
+    broadcastBanEvent('ban_removed', {
+      ip_address: ban.ip_address,
+      ban_id: id
+    });
+
+    sendJSON(res, {
+      success: true,
+      message: result.message,
+      integrations_queued: result.integrations_queued || 0
+    });
+  } catch (error) {
+    console.error('Unban error:', error);
+    sendJSON(res, { error: error.message }, 500);
+  }
+}
+
+function handleMakeBanPermanent(req, res, parsedUrl) {
+  try {
+    const id = parsedUrl.pathname.split('/')[4];
+
+    const ban = db.prepare('SELECT ip_address FROM ip_bans WHERE id = ?').get(id);
+    if (!ban) {
+      return sendJSON(res, { error: 'Ban not found' }, 404);
+    }
+
+    const result = makeBanPermanentService(ban.ip_address);
+
+    if (!result.success) {
+      return sendJSON(res, { error: result.message }, 400);
+    }
+
+    logAudit(req.user.userId, 'make_ban_permanent', 'ip_ban', id, JSON.stringify({ ip_address: ban.ip_address }), getClientIP(req));
+
+    // Broadcast ban event for real-time updates
+    broadcastBanEvent('ban_updated', {
+      ip_address: ban.ip_address,
+      ban_id: id,
+      permanent: true
+    });
+
+    sendJSON(res, { success: true, message: result.message });
+  } catch (error) {
+    console.error('Make ban permanent error:', error);
+    sendJSON(res, { error: error.message }, 500);
+  }
+}
+
+function handleGetBanStats(req, res) {
+  try {
+    const stats = getBanStatistics();
+    const detectionStats = getDetectionStats();
+    const trackedIPs = getTrackedIPs(20);  // Top 20 tracked IPs
+
+    sendJSON(res, {
+      ...stats,
+      detection: detectionStats,
+      tracked_ips: trackedIPs
+    });
+  } catch (error) {
+    console.error('Get ban stats error:', error);
+    sendJSON(res, { error: error.message }, 500);
+  }
+}
+
+// ============================================================================
+// IP Whitelist Handlers
+// ============================================================================
+
+function handleGetWhitelist(req, res) {
+  try {
+    const whitelist = db.prepare(`
+      SELECT
+        w.*,
+        u.username as added_by_username
+      FROM ip_whitelist w
+      LEFT JOIN users u ON w.added_by = u.id
+      ORDER BY w.priority ASC, w.created_at DESC
+    `).all();
+
+    sendJSON(res, { whitelist });
+  } catch (error) {
+    console.error('Get whitelist error:', error);
+    sendJSON(res, { error: error.message }, 500);
+  }
+}
+
+async function handleAddToWhitelist(req, res) {
+  try {
+    const body = await parseBody(req);
+    const { ip_address, ip_range, reason, priority } = body;
+
+    if (!ip_address && !ip_range) {
+      return sendJSON(res, { error: 'IP address or IP range is required' }, 400);
+    }
+
+    // Check if already whitelisted
+    const existing = db.prepare(
+      'SELECT id FROM ip_whitelist WHERE ip_address = ? OR ip_range = ?'
+    ).get(ip_address || null, ip_range || null);
+
+    if (existing) {
+      return sendJSON(res, { error: 'IP or range is already whitelisted' }, 400);
+    }
+
+    const result = db.prepare(`
+      INSERT INTO ip_whitelist (ip_address, ip_range, type, reason, priority, added_by)
+      VALUES (?, ?, 'manual', ?, ?, ?)
+    `).run(
+      ip_address || null,
+      ip_range || null,
+      reason || 'Manual whitelist',
+      priority || 50,
+      req.user.userId
+    );
+
+    logAudit(req.user.userId, 'add_to_whitelist', 'ip_whitelist', result.lastInsertRowid,
+      JSON.stringify({ ip_address, ip_range, reason }), getClientIP(req));
+
+    sendJSON(res, {
+      success: true,
+      id: result.lastInsertRowid,
+      message: 'IP added to whitelist successfully'
+    }, 201);
+  } catch (error) {
+    console.error('Add to whitelist error:', error);
+    sendJSON(res, { error: error.message }, 500);
+  }
+}
+
+function handleRemoveFromWhitelist(req, res, parsedUrl) {
+  try {
+    const id = parsedUrl.pathname.split('/')[4];
+
+    const entry = db.prepare('SELECT type FROM ip_whitelist WHERE id = ?').get(id);
+    if (!entry) {
+      return sendJSON(res, { error: 'Whitelist entry not found' }, 404);
+    }
+
+    if (entry.type === 'system') {
+      return sendJSON(res, { error: 'Cannot remove system whitelist entries' }, 403);
+    }
+
+    db.prepare('DELETE FROM ip_whitelist WHERE id = ?').run(id);
+
+    logAudit(req.user.userId, 'remove_from_whitelist', 'ip_whitelist', id, null, getClientIP(req));
+
+    sendJSON(res, { success: true, message: 'IP removed from whitelist successfully' });
+  } catch (error) {
+    console.error('Remove from whitelist error:', error);
+    sendJSON(res, { error: error.message }, 500);
+  }
+}
+
+// ============================================================================
+// Detection Rules Handlers
+// ============================================================================
+
+function handleGetDetectionRules(req, res) {
+  try {
+    const rules = db.prepare(`
+      SELECT
+        r.*,
+        (SELECT COUNT(*) FROM ip_bans WHERE detection_rule_id = r.id) as total_bans
+      FROM ips_detection_rules r
+      ORDER BY r.priority ASC, r.created_at DESC
+    `).all();
+
+    // Parse JSON fields
+    const rulesWithParsed = rules.map(rule => ({
+      ...rule,
+      attack_types: rule.attack_types ? JSON.parse(rule.attack_types) : null
+    }));
+
+    sendJSON(res, { rules: rulesWithParsed });
+  } catch (error) {
+    console.error('Get detection rules error:', error);
+    sendJSON(res, { error: error.message }, 500);
+  }
+}
+
+async function handleCreateDetectionRule(req, res) {
+  try {
+    const body = await parseBody(req);
+    const {
+      name, threshold, time_window, attack_types, severity_filter,
+      proxy_id, ban_duration, ban_severity, priority, enabled
+    } = body;
+
+    if (!name || !threshold || !time_window) {
+      return sendJSON(res, { error: 'Name, threshold, and time_window are required' }, 400);
+    }
+
+    const result = db.prepare(`
+      INSERT INTO ips_detection_rules (
+        name, threshold, time_window, attack_types, severity_filter,
+        proxy_id, ban_duration, ban_severity, priority, enabled
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      name, threshold, time_window,
+      attack_types ? JSON.stringify(attack_types) : null,
+      severity_filter || 'ALL',
+      proxy_id || null,
+      ban_duration || 3600,
+      ban_severity || 'MEDIUM',
+      priority || 100,
+      enabled !== undefined ? (enabled ? 1 : 0) : 1
+    );
+
+    logAudit(req.user.userId, 'create_detection_rule', 'detection_rule', result.lastInsertRowid,
+      JSON.stringify({ name, threshold, time_window }), getClientIP(req));
+
+    sendJSON(res, {
+      success: true,
+      id: result.lastInsertRowid,
+      message: 'Detection rule created successfully'
+    }, 201);
+  } catch (error) {
+    console.error('Create detection rule error:', error);
+    sendJSON(res, { error: error.message }, 500);
+  }
+}
+
+async function handleUpdateDetectionRule(req, res, parsedUrl) {
+  try {
+    const id = parsedUrl.pathname.split('/')[4];
+    const body = await parseBody(req);
+
+    const existing = db.prepare('SELECT * FROM ips_detection_rules WHERE id = ?').get(id);
+    if (!existing) {
+      return sendJSON(res, { error: 'Detection rule not found' }, 404);
+    }
+
+    const {
+      name, threshold, time_window, attack_types, severity_filter,
+      proxy_id, ban_duration, ban_severity, priority, enabled
+    } = body;
+
+    db.prepare(`
+      UPDATE ips_detection_rules
+      SET name = ?, threshold = ?, time_window = ?, attack_types = ?,
+          severity_filter = ?, proxy_id = ?, ban_duration = ?,
+          ban_severity = ?, priority = ?, enabled = ?, updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `).run(
+      name !== undefined ? name : existing.name,
+      threshold !== undefined ? threshold : existing.threshold,
+      time_window !== undefined ? time_window : existing.time_window,
+      attack_types !== undefined ? JSON.stringify(attack_types) : existing.attack_types,
+      severity_filter !== undefined ? severity_filter : existing.severity_filter,
+      proxy_id !== undefined ? proxy_id : existing.proxy_id,
+      ban_duration !== undefined ? ban_duration : existing.ban_duration,
+      ban_severity !== undefined ? ban_severity : existing.ban_severity,
+      priority !== undefined ? priority : existing.priority,
+      enabled !== undefined ? (enabled ? 1 : 0) : existing.enabled,
+      id
+    );
+
+    logAudit(req.user.userId, 'update_detection_rule', 'detection_rule', id, null, getClientIP(req));
+
+    sendJSON(res, { success: true, message: 'Detection rule updated successfully' });
+  } catch (error) {
+    console.error('Update detection rule error:', error);
+    sendJSON(res, { error: error.message }, 500);
+  }
+}
+
+function handleDeleteDetectionRule(req, res, parsedUrl) {
+  try {
+    const id = parsedUrl.pathname.split('/')[4];
+
+    const existing = db.prepare('SELECT * FROM ips_detection_rules WHERE id = ?').get(id);
+    if (!existing) {
+      return sendJSON(res, { error: 'Detection rule not found' }, 404);
+    }
+
+    db.prepare('DELETE FROM ips_detection_rules WHERE id = ?').run(id);
+
+    logAudit(req.user.userId, 'delete_detection_rule', 'detection_rule', id, null, getClientIP(req));
+
+    sendJSON(res, { success: true, message: 'Detection rule deleted successfully' });
+  } catch (error) {
+    console.error('Delete detection rule error:', error);
+    sendJSON(res, { error: error.message }, 500);
+  }
+}
+
+function handleToggleDetectionRule(req, res, parsedUrl) {
+  try {
+    const id = parsedUrl.pathname.split('/')[4];
+
+    const existing = db.prepare('SELECT enabled FROM ips_detection_rules WHERE id = ?').get(id);
+    if (!existing) {
+      return sendJSON(res, { error: 'Detection rule not found' }, 404);
+    }
+
+    const newEnabled = existing.enabled ? 0 : 1;
+
+    db.prepare('UPDATE ips_detection_rules SET enabled = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?')
+      .run(newEnabled, id);
+
+    logAudit(req.user.userId, newEnabled ? 'enable_detection_rule' : 'disable_detection_rule',
+      'detection_rule', id, null, getClientIP(req));
+
+    sendJSON(res, {
+      success: true,
+      enabled: newEnabled === 1,
+      message: `Detection rule ${newEnabled ? 'enabled' : 'disabled'} successfully`
+    });
+  } catch (error) {
+    console.error('Toggle detection rule error:', error);
+    sendJSON(res, { error: error.message }, 500);
+  }
+}
+
+// ============================================================================
+// Queue Status Handler
+// ============================================================================
+
+function handleGetQueueStatus(req, res) {
+  try {
+    const banQueue = getBanQueue();
+    const status = banQueue.getStatus();
+
+    sendJSON(res, {
+      queue: status,
+      rate_limit: '1 request per 5 seconds per integration'
+    });
+  } catch (error) {
+    console.error('Get queue status error:', error);
+    sendJSON(res, { error: error.message }, 500);
+  }
+}
+
+// ============================================================================
+// END BAN SYSTEM HANDLERS
+// ============================================================================
+
 module.exports = {
-  handleAPI
+  handleAPI,
+  broadcastBanEvent
 };

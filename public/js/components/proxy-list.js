@@ -91,6 +91,7 @@ export async function renderProxies(container) {
                       </a>
                     ` : ''}
                     <strong>${escapeHtml(proxy.name)}</strong>
+                    ${proxy.waf_profile_name ? `<span class="badge badge-warning" style="margin-left: 8px;" title="WAF: ${escapeHtml(proxy.waf_profile_name)} (Paranoia ${proxy.waf_profile_paranoia || 1})">🛡️ WAF</span>` : ''}
                     ${proxy.config_error ? `<br><small style="color: var(--danger-color);" title="${escapeHtml(proxy.config_error)}">⚠️ ${escapeHtml(proxy.config_error)}</small>` : ''}
                   </td>
                   <td><span class="badge badge-info">${escapeHtml(proxy.type)}</span></td>
@@ -339,14 +340,56 @@ async function showProxyForm(id = null) {
 
             <div class="form-group">
               <label>Modules</label>
-              ${modules.map(module => `
-                <div class="checkbox-group">
-                  <input type="checkbox" id="module_${module.id}" value="${module.id}" 
-                    ${proxy?.modules?.some(m => m.id === module.id) ? 'checked' : ''}>
-                  <label for="module_${module.id}">${module.name} - ${module.description || ''}</label>
-                </div>
-              `).join('')}
+              <small style="display: block; color: var(--text-secondary); margin-bottom: 8px;">
+                Select optional features for this proxy
+              </small>
+              ${modules
+                .filter(module => module.name !== 'Gzip Compression') // Always enabled
+                .map(module => {
+                  const isForceHTTPS = module.name === 'Force HTTPS';
+                  const isHTTP2 = module.name === 'HTTP/2';
+                  const isChecked = proxy?.modules?.some(m => m.id === module.id);
+
+                  // Update descriptions for clarity
+                  let description = module.description || '';
+                  if (isHTTP2) {
+                    description = 'Enable HTTP/2 protocol for faster performance';
+                  }
+
+                  return `
+                    <div class="checkbox-group" ${isForceHTTPS ? 'data-force-https="true"' : ''}>
+                      <input type="checkbox"
+                        id="module_${module.id}"
+                        value="${module.id}"
+                        ${isChecked ? 'checked' : ''}
+                        ${isForceHTTPS ? 'disabled' : ''}>
+                      <label for="module_${module.id}">
+                        ${module.name}${description ? ' - ' + description : ''}
+                        ${isForceHTTPS ? '<span style="color: var(--success); font-size: 0.85em;"> (Auto-enabled for SSL)</span>' : ''}
+                      </label>
+                    </div>
+                  `;
+                }).join('')}
             </div>
+
+            <hr style="margin: 24px 0; border: none; border-top: 1px solid var(--border-color);">
+
+            <!-- WAF Profile Section -->
+            <div class="form-group">
+              <label>WAF Profile (Web Application Firewall)</label>
+              <small style="display: block; color: var(--text-secondary); margin-bottom: 8px;">
+                Select a WAF profile to protect this proxy from attacks
+              </small>
+              <select id="wafProfiles" class="form-control">
+                <option value="">-- No WAF Protection --</option>
+                <!-- Will be populated dynamically -->
+              </select>
+              <small style="display: block; margin-top: 4px; color: var(--text-secondary);">
+                <a href="#/waf/profiles" style="color: var(--primary-color);">Manage WAF Profiles →</a>
+              </small>
+            </div>
+
+            <hr style="margin: 24px 0; border: none; border-top: 1px solid var(--border-color);">
 
             <div class="form-group">
               <label for="advancedConfig">Advanced Configuration (optional)</label>
@@ -491,13 +534,71 @@ async function showProxyForm(id = null) {
 
     // TLS checkbox handler
     document.getElementById('sslEnabled').addEventListener('change', (e) => {
-      document.getElementById('sslCertGroup').style.display = e.target.checked ? 'block' : 'none';
+      const isSSL = e.target.checked;
+      document.getElementById('sslCertGroup').style.display = isSSL ? 'block' : 'none';
+
+      // Show/hide Force HTTPS module based on SSL state
+      const forceHTTPSGroup = document.querySelector('[data-force-https="true"]');
+      if (forceHTTPSGroup) {
+        forceHTTPSGroup.style.display = isSSL ? 'flex' : 'none';
+        // Auto-check Force HTTPS when SSL is enabled
+        const forceHTTPSCheckbox = forceHTTPSGroup.querySelector('input[type="checkbox"]');
+        if (forceHTTPSCheckbox && isSSL) {
+          forceHTTPSCheckbox.checked = true;
+        }
+      }
     });
+
+    // Initialize Force HTTPS module visibility on page load
+    const initialSSL = document.getElementById('sslEnabled').checked;
+    const forceHTTPSGroup = document.querySelector('[data-force-https="true"]');
+    if (forceHTTPSGroup) {
+      forceHTTPSGroup.style.display = initialSSL ? 'flex' : 'none';
+    }
 
     // Rate limiting checkbox handler
     document.getElementById('rateLimitEnabled').addEventListener('change', (e) => {
       document.getElementById('rateLimitConfig').style.display = e.target.checked ? 'block' : 'none';
     });
+
+    // Load and populate WAF profiles
+    (async () => {
+      try {
+        const wafProfilesSelect = document.getElementById('wafProfiles');
+        const wafResponse = await api.getWAFProfiles();
+        const wafProfiles = wafResponse.profiles || [];
+
+        // Get current proxy's WAF profile assignment (single)
+        let currentWAFProfileId = null;
+        if (id && proxy) {
+          try {
+            // Get the assigned WAF profile for this proxy
+            const db = await api.request(`/api/proxies/${id}/waf`);
+            currentWAFProfileId = db.profile?.id || null;
+          } catch (error) {
+            console.warn('Failed to load WAF assignment:', error);
+          }
+        }
+
+        // Populate WAF profiles select
+        wafProfiles.forEach(profile => {
+          const option = document.createElement('option');
+          option.value = profile.id;
+          option.textContent = `${profile.name} (Paranoia ${profile.paranoia_level || 1})`;
+          if (currentWAFProfileId === profile.id) {
+            option.selected = true;
+          }
+          wafProfilesSelect.appendChild(option);
+        });
+
+        if (wafProfiles.length === 0) {
+          wafProfilesSelect.innerHTML = '<option value="">-- No WAF Protection --</option><option value="" disabled>No WAF profiles available</option>';
+        }
+      } catch (error) {
+        console.error('Failed to load WAF profiles:', error);
+        document.getElementById('wafProfiles').innerHTML = '<option value="">-- No WAF Protection --</option><option value="" disabled>Failed to load WAF profiles</option>';
+      }
+    })();
 
     // Load existing config if editing
     if (id) {
@@ -937,6 +1038,40 @@ async function showProxyForm(id = null) {
           // Rate limiting disabled - delete if exists
           if (currentRateLimit) {
             await api.deleteRateLimit(currentRateLimit.id);
+          }
+        }
+
+        // Handle WAF profile assignment (single profile model)
+        const wafProfilesSelect = document.getElementById('wafProfiles');
+        const selectedProfileId = wafProfilesSelect.value ? parseInt(wafProfilesSelect.value) : null;
+
+        // Get current WAF profile assignment
+        let currentProfileId = null;
+        if (id) {
+          try {
+            const wafData = await api.request(`/api/proxies/${proxyId}/waf`);
+            currentProfileId = wafData.profile?.id || null;
+          } catch (error) {
+            console.warn('Failed to get current WAF assignment:', error);
+          }
+        }
+
+        // Update profile assignment if changed
+        if (selectedProfileId !== currentProfileId) {
+          if (selectedProfileId) {
+            // Assign new profile (replaces any existing)
+            try {
+              await api.assignWAFProfile(proxyId, selectedProfileId);
+            } catch (error) {
+              console.error(`Failed to assign WAF profile ${selectedProfileId}:`, error);
+            }
+          } else if (currentProfileId) {
+            // Remove current profile (user selected "No WAF Protection")
+            try {
+              await api.removeWAFProfile(proxyId);
+            } catch (error) {
+              console.error('Failed to remove WAF profile:', error);
+            }
           }
         }
 

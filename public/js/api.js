@@ -346,6 +346,260 @@ class API {
   async getCertbotStatus() {
     return this.request('/api/certbot/status');
   }
+
+  // ============================================================================
+  // WAF Methods
+  // ============================================================================
+
+  // WAF Profiles
+  async getWAFProfiles() {
+    return this.request('/api/waf/profiles');
+  }
+
+  async createWAFProfile(data) {
+    return this.request('/api/waf/profiles', {
+      method: 'POST',
+      body: data
+    });
+  }
+
+  async updateWAFProfile(id, data) {
+    return this.request(`/api/waf/profiles/${id}`, {
+      method: 'PUT',
+      body: data
+    });
+  }
+
+  async deleteWAFProfile(id) {
+    return this.request(`/api/waf/profiles/${id}`, {
+      method: 'DELETE'
+    });
+  }
+
+  async getWAFProfileConfig(id) {
+    return this.request(`/api/waf/profiles/${id}/config`);
+  }
+
+  // WAF Events
+  async getWAFEvents(filters = {}) {
+    const params = new URLSearchParams();
+    Object.entries(filters).forEach(([key, value]) => {
+      if (value !== null && value !== undefined && value !== '') {
+        params.append(key, value);
+      }
+    });
+    const queryString = params.toString();
+    return this.request(`/api/waf/events${queryString ? '?' + queryString : ''}`);
+  }
+
+  async getWAFStats(hours = 24) {
+    return this.request(`/api/waf/stats?hours=${hours}`);
+  }
+
+  // WAF Exclusions
+  async getWAFExclusions(profileId = null) {
+    const query = profileId ? `?profile_id=${profileId}` : '';
+    return this.request(`/api/waf/exclusions${query}`);
+  }
+
+  async createWAFExclusion(data) {
+    return this.request('/api/waf/exclusions', {
+      method: 'POST',
+      body: JSON.stringify(data)
+    });
+  }
+
+  async deleteWAFExclusion(id) {
+    return this.request(`/api/waf/exclusions/${id}`, {
+      method: 'DELETE'
+    });
+  }
+
+  // Proxy WAF Assignment
+  async assignWAFProfile(proxyId, profileId) {
+    return this.request(`/api/proxies/${proxyId}/waf`, {
+      method: 'POST',
+      body: { profile_id: profileId }
+    });
+  }
+
+  async removeWAFProfile(proxyId) {
+    return this.request(`/api/proxies/${proxyId}/waf`, {
+      method: 'DELETE'
+    });
+  }
+
+  // Notification Settings
+  async getNotificationSettings() {
+    return this.request('/api/settings/notifications');
+  }
+
+  async updateNotificationSettings(data) {
+    return this.request('/api/settings/notifications', {
+      method: 'PUT',
+      body: data
+    });
+  }
+
+  async testNotification() {
+    return this.request('/api/notifications/test', {
+      method: 'POST'
+    });
+  }
+
+  // Credentials Management
+  async getCredentials(type = null) {
+    const query = type ? `?type=${type}` : '';
+    return this.request(`/api/credentials${query}`);
+  }
+
+  async createCredential(data) {
+    return this.request('/api/credentials', {
+      method: 'POST',
+      body: data
+    });
+  }
+
+  async updateCredential(id, data) {
+    return this.request(`/api/credentials/${id}`, {
+      method: 'PUT',
+      body: data
+    });
+  }
+
+  async deleteCredential(id) {
+    return this.request(`/api/credentials/${id}`, {
+      method: 'DELETE'
+    });
+  }
+
+  // Ban System Methods
+
+  // Ban Integrations
+  async getBanIntegrations() {
+    return this.request('/api/ban/integrations');
+  }
+
+  async createBanIntegration(data) {
+    return this.request('/api/ban/integrations', {
+      method: 'POST',
+      body: data
+    });
+  }
+
+  async updateBanIntegration(id, data) {
+    return this.request(`/api/ban/integrations/${id}`, {
+      method: 'PUT',
+      body: data
+    });
+  }
+
+  async deleteBanIntegration(id) {
+    return this.request(`/api/ban/integrations/${id}`, {
+      method: 'DELETE'
+    });
+  }
+
+  async testBanIntegration(id) {
+    return this.request(`/api/ban/integrations/${id}/test`, {
+      method: 'POST'
+    });
+  }
+
+  // IP Bans
+  async getBans(limit = 100) {
+    return this.request(`/api/ban/bans?limit=${limit}`);
+  }
+
+  async createBan(data) {
+    return this.request('/api/ban/bans', {
+      method: 'POST',
+      body: data
+    });
+  }
+
+  async unban(id) {
+    return this.request(`/api/ban/bans/${id}`, {
+      method: 'DELETE'
+    });
+  }
+
+  async makeBanPermanent(id) {
+    return this.request(`/api/ban/bans/${id}/permanent`, {
+      method: 'PUT'
+    });
+  }
+
+  async getBanStats() {
+    return this.request('/api/ban/bans/stats');
+  }
+
+  // IP Whitelist
+  async getWhitelist() {
+    return this.request('/api/ban/whitelist');
+  }
+
+  async addToWhitelist(data) {
+    return this.request('/api/ban/whitelist', {
+      method: 'POST',
+      body: data
+    });
+  }
+
+  async removeFromWhitelist(id) {
+    return this.request(`/api/ban/whitelist/${id}`, {
+      method: 'DELETE'
+    });
+  }
+
+  // Detection Rules
+  async getDetectionRules() {
+    return this.request('/api/ban/detection-rules');
+  }
+
+  async createDetectionRule(data) {
+    return this.request('/api/ban/detection-rules', {
+      method: 'POST',
+      body: data
+    });
+  }
+
+  async updateDetectionRule(id, data) {
+    return this.request(`/api/ban/detection-rules/${id}`, {
+      method: 'PUT',
+      body: data
+    });
+  }
+
+  async deleteDetectionRule(id) {
+    return this.request(`/api/ban/detection-rules/${id}`, {
+      method: 'DELETE'
+    });
+  }
+
+  async toggleDetectionRule(id) {
+    return this.request(`/api/ban/detection-rules/${id}/toggle`, {
+      method: 'POST'
+    });
+  }
+
+  // Queue Status
+  async getQueueStatus() {
+    return this.request('/api/ban/queue/status');
+  }
+
+  // SSE Connection for real-time WAF events
+  createWAFEventStream() {
+    const token = this.getToken();
+    if (!token) {
+      throw new Error('No authentication token found');
+    }
+
+    // Note: EventSource doesn't support custom headers in browsers
+    // Pass the token as a query parameter instead
+    const eventSource = new EventSource(`/api/waf/events/stream?token=${encodeURIComponent(token)}`);
+    return eventSource;
+  }
 }
 
 export default new API();

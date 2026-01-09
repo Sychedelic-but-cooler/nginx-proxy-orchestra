@@ -19,38 +19,62 @@
           <span>Dashboard</span>
         </a>
 
-        <!-- Security Group (Collapsible) -->
+        <!-- Nginx Group (Collapsible) -->
         <div class="nav-group">
-          <div class="nav-group-header" data-group="security">
-            <span>Security</span>
+          <div class="nav-group-header" data-group="nginx">
+            <span>Nginx</span>
             <svg class="nav-group-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <polyline points="6 9 12 15 18 9"></polyline>
             </svg>
           </div>
-          <div class="nav-group-items" data-group-items="security">
+          <div class="nav-group-items" data-group-items="nginx">
+            <a href="#/modules" class="nav-item nav-subitem" data-route="modules">
+              <span>Modular Configs</span>
+            </a>
             <a href="#/security/tuning" class="nav-item nav-subitem" data-route="security/tuning">
               <span>Nginx Tuning</span>
             </a>
             <a href="#/security/statistics" class="nav-item nav-subitem" data-route="security/statistics">
-              <span>Nginx Statistics</span>
+              <span>Nginx Dashboard</span>
             </a>
-            <a href="#/security/waf" class="nav-item nav-subitem" data-route="security/waf">
+          </div>
+        </div>
+
+        <!-- WAF Group (Collapsible) -->
+        <div class="nav-group">
+          <div class="nav-group-header" data-group="waf">
+            <span>WAF</span>
+            <svg class="nav-group-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="6 9 12 15 18 9"></polyline>
+            </svg>
+          </div>
+          <div class="nav-group-items" data-group-items="waf">
+            <a href="#/security/waf" class="nav-item nav-subitem" data-route="waf/dashboard">
               <span>WAF Dashboard</span>
+            </a>
+            <a href="#/waf/profiles" class="nav-item nav-subitem" data-route="waf/profiles">
+              <span>WAF Profiles</span>
+            </a>
+            <a href="#/waf/events" class="nav-item nav-subitem" data-route="waf/events">
+              <span>WAF Logs</span>
+            </a>
+            <a href="#/waf/bans" class="nav-item nav-subitem" data-route="waf/bans">
+              <span>Banned IPs</span>
+            </a>
+            <a href="#/waf/detection-rules" class="nav-item nav-subitem" data-route="waf/detection-rules">
+              <span>Detection Rules</span>
             </a>
           </div>
         </div>
 
         <a href="#/proxies" class="nav-item" data-route="proxies">
-          <span>Hosts</span>
+          <span>Proxy Hosts</span>
         </a>
         <a href="#/certificates" class="nav-item" data-route="certificates">
           <span>TLS Certificates</span>
         </a>
-        <a href="#/modules" class="nav-item" data-route="modules">
-          <span>Modules</span>
-        </a>
         <a href="#/audit" class="nav-item" data-route="audit">
-          <span>Audit Log</span>
+          <span>Audit Logs</span>
         </a>
 
         <!-- Settings Group (Collapsible) -->
@@ -67,6 +91,12 @@
             </a>
             <a href="#/settings/security" class="nav-item nav-subitem" data-route="settings/security">
               <span>Security</span>
+            </a>
+            <a href="#/settings/notifications" class="nav-item nav-subitem" data-route="settings/notifications">
+              <span>Notifications</span>
+            </a>
+            <a href="#/settings/integrations" class="nav-item nav-subitem" data-route="settings/integrations">
+              <span>Ban Integrations</span>
             </a>
           </div>
         </div>
@@ -128,6 +158,9 @@
 
   <!-- Modal container -->
   <div id="modalContainer"></div>
+
+  <!-- Chart.js - Load before modules to ensure global availability -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 
   <script type="module" src="/js/app.js"></script>
 </body>

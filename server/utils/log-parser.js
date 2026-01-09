@@ -2,6 +2,13 @@ const fs = require('fs');
 const path = require('path');
 const { execSync } = require('child_process');
 
+// Cache for parsed statistics
+let statsCache = {
+  data: null,
+  timestamp: null,
+  cacheLifetime: 30 * 60 * 1000 // 30 minutes in milliseconds
+};
+
 /**
  * Get nginx access log path
  */
@@ -10,13 +17,48 @@ function getAccessLogPath() {
 }
 
 /**
- * Parse a single nginx log line (standard combined format)
- * Format: $remote_addr - $remote_user [$time_local] "$request" $status $body_bytes_sent "$http_referer" "$http_user_agent"
+ * Parse a single nginx log line (enhanced format with server_name)
+ * New format: $server_name $remote_addr - $remote_user [$time_local] "$request" $status $body_bytes_sent "$http_referer" "$http_user_agent"
+ * Old format: $remote_addr - $remote_user [$time_local] "$request" $status $body_bytes_sent "$http_referer" "$http_user_agent"
  */
 function parseLogLine(line) {
-  // Regex to parse nginx combined log format
-  const regex = /^(\S+) - (\S+) \[([^\]]+)\] "([^"]*)" (\d{3}) (\d+|-) "([^"]*)" "([^"]*)"/;
-  const match = line.match(regex);
+  // Try new format first (with server_name at the beginning)
+  const newFormatRegex = /^(\S+) (\S+) - (\S+) \[([^\]]+)\] "([^"]*)" (\d{3}) (\d+|-) "([^"]*)" "([^"]*)"/;
+  let match = line.match(newFormatRegex);
+  let serverName = null;
+
+  if (match) {
+    // New format with server_name
+    const [, server, ip, user, timestamp, request, status, bytes, referer, userAgent] = match;
+    serverName = server;
+
+    // Parse request into method, path, protocol
+    const requestParts = request.split(' ');
+    const method = requestParts[0] || '-';
+    const path = requestParts[1] || '-';
+    const protocol = requestParts[2] || '-';
+
+    // Parse timestamp
+    const date = parseNginxTimestamp(timestamp);
+
+    return {
+      serverName,
+      ip,
+      user: user === '-' ? null : user,
+      timestamp: date,
+      method,
+      path,
+      protocol,
+      status: parseInt(status),
+      bytes: bytes === '-' ? 0 : parseInt(bytes),
+      referer: referer === '-' ? null : referer,
+      userAgent: userAgent === '-' ? null : userAgent
+    };
+  }
+
+  // Try old format (without server_name) for backwards compatibility
+  const oldFormatRegex = /^(\S+) - (\S+) \[([^\]]+)\] "([^"]*)" (\d{3}) (\d+|-) "([^"]*)" "([^"]*)"/;
+  match = line.match(oldFormatRegex);
 
   if (!match) {
     return null;
@@ -34,6 +76,7 @@ function parseLogLine(line) {
   const date = parseNginxTimestamp(timestamp);
 
   return {
+    serverName: null, // Old format doesn't have server_name
     ip,
     user: user === '-' ? null : user,
     timestamp: date,
@@ -64,9 +107,9 @@ function parseNginxTimestamp(timestamp) {
 }
 
 /**
- * Read last N lines from log file efficiently
+ * Read log file (entire file if numLines is null, otherwise last N lines)
  */
-function readLastLines(filePath, numLines = 10000) {
+function readLastLines(filePath, numLines = null) {
   try {
     // Check if file exists
     if (!fs.existsSync(filePath)) {
@@ -74,11 +117,19 @@ function readLastLines(filePath, numLines = 10000) {
       return [];
     }
 
-    // Use tail command for efficiency (much faster than reading entire file)
-    const output = execSync(`tail -n ${numLines} "${filePath}" 2>/dev/null`, {
+    // If numLines is null, read entire file (since nginx rotates daily)
+    // Otherwise, use tail for last N lines
+    let command;
+    if (numLines === null) {
+      command = `cat "${filePath}"`;
+    } else {
+      command = `sudo tail -n ${numLines} "${filePath}" 2>/dev/null`;
+    }
+
+    const output = execSync(command, {
       encoding: 'utf8',
-      maxBuffer: 50 * 1024 * 1024, // 50MB buffer
-      timeout: 10000 // 10 second timeout
+      maxBuffer: 100 * 1024 * 1024, // 100MB buffer (for full log file)
+      timeout: 30000 // 30 second timeout (longer for full file)
     });
 
     return output.trim().split('\n').filter(line => line.trim());
@@ -89,16 +140,28 @@ function readLastLines(filePath, numLines = 10000) {
 }
 
 /**
- * Extract host from request path or referer
+ * Extract host from server_name, request path, or referer
  * Tries to match against known proxy hosts
  */
 function extractHost(logEntry, proxyHosts) {
-  // Try to extract from referer if it's a full URL
+  // First priority: Use server_name from log entry if available
+  if (logEntry.serverName && logEntry.serverName !== '-') {
+    const host = proxyHosts.find(h =>
+      h.domain_names && h.domain_names.split(',').some(d => d.trim() === logEntry.serverName)
+    );
+    if (host) return host.name;
+
+    // If server_name doesn't match any proxy, return it as-is
+    // This handles default server or direct IP access
+    return logEntry.serverName;
+  }
+
+  // Second priority: Try to extract from referer if it's a full URL
   if (logEntry.referer && logEntry.referer.startsWith('http')) {
     try {
       const url = new URL(logEntry.referer);
       const host = proxyHosts.find(h =>
-        h.domain_names.split(',').some(d => d.trim() === url.hostname)
+        h.domain_names && h.domain_names.split(',').some(d => d.trim() === url.hostname)
       );
       if (host) return host.name;
     } catch (e) {
@@ -106,8 +169,7 @@ function extractHost(logEntry, proxyHosts) {
     }
   }
 
-  // Try to match path patterns (not perfect but useful)
-  // Most proxies will have their own access logs, so this is best effort
+  // Fallback: Unknown (for old log format without server_name)
   return 'Unknown';
 }
 
@@ -265,9 +327,45 @@ function formatBytes(bytes) {
 }
 
 /**
- * Parse nginx access logs and return statistics
+ * Check if cached statistics are still valid
  */
-function parseAccessLogs(proxyHosts = [], timeRange = '24h', maxLines = 10000) {
+function isCacheValid() {
+  if (!statsCache.data || !statsCache.timestamp) {
+    return false;
+  }
+
+  const now = Date.now();
+  const age = now - statsCache.timestamp;
+
+  return age < statsCache.cacheLifetime;
+}
+
+/**
+ * Clear the statistics cache (useful for testing or forcing refresh)
+ */
+function clearCache() {
+  statsCache.data = null;
+  statsCache.timestamp = null;
+  console.log('📊 Statistics cache cleared');
+}
+
+/**
+ * Parse nginx access logs and return statistics
+ * @param {Array} proxyHosts - Array of proxy host objects
+ * @param {string} timeRange - Time range filter (e.g., '24h', '7d', 'all')
+ * @param {number|null} maxLines - Max lines to read (null = entire file since last rotation)
+ * @param {boolean} forceRefresh - Force cache refresh (default: false)
+ */
+function parseAccessLogs(proxyHosts = [], timeRange = '24h', maxLines = null, forceRefresh = false) {
+  // Check cache first (unless force refresh or reading specific line count)
+  if (!forceRefresh && maxLines === null && isCacheValid()) {
+    console.log('📊 Returning cached statistics (age: ' + Math.floor((Date.now() - statsCache.timestamp) / 1000) + 's)');
+    return statsCache.data;
+  }
+
+  console.log('📊 Parsing nginx access logs...');
+  const startTime = Date.now();
+
   const logPath = getAccessLogPath();
   const lines = readLastLines(logPath, maxLines);
 
@@ -282,10 +380,23 @@ function parseAccessLogs(proxyHosts = [], timeRange = '24h', maxLines = 10000) {
     .filter(entry => entry !== null);
 
   // Aggregate statistics
-  return aggregateStatistics(entries, proxyHosts, timeRange);
+  const stats = aggregateStatistics(entries, proxyHosts, timeRange);
+
+  const parseTime = Date.now() - startTime;
+  console.log(`📊 Parsed ${entries.length} log entries in ${parseTime}ms`);
+
+  // Cache the results (only if reading full file)
+  if (maxLines === null) {
+    statsCache.data = stats;
+    statsCache.timestamp = Date.now();
+    console.log('📊 Statistics cached for 30 minutes');
+  }
+
+  return stats;
 }
 
 module.exports = {
   parseAccessLogs,
-  getAccessLogPath
+  getAccessLogPath,
+  clearCache
 };

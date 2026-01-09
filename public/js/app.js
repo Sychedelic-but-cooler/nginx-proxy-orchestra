@@ -11,6 +11,13 @@ import { renderModules } from './components/module-manager.js';
 import { renderAuditLog } from './components/audit-log.js';
 import { renderAdvancedEditor } from './components/advanced-editor.js';
 import { renderSettings } from './components/settings.js';
+import { renderNotificationSettings } from './components/notification-settings.js';
+import { renderWAFDashboard, cleanupWAFDashboard } from './components/waf-dashboard.js';
+import { renderWAFProfiles } from './components/waf-profiles.js';
+import { renderWAFEvents } from './components/waf-events.js';
+import { renderBannedIPs, cleanupBannedIPs } from './components/banned-ips.js';
+import { renderDetectionRules } from './components/detection-rules.js';
+import { renderBanIntegrations } from './components/ban-integrations.js';
 
 // Check authentication on app load
 if (!api.getToken()) {
@@ -133,12 +140,36 @@ router.register('/security/tuning', async () => {
 
 router.register('/security/statistics', async () => {
   updateNavigation('security/statistics');
+  setHeader('Nginx Dashboard');
   await renderNginxStatistics(mainContent);
 });
 
 router.register('/security/waf', async () => {
-  updateNavigation('security/waf');
-  await renderSecurityDashboard(mainContent, 'waf');
+  updateNavigation('waf/dashboard');
+  await renderWAFDashboard(mainContent);
+});
+
+// WAF sub-routes
+router.register('/waf/profiles', async () => {
+  updateNavigation('waf/profiles');
+  await renderWAFProfiles(mainContent);
+});
+
+router.register('/waf/events', async () => {
+  updateNavigation('waf/events');
+  await renderWAFEvents(mainContent);
+});
+
+router.register('/waf/bans', async () => {
+  updateNavigation('waf/bans');
+  setHeader('Banned IPs', '<button id="addBanBtn" class="btn btn-primary">+ Ban IP</button>');
+  await renderBannedIPs(mainContent);
+});
+
+router.register('/waf/detection-rules', async () => {
+  updateNavigation('waf/detection-rules');
+  setHeader('Detection Rules', '<button id="addRuleBtn" class="btn btn-primary">+ Add Rule</button>');
+  await renderDetectionRules(mainContent);
 });
 
 // Redirect old routes to new tuning dashboard
@@ -152,7 +183,7 @@ router.register('/security', async () => {
 
 router.register('/proxies', async () => {
   updateNavigation('proxies');
-  setHeader('Hosts', '<button id="addProxyBtn" class="btn btn-primary">+ Add Proxy</button>');
+  setHeader('Proxy Hosts', '<button id="addProxyBtn" class="btn btn-primary">+ Add Proxy</button>');
   await renderProxies(mainContent);
 });
 
@@ -170,13 +201,13 @@ router.register('/certificates', async () => {
 
 router.register('/modules', async () => {
   updateNavigation('modules');
-  setHeader('Modules', '<button id="addModuleBtn" class="btn btn-primary">+ Add Module</button>');
+  setHeader('Modular Configs', '<button id="addModuleBtn" class="btn btn-primary">+ Add Module</button>');
   await renderModules(mainContent);
 });
 
 router.register('/audit', async () => {
   updateNavigation('audit');
-  setHeader('Audit Log');
+  setHeader('Audit Logs');
   await renderAuditLog(mainContent);
 });
 
@@ -191,6 +222,17 @@ router.register('/settings/security', async () => {
   updateNavigation('settings/security');
   setHeader('Security Settings');
   await renderSettings(mainContent, 'security');
+});
+
+router.register('/settings/notifications', async () => {
+  updateNavigation('settings/notifications');
+  await renderNotificationSettings(mainContent);
+});
+
+router.register('/settings/integrations', async () => {
+  updateNavigation('settings/integrations');
+  setHeader('Ban Integrations', '<button id="addIntegrationBtn" class="btn btn-primary">+ Add Integration</button>');
+  await renderBanIntegrations(mainContent);
 });
 
 // Redirect old /settings route to /settings/general
