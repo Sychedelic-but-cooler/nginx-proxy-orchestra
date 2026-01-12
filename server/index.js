@@ -36,9 +36,7 @@ const MIME_TYPES = {
   '.woff2': 'font/woff2'
 };
 
-/**
- * Serve static files
- */
+// Serve static files
 function serveStatic(req, res, filePath) {
   fs.readFile(filePath, (err, data) => {
     if (err) {
@@ -61,7 +59,7 @@ function serveStatic(req, res, filePath) {
     res.setHeader('X-Frame-Options', 'DENY');
     res.setHeader('X-XSS-Protection', '1; mode=block');
     
-    if (ext === '.html') {
+    if (ext === '.html') { // Define CSP, all files are internal except jsdelivr (Chart.js)
       res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' https://cdn.jsdelivr.net;");
     }
 
@@ -70,9 +68,7 @@ function serveStatic(req, res, filePath) {
   });
 }
 
-/**
- * Main request handler
- */
+// Main request handler
 function requestHandler(req, res) {
   const parsedUrl = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
   const pathname = parsedUrl.pathname;
@@ -143,19 +139,19 @@ const server = https.createServer(httpsOptions, requestHandler);
 server.listen(HTTPS_PORT, () => {
   console.log('');
   console.log('═══════════════════════════════════════════════════════════');
-  console.log('           🎵 Nginx Proxy Orchestra Started 🎵            ');
+  console.log('               Nginx Proxy Orchestra Started               ');
   console.log('═══════════════════════════════════════════════════════════');
   console.log('');
-  console.log(`  🔒 HTTPS server running at: https://localhost:${HTTPS_PORT}`);
-  console.log(`  📁 Public directory: ${PUBLIC_DIR}`);
-  console.log(`  🗄️  Database: ${process.env.DB_PATH || './data/database.sqlite'}`);
-  console.log(`  🔧 Environment: ${process.env.NODE_ENV || 'production'}`);
+  console.log(`     HTTPS server running at: https://localhost:${HTTPS_PORT}`);
+  console.log(`     Public directory: ${PUBLIC_DIR}`);
+  console.log(`      Database: ${process.env.DB_PATH || './data/database.sqlite'}`);
+  console.log(`     Environment: ${process.env.NODE_ENV || 'production'}`);
   console.log('');
   if (!certPaths.isCustom) {
     console.log('  ⚠️  Using self-signed certificate (browser will show warning)');
     console.log('     Configure a trusted certificate in Settings');
   } else {
-    console.log('  ✅ Using custom TLS certificate');
+    console.log('     Using custom TLS certificate');
   }
   console.log('');
   console.log('═══════════════════════════════════════════════════════════');
@@ -197,19 +193,19 @@ server.listen(HTTPS_PORT, () => {
       // Start detection engine (polls WAF events every 5 seconds)
       startDetectionEngine();
       startCleanupJob();
-      console.log('✓ Detection engine started');
+      console.log('Detection engine started');
 
       // Start ban queue processor (processes every 5 seconds)
       const banQueue = getBanQueue();
       banQueue.start();
-      console.log('✓ Ban queue processor started');
+      console.log('Ban queue processor started');
 
       // Start ban synchronization service (syncs every 60 seconds)
       const banSyncService = getBanSyncService();
       banSyncService.start();
-      console.log('✓ Ban synchronization service started');
+      console.log('Ban synchronization service started');
 
-      console.log('✓ Ban system services started');
+      console.log('Ban system services started');
     } catch (error) {
       console.error('Failed to start ban system:', error.message);
     }
@@ -222,7 +218,7 @@ let isShuttingDown = false;
 function shutdown(signal) {
   // If already shutting down, force exit on second signal
   if (isShuttingDown) {
-    console.log('\n⚠️  Force shutting down...');
+    console.log('\nForce shutting down...');
     process.exit(1);
   }
 

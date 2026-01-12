@@ -114,7 +114,7 @@ export async function renderNginxSecurity(container, excludePrivate = true) {
                           <span class="badge badge-danger">Already Blocked</span>
                         ` : `
                           <button class="btn btn-sm btn-danger block-ip-btn" data-ip="${ip.item}">
-                            🚫 Block IP
+                            Block IP
                           </button>
                         `}
                       </td>
@@ -160,7 +160,7 @@ export async function renderNginxSecurity(container, excludePrivate = true) {
                           <span class="badge badge-danger">Already Blocked</span>
                         ` : `
                           <button class="btn btn-sm btn-danger block-ua-btn" data-ua="${escapeHtml(ua.item)}">
-                            🚫 Block Agent
+                            Block Agent
                           </button>
                         `}
                       </td>
@@ -207,7 +207,7 @@ export async function renderNginxSecurity(container, excludePrivate = true) {
                           <span class="badge badge-danger">Already Blocked</span>
                         ` : `
                           <button class="btn btn-sm btn-danger block-country-btn" data-code="${country.country}" data-name="${country.countryName || country.country}">
-                            🚫 Block Country
+                            Block Country
                           </button>
                         `}
                       </td>

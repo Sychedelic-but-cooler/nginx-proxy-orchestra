@@ -14,7 +14,7 @@ function initializeWAFDatabase() {
   wafDb.pragma('cache_size = -64000');
 
   // Attach main database for proxy_hosts JOIN operations
-  // Note: We use 'maindb' as the alias because 'main' is reserved for the primary database (waf-events.sqlite)
+  // Note: 'maindb' is used as the alias because 'main' is reserved for the primary database (waf-events.sqlite)
   const mainDbPath = path.join(dataDir, 'database.sqlite');
 
   // Check if main database is already attached
@@ -29,9 +29,9 @@ function initializeWAFDatabase() {
   if (!isAttached) {
     try {
       wafDb.exec(`ATTACH DATABASE '${mainDbPath}' AS maindb`);
-      console.log('✓ Main database attached to WAF database as maindb');
+      console.log('Main database attached to WAF database as maindb');
     } catch (error) {
-      console.error('⚠ Failed to attach main database:', error.message);
+      console.error('Failed to attach main database:', error.message);
       throw error;
     }
   }
@@ -40,12 +40,12 @@ function initializeWAFDatabase() {
   try {
     const tables = wafDb.prepare("SELECT name FROM maindb.sqlite_master WHERE type='table' AND name='proxy_hosts'").all();
     if (tables.length === 0) {
-      console.error('⚠ Warning: proxy_hosts table not found in attached main database');
+      console.error('Warning: proxy_hosts table not found in attached main database');
     } else {
-      console.log('✓ Verified proxy_hosts table accessible in maindb');
+      console.log('Verified proxy_hosts table accessible in maindb');
     }
   } catch (verifyError) {
-    console.error('⚠ Warning: Could not verify main database attachment:', verifyError.message);
+    console.error('Warning: Could not verify main database attachment:', verifyError.message);
   }
 
   wafDb.exec(`
@@ -74,7 +74,7 @@ function initializeWAFDatabase() {
     CREATE INDEX IF NOT EXISTS idx_waf_events_blocked ON waf_events(blocked);
   `);
 
-  console.log('✓ WAF events database initialized');
+  console.log('WAF events database initialized');
 }
 
 class WAFEventBatcher {
@@ -98,7 +98,7 @@ class WAFEventBatcher {
     `);
 
     this.flushTimer = setInterval(() => this.flush(), this.flushInterval);
-    console.log('✓ WAF event batcher started (flush every 2s)');
+    console.log('WAF event batcher started (flush every 2s)');
   }
 
   addEvent(event) {
@@ -111,7 +111,7 @@ class WAFEventBatcher {
       // Log warning at most once per minute to avoid log spam
       const now = Date.now();
       if (now - this.lastWarningTime > 60000) {
-        console.warn(`⚠️  WAF event buffer at capacity (${this.absoluteMaxBufferSize} events). Dropping oldest events. Total dropped: ${this.droppedEventCount}`);
+        console.warn(`WAF event buffer at capacity (${this.absoluteMaxBufferSize} events). Dropping oldest events. Total dropped: ${this.droppedEventCount}`);
         this.lastWarningTime = now;
       }
     }
@@ -146,7 +146,7 @@ class WAFEventBatcher {
 
       // Reset dropped event counter on successful flush
       if (this.droppedEventCount > 0) {
-        console.log(`✓ WAF event buffer recovered. Total events dropped during high load: ${this.droppedEventCount}`);
+        console.log(`WAF event buffer recovered. Total events dropped during high load: ${this.droppedEventCount}`);
         this.droppedEventCount = 0;
       }
 
@@ -162,11 +162,11 @@ class WAFEventBatcher {
         if (eventsToInsert.length > spaceAvailable) {
           const dropped = eventsToInsert.length - spaceAvailable;
           this.droppedEventCount += dropped;
-          console.warn(`⚠️  Dropped ${dropped} events due to buffer capacity limit after flush failure`);
+          console.warn(`Dropped ${dropped} events due to buffer capacity limit after flush failure`);
         }
       } else {
         this.droppedEventCount += eventsToInsert.length;
-        console.error(`❌ Buffer full, dropped all ${eventsToInsert.length} failed events`);
+        console.error(`Buffer full, dropped all ${eventsToInsert.length} failed events`);
       }
     }
   }
@@ -205,7 +205,7 @@ function startCleanupJob() {
   };
 
   scheduleNextCleanup();
-  console.log('✓ WAF cleanup job scheduled (daily at 2 AM, 90-day retention)');
+  console.log('WAF cleanup job scheduled (daily at 2 AM, 90-day retention)');
 }
 
 function cleanupOldEvents() {

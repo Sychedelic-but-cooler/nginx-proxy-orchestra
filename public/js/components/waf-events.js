@@ -27,7 +27,7 @@ export async function renderWAFEvents(container) {
               View and analyze all WAF security events
             </p>
           </div>
-          <button id="exportEventsBtn" class="btn btn-secondary">📥 Export to CSV</button>
+          <button id="exportEventsBtn" class="btn btn-secondary">Export to CSV</button>
         </div>
 
         <!-- Filters Card -->
@@ -321,7 +321,7 @@ export async function renderWAFEvents(container) {
       <div class="card">
         <div style="padding: 20px; text-align: center;">
           <p style="color: var(--danger-color); margin-bottom: 16px;">
-            ❌ Failed to load WAF events: ${error.message}
+            Failed to load WAF events: ${error.message}
           </p>
           <button id="retryLoadBtn" class="btn btn-secondary">Retry</button>
         </div>

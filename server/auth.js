@@ -49,9 +49,9 @@ function initializeJWTSecret() {
     setSetting('last_jwt_rotation', new Date().toISOString());
 
     if (isFirstTime) {
-      console.log('✓ JWT secret initialized');
+      console.log('JWT secret initialized');
     } else {
-      console.log(`✓ JWT secret rotated (users will need to log in again)`);
+      console.log(`JWT secret rotated (users will need to log in again)`);
     }
 
     return true;
@@ -62,7 +62,7 @@ function initializeJWTSecret() {
     if (lastRotation) {
       const rotationDate = new Date(lastRotation);
       const daysUntilRotation = JWT_ROTATION_DAYS - Math.floor((now - rotationDate.getTime()) / (1000 * 60 * 60 * 24));
-      console.log(`✓ JWT secret loaded (rotates in ${daysUntilRotation} days)`);
+      console.log(`JWT secret loaded (rotates in ${daysUntilRotation} days)`);
     }
 
     return false;

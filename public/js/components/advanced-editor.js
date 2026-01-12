@@ -7,7 +7,7 @@ export async function renderAdvancedEditor(container) {
       <div class="card-header">
         <h3 class="card-title">Advanced Nginx Config Editor</h3>
         <p style="color: var(--text-secondary); margin-top: 8px; font-size: 14px;">
-          ⚠️ <strong>Note:</strong> You must test the configuration before saving. The save button will only appear after a successful test.
+          <strong>Note:</strong> You must test the configuration before saving. The save button will only appear after a successful test.
         </p>
       </div>
       <div class="card-body">

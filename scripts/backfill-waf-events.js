@@ -167,31 +167,28 @@ function parseAuditLogLine(line) {
 
 // Main backfill function
 function backfillEvents() {
-  console.log('═══════════════════════════════════════════════════');
-  console.log('         WAF Events Backfill Tool');
-  console.log('═══════════════════════════════════════════════════\n');
 
   // Check if audit log exists
   if (!fs.existsSync(AUDIT_LOG_PATH)) {
-    console.error('❌ Audit log not found:', AUDIT_LOG_PATH);
+    console.error('Audit log not found:', AUDIT_LOG_PATH);
     process.exit(1);
   }
 
   // Check if database exists
   if (!fs.existsSync(DB_PATH)) {
-    console.error('❌ Database not found:', DB_PATH);
+    console.error('Database not found:', DB_PATH);
     process.exit(1);
   }
 
   // Get current event count
   const currentCount = db.prepare('SELECT COUNT(*) as count FROM waf_events').get().count;
-  console.log(`📊 Current events in database: ${currentCount}`);
+  console.log(`Current events in database: ${currentCount}`);
 
   // Read audit log
   const auditContent = fs.readFileSync(AUDIT_LOG_PATH, 'utf8');
   const lines = auditContent.trim().split('\n').filter(line => line.trim());
 
-  console.log(`📄 Audit log lines to process: ${lines.length}\n`);
+  console.log(`Audit log lines to process: ${lines.length}\n`);
 
   let processed = 0;
   let skipped = 0;
@@ -229,24 +226,19 @@ function backfillEvents() {
   // Final summary
   const newCount = db.prepare('SELECT COUNT(*) as count FROM waf_events').get().count;
 
-  console.log('\n═══════════════════════════════════════════════════');
-  console.log('                    Summary');
-  console.log('═══════════════════════════════════════════════════');
   console.log(`Total lines processed:     ${processed}`);
   console.log(`Events already in DB:      ${skipped} (duplicates)`);
   console.log(`New events inserted:       ${inserted}`);
   console.log(`Errors/skipped:            ${errors}`);
-  console.log(`───────────────────────────────────────────────────`);
   console.log(`Database events before:    ${currentCount}`);
   console.log(`Database events after:     ${newCount}`);
   console.log(`Net change:                +${newCount - currentCount}`);
-  console.log('═══════════════════════════════════════════════════\n');
 
   if (inserted > 0) {
-    console.log('✅ Backfill completed successfully!');
+    console.log('Backfill completed successfully!');
     console.log('   Refresh your WAF Dashboard to see the new events.\n');
   } else {
-    console.log('ℹ️  No new events to import - database is up to date.\n');
+    console.log('No new events to import - database is up to date.\n');
   }
 
   db.close();
@@ -256,7 +248,7 @@ function backfillEvents() {
 try {
   backfillEvents();
 } catch (error) {
-  console.error('\n❌ Backfill failed:', error.message);
+  console.error('\nBackfill failed:', error.message);
   console.error(error.stack);
   process.exit(1);
 }

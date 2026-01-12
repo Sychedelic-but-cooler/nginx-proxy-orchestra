@@ -40,9 +40,9 @@ export async function renderWAFDashboard(container) {
               <option value="24" selected>Last 24 Hours</option>
               <option value="168">Last 7 Days</option>
             </select>
-            <button id="refreshStatsBtn" class="btn btn-secondary">🔄 Refresh</button>
-            <button id="manageProfilesBtn" class="btn btn-primary">⚙️ Manage Profiles</button>
-            <button id="exportCsvBtn" class="btn btn-secondary">📥 Export CSV</button>
+            <button id="refreshStatsBtn" class="btn btn-secondary">Refresh</button>
+            <button id="manageProfilesBtn" class="btn btn-primary">Manage Profiles</button>
+            <button id="exportCsvBtn" class="btn btn-secondary">Export CSV</button>
           </div>
         </div>
 
@@ -351,7 +351,7 @@ export async function renderWAFDashboard(container) {
       <div class="card">
         <div style="padding: 20px; text-align: center;">
           <p style="color: var(--danger-color); margin-bottom: 16px;">
-            ❌ Failed to load WAF dashboard: ${error.message}
+            Failed to load WAF dashboard: ${error.message}
           </p>
           <button id="retryLoadBtn" class="btn btn-secondary">Retry</button>
         </div>

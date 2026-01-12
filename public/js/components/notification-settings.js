@@ -129,7 +129,7 @@ export async function renderNotificationSettings(container) {
 
           <!-- System Notifications -->
           <div style="border: 1px solid var(--border-color); border-radius: 8px; padding: 16px; margin-bottom: 16px;">
-            <h4 style="margin: 0 0 12px 0; font-size: 16px;">⚙️ System Events</h4>
+            <h4 style="margin: 0 0 12px 0; font-size: 16px;">System Events</h4>
 
             <div class="form-group">
               <div class="checkbox-group">
@@ -154,7 +154,7 @@ export async function renderNotificationSettings(container) {
 
           <!-- Certificate Notifications -->
           <div style="border: 1px solid var(--border-color); border-radius: 8px; padding: 16px;">
-            <h4 style="margin: 0 0 12px 0; font-size: 16px;">🔒 Certificate Events</h4>
+            <h4 style="margin: 0 0 12px 0; font-size: 16px;">Certificate Events</h4>
 
             <div class="form-group">
               <div class="checkbox-group">
@@ -185,7 +185,7 @@ export async function renderNotificationSettings(container) {
           <!-- Save Button -->
           <div style="margin-top: 24px; padding-top: 20px; border-top: 1px solid var(--border-color);">
             <button type="button" id="saveNotificationSettings" class="btn btn-primary">
-              💾 Save Notification Settings
+              Save Notification Settings
             </button>
           </div>
         </div>
@@ -215,7 +215,7 @@ export async function renderNotificationSettings(container) {
       <div class="card">
         <div style="padding: 20px; text-align: center;">
           <p style="color: var(--danger-color); margin-bottom: 16px;">
-            ❌ Failed to load notification settings: ${error.message}
+            Failed to load notification settings: ${error.message}
           </p>
           <button onclick="location.reload()" class="btn btn-secondary">Retry</button>
         </div>
@@ -231,17 +231,17 @@ function setupEventListeners() {
     const originalText = button.textContent;
 
     button.disabled = true;
-    button.textContent = '📤 Sending...';
+    button.textContent = 'Sending...';
 
     try {
       const result = await api.testNotification();
 
       if (result.success) {
-        button.textContent = '✅ Sent!';
+        button.textContent = 'Sent!';
         button.style.background = 'var(--success-color)';
         showToast('Test notification sent successfully! Check your notification channels.', 'success');
       } else {
-        button.textContent = '❌ Failed';
+        button.textContent = 'Failed';
         button.style.background = 'var(--danger-color)';
         const errorMsg = result.error || result.reason || 'Unknown error';
         showToast(`Failed to send: ${errorMsg}`, 'error');
@@ -254,7 +254,7 @@ function setupEventListeners() {
       }, 3000);
 
     } catch (error) {
-      button.textContent = '❌ Error';
+      button.textContent = 'Error';
       button.style.background = 'var(--danger-color)';
       showToast(`Error: ${error.message}`, 'error');
 
@@ -277,7 +277,7 @@ async function saveNotificationSettings() {
   const originalText = button.textContent;
 
   button.disabled = true;
-  button.textContent = '💾 Saving...';
+  button.textContent = 'Saving...';
 
   try {
     // Collect form data
@@ -312,7 +312,7 @@ async function saveNotificationSettings() {
     // Save settings
     await api.updateNotificationSettings(data);
 
-    button.textContent = '✅ Saved!';
+    button.textContent = 'Saved!';
     button.style.background = 'var(--success-color)';
     showToast('Notification settings saved successfully', 'success');
 
@@ -327,7 +327,7 @@ async function saveNotificationSettings() {
 
   } catch (error) {
     console.error('Error saving notification settings:', error);
-    button.textContent = '❌ Failed';
+    button.textContent = 'Failed';
     button.style.background = 'var(--danger-color)';
     showToast(`Failed to save: ${error.message}`, 'error');
 
@@ -347,7 +347,7 @@ async function loadNotificationHistory() {
     // In the future, we can add GET /api/notifications/history
     container.innerHTML = `
       <div style="padding: 20px; text-align: center; color: var(--text-secondary);">
-        <p>📋 Notification history tracking coming soon</p>
+        <p>Notification history tracking coming soon</p>
         <small>For now, check your notification channels directly</small>
       </div>
     `;

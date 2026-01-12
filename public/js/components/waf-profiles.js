@@ -323,7 +323,7 @@ export async function renderWAFProfiles(container) {
       <div class="card">
         <div style="padding: 20px; text-align: center;">
           <p style="color: var(--danger-color); margin-bottom: 16px;">
-            ❌ Failed to load WAF profiles: ${error.message}
+            Failed to load WAF profiles: ${error.message}
           </p>
           <button id="retryLoadBtn" class="btn btn-secondary">Retry</button>
         </div>
@@ -609,13 +609,13 @@ function showProfileModal(profileId = null) {
                 <label for="ruleEngineMode">Rule Engine Mode</label>
                 <select id="ruleEngineMode">
                   <option value="DetectionOnly" ${isEdit && config.rule_engine_mode === 'DetectionOnly' ? 'selected' : ''}>
-                    🔍 DetectionOnly - Log attacks but don't block (Recommended for testing)
+                    DetectionOnly - Log attacks but don't block (Recommended for testing)
                   </option>
                   <option value="On" ${isEdit && config.rule_engine_mode === 'On' ? 'selected' : ''}>
-                    🛡️ On - Block malicious requests (Production mode)
+                    On - Block malicious requests (Production mode)
                   </option>
                   <option value="Off" ${isEdit && config.rule_engine_mode === 'Off' ? 'selected' : ''}>
-                    ⛔ Off - Disable WAF completely
+                    Off - Disable WAF completely
                   </option>
                 </select>
                 <small style="color: var(--text-secondary); display: block; margin-top: 4px;">

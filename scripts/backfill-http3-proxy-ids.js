@@ -14,7 +14,7 @@
 
 const { db } = require('./server/db');
 
-console.log('🔍 Finding HTTP/3 events with missing proxy_id...\n');
+console.log('Finding HTTP/3 events with missing proxy_id...\n');
 
 // Get all events with NULL proxy_id
 const unresolved = db.prepare(`
@@ -85,12 +85,12 @@ for (const event of unresolved) {
 }
 
 console.log('');
-console.log(`📊 Results:`);
+console.log(`   Results:`);
 console.log(`   Total unresolved events: ${unresolved.length}`);
 console.log(`   Successfully resolved: ${resolved}`);
 console.log(`   Still unresolved: ${unresolved.length - resolved}`);
 
 if (resolved > 0) {
   console.log('');
-  console.log('✨ Backfill complete! Refresh your WAF Dashboard to see the changes.');
+  console.log('Backfill complete! Refresh your WAF Dashboard to see the changes.');
 }

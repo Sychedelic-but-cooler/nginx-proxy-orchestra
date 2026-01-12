@@ -221,8 +221,8 @@ function initializeDatabase() {
     console.log('           FIRST TIME SETUP - ADMIN CREDENTIALS            ');
     console.log('═══════════════════════════════════════════════════════════');
     console.log('');
-    console.log('  🔐 Username: admin');
-    console.log(`  🔑 Password: ${password}`);
+    console.log('     Username: admin');
+    console.log(`     Password: ${password}`);
     console.log('');
     console.log('  ⚠️  IMPORTANT: Save these credentials immediately!');
     console.log('  ⚠️  Change the password after first login.');
