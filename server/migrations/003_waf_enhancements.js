@@ -182,7 +182,9 @@ function runWAFEnhancementsMigration(db) {
     ['notification_system_errors', '1'],  // Notify on system errors
     ['notification_proxy_changes', '0'],  // Notify on proxy config changes
     ['notification_cert_expiry', '1'],    // Notify on cert expiry
-    ['notification_cert_expiry_days', '7']  // Days before expiry to notify
+    ['notification_cert_expiry_days', '7'],  // Days before expiry to notify
+    ['notification_ban_issued', '1'],    // Notify when auto-ban is issued
+    ['notification_ban_cleared', '1']    // Notify when auto-ban expires/cleared
   ];
 
   const insertSetting = db.prepare(

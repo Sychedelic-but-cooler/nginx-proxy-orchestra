@@ -58,8 +58,8 @@ function isWhitelisted(ip) {
 function autoWhitelistAdmin(ip, userId) {
   try {
     // Check if user is admin
-    const user = db.prepare('SELECT is_admin FROM users WHERE id = ?').get(userId);
-    if (!user || !user.is_admin) return;
+    const user = db.prepare('SELECT role FROM users WHERE id = ?').get(userId);
+    if (!user || user.role !== 'admin') return;
 
     // Check if already whitelisted
     if (isWhitelisted(ip)) {

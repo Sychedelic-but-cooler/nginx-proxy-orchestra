@@ -91,23 +91,30 @@ class FirewalldProvider extends BanProvider {
       // Create rich rule to drop traffic from IP
       const rule = `rule family="ipv4" source address="${ip}" drop`;
 
-      // Add rule with optional timeout
-      let command = `sudo firewall-cmd --zone=${this.zone} --add-rich-rule='${rule}'`;
+      // Determine if this should be permanent or temporary
+      const isPermanent = !duration || duration === 0 || duration === null;
 
-      // firewalld supports native timeout (in seconds)
-      if (duration && duration > 0) {
-        command += ` --timeout=${duration}`;
-        console.log(`[firewalld] Adding rule with ${duration}s timeout`);
+      if (isPermanent) {
+        // Permanent ban: add to both runtime and permanent configuration
+        console.log(`[firewalld] Adding permanent ban`);
+
+        // Add to runtime (immediate effect)
+        try {
+          await this.executeCommand(`sudo firewall-cmd --zone=${this.zone} --add-rich-rule='${rule}'`);
+        } catch (error) {
+          // Ignore if already exists in runtime
+          if (!error.message.includes('ALREADY_ENABLED')) {
+            throw error;
+          }
+        }
+
+        // Add to permanent configuration
+        await this.executeCommand(`sudo firewall-cmd --zone=${this.zone} --permanent --add-rich-rule='${rule}'`);
+
       } else {
-        command += ' --permanent';
-        console.log(`[firewalld] Adding permanent rule`);
-      }
-
-      await this.executeCommand(command);
-
-      // Reload firewall to apply permanent rules
-      if (!duration || duration === 0) {
-        await this.executeCommand('sudo firewall-cmd --reload');
+        // Temporary ban: use timeout for runtime only
+        console.log(`[firewalld] Adding temporary ban with ${duration}s timeout`);
+        await this.executeCommand(`sudo firewall-cmd --zone=${this.zone} --add-rich-rule='${rule}' --timeout=${duration}`);
       }
 
       console.log(`[firewalld] IP ${ip} banned successfully`);

@@ -29,7 +29,10 @@ export async function renderModules(container) {
           ${modules.map(module => `
             <div class="card">
               <div class="card-header">
-                <h3 class="card-title">${module.name}</h3>
+                <div>
+                  <h3 class="card-title" style="display: inline-block; margin: 0;">${module.name}</h3>
+                  <span class="badge badge-info" style="font-size: 11px; margin-left: 8px;">${module.tag || 'General'}</span>
+                </div>
                 <div class="action-buttons">
                   <button class="btn btn-sm btn-secondary edit-module" data-id="${module.id}">Edit</button>
                   <button class="btn btn-sm btn-danger delete-module" data-id="${module.id}">Delete</button>
@@ -102,6 +105,12 @@ function showModuleForm(id = null, modules = []) {
           </div>
 
           <div class="form-group">
+            <label for="moduleTag">Tag</label>
+            <input type="text" id="moduleTag" value="${module?.tag || 'General'}" placeholder="Security, Compression, Protocol, etc.">
+            <small>Category for organizing modules in the proxy editor</small>
+          </div>
+
+          <div class="form-group">
             <label for="moduleContent">Configuration Content *</label>
             <textarea id="moduleContent" required style="min-height: 200px; font-family: 'Courier New', monospace;">${module?.content || ''}</textarea>
             <small>Nginx configuration directives (without location or server blocks)</small>
@@ -134,11 +143,12 @@ function showModuleForm(id = null, modules = []) {
   // Form submit handler
   document.getElementById('moduleForm').addEventListener('submit', async (e) => {
     e.preventDefault();
-    
+
     const data = {
       name: document.getElementById('moduleName').value,
       description: document.getElementById('moduleDescription').value,
-      content: document.getElementById('moduleContent').value
+      content: document.getElementById('moduleContent').value,
+      tag: document.getElementById('moduleTag').value || 'General'
     };
 
     showLoading();

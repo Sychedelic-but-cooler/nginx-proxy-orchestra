@@ -548,6 +548,20 @@ function deleteNginxConfig(filename) {
 }
 
 /**
+ * Permanently delete nginx configuration file (for temporary test files)
+ * This bypasses the safety rename and actually deletes the file
+ */
+function forceDeleteNginxConfig(filename) {
+  const configDir = getConfigDir();
+  const configPath = path.join(configDir, filename);
+
+  // Actually delete the file
+  if (fs.existsSync(configPath)) {
+    fs.unlinkSync(configPath);
+  }
+}
+
+/**
  * Enable nginx configuration
  * In conf.d, configs are auto-loaded, so we just rename from .disabled to .conf
  */
@@ -591,6 +605,7 @@ module.exports = {
   writeNginxConfig,
   readNginxConfig,
   deleteNginxConfig,
+  forceDeleteNginxConfig,
   enableNginxConfig,
   disableNginxConfig,
   sanitizeFilename,

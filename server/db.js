@@ -39,6 +39,11 @@ function runMigrations() {
     console.log('Running migration: Adding config_filename column...');
     db.exec(`ALTER TABLE proxy_hosts ADD COLUMN config_filename TEXT`);
   }
+
+  if (!columnNames.includes('launch_url')) {
+    console.log('Running migration: Adding launch_url column...');
+    db.exec(`ALTER TABLE proxy_hosts ADD COLUMN launch_url TEXT`);
+  }
 }
 
 /**
@@ -296,6 +301,14 @@ function initializeDatabase() {
     runSeparateWAFDBMigration(db);
   } catch (error) {
     console.error('Separate WAF DB migration error:', error.message);
+  }
+
+  // Run module tags migration
+  const { runModuleTagsMigration } = require('./migrations/010_module_tags');
+  try {
+    runModuleTagsMigration(db);
+  } catch (error) {
+    console.error('Module tags migration error:', error.message);
   }
 
   // Create some default modules if none exist

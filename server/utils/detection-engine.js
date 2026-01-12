@@ -86,12 +86,31 @@ function checkRules(ip) {
 
     // Filter by severity if specified
     if (rule.severity_filter && rule.severity_filter !== 'ALL') {
-      const severityOrder = ['WARNING', 'ERROR', 'CRITICAL'];
+      // Map numeric severity to text labels
+      // ModSecurity severity: 0=EMERGENCY, 1=ALERT, 2=CRITICAL, 3=ERROR, 4=WARNING, 5=NOTICE
+      const severityMap = {
+        '0': 'EMERGENCY',
+        '1': 'ALERT',
+        '2': 'CRITICAL',
+        '3': 'ERROR',
+        '4': 'WARNING',
+        '5': 'NOTICE',
+        0: 'EMERGENCY',
+        1: 'ALERT',
+        2: 'CRITICAL',
+        3: 'ERROR',
+        4: 'WARNING',
+        5: 'NOTICE'
+      };
+
+      const severityOrder = ['NOTICE', 'WARNING', 'ERROR', 'CRITICAL', 'ALERT', 'EMERGENCY'];
       const minSeverityIndex = severityOrder.indexOf(rule.severity_filter);
 
       if (minSeverityIndex !== -1) {
         relevantEvents = relevantEvents.filter(e => {
-          const eventSeverityIndex = severityOrder.indexOf(e.severity);
+          // Convert numeric severity to text label
+          const eventSeverityLabel = severityMap[e.severity] || e.severity;
+          const eventSeverityIndex = severityOrder.indexOf(eventSeverityLabel);
           return eventSeverityIndex >= minSeverityIndex;
         });
       }

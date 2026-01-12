@@ -50,8 +50,9 @@ export async function renderWAFProfiles(container) {
       <style>
         .profiles-grid {
           display: grid;
-          grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+          grid-template-columns: repeat(auto-fill, minmax(380px, 1fr));
           gap: 20px;
+          align-items: stretch;
         }
 
         .profile-card {
@@ -60,6 +61,9 @@ export async function renderWAFProfiles(container) {
           border-radius: 12px;
           padding: 20px;
           transition: all 0.2s ease;
+          display: flex;
+          flex-direction: column;
+          height: 100%;
         }
 
         .profile-card:hover {
@@ -68,8 +72,9 @@ export async function renderWAFProfiles(container) {
         }
 
         .profile-card.default {
-          border-color: #2196F3;
-          background: linear-gradient(135deg, #ffffff 0%, #e3f2fd 100%);
+          border-color: #1e293b;
+          border-width: 2px;
+          background: linear-gradient(135deg, #ffffff 0%, #f1f5f9 100%);
         }
 
         .profile-header {
@@ -94,6 +99,12 @@ export async function renderWAFProfiles(container) {
           font-size: 13px;
           color: var(--text-secondary);
           margin: 0;
+          min-height: 36px;
+          line-height: 1.4;
+          display: -webkit-box;
+          -webkit-line-clamp: 2;
+          -webkit-box-orient: vertical;
+          overflow: hidden;
         }
 
         .profile-badge {
@@ -106,14 +117,15 @@ export async function renderWAFProfiles(container) {
         }
 
         .badge-default {
-          background: #e3f2fd;
-          color: #1976d2;
+          background: #1e293b;
+          color: white;
         }
 
         .profile-details {
           display: grid;
           gap: 12px;
           margin-bottom: 16px;
+          flex-grow: 1;
         }
 
         .detail-row {
@@ -159,35 +171,49 @@ export async function renderWAFProfiles(container) {
         }
 
         .profile-actions {
-          display: flex;
+          display: grid;
+          grid-template-columns: 1fr 1fr;
           gap: 8px;
           padding-top: 16px;
           border-top: 1px solid var(--border-color);
+          margin-top: auto;
         }
 
-        .btn-action {
-          flex: 1;
+        .profile-actions .btn {
           padding: 8px 12px;
           font-size: 13px;
-          border: 1px solid var(--border-color);
-          background: white;
-          color: var(--text-primary);
           border-radius: 6px;
           cursor: pointer;
           transition: all 0.2s ease;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          border: 1px solid var(--border-color);
+          background: white;
+          color: var(--text-primary);
+          font-weight: 500;
         }
 
-        .btn-action:hover {
-          background: #f8f9fa;
+        .profile-actions .btn-secondary {
+          background: #f1f5f9;
+          color: #1e293b;
+          border: 1px solid #cbd5e1;
         }
 
-        .btn-action.danger {
-          color: var(--danger-color);
+        .profile-actions .btn-secondary:hover {
+          background: #e2e8f0;
+          border-color: #1e293b;
         }
 
-        .btn-action.danger:hover {
-          background: #ffebee;
-          border-color: var(--danger-color);
+        .profile-actions .btn-danger {
+          background: white;
+          color: #ef4444;
+          border: 1px solid #fca5a5;
+        }
+
+        .profile-actions .btn-danger:hover {
+          background: #fef2f2;
+          border-color: #ef4444;
         }
 
         .empty-state {

@@ -316,6 +316,17 @@ class WAFLogParser {
   }
 
   /**
+   * Escape SQL LIKE wildcards to prevent injection
+   * @param {string} str - String to escape
+   * @returns {string} - Escaped string
+   */
+  escapeLikeWildcards(str) {
+    if (!str) return str;
+    // Escape % and _ characters which are SQL LIKE wildcards
+    return str.replace(/[%_]/g, '\\$&');
+  }
+
+  /**
    * Resolve proxy_id from hostname or host IP
    * @param {string} hostname - Request Host header (e.g., cloud.tidnag.com)
    * @param {string} hostIp - Target host IP (fallback)
@@ -329,11 +340,12 @@ class WAFLogParser {
       if (hostname) {
         const stmt = db.prepare(`
           SELECT id FROM proxy_hosts
-          WHERE domain_names LIKE ?
+          WHERE domain_names LIKE ? ESCAPE '\\'
           LIMIT 1
         `);
 
-        const result = stmt.get(`%${hostname}%`);
+        const escapedHostname = this.escapeLikeWildcards(hostname);
+        const result = stmt.get(`%${escapedHostname}%`);
         if (result) return result.id;
       }
 
@@ -342,11 +354,12 @@ class WAFLogParser {
         const stmt = db.prepare(`
           SELECT id FROM proxy_hosts
           WHERE forward_host = ?
-          OR forward_host LIKE ?
+          OR forward_host LIKE ? ESCAPE '\\'
           LIMIT 1
         `);
 
-        const result = stmt.get(hostIp, `%${hostIp}%`);
+        const escapedHostIp = this.escapeLikeWildcards(hostIp);
+        const result = stmt.get(hostIp, `%${escapedHostIp}%`);
         if (result) return result.id;
       }
 
@@ -393,7 +406,10 @@ class WAFLogParser {
   async evaluateTriggers(event) {
     try {
       // High severity event notification
-      if (event.severity === 'CRITICAL' || event.severity === 'ERROR') {
+      // ModSecurity severity: 0=EMERGENCY, 1=ALERT, 2=CRITICAL, 3=ERROR, 4=WARNING, 5=NOTICE
+      // Notify for ERROR and above (severity <= 3)
+      const severityNum = parseInt(event.severity, 10);
+      if (!isNaN(severityNum) && severityNum <= 3) {
         const notifyHighSeverity = getSetting('notification_waf_high_severity') === '1';
 
         if (notifyHighSeverity) {

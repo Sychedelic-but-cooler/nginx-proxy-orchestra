@@ -1,18 +1,81 @@
 const crypto = require('crypto');
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
-const { db, logAudit } = require('./db');
+const { db, logAudit, getSetting, setSetting } = require('./db');
 
 // Rate limiting storage
 const loginAttempts = new Map();
 
-// JWT secret - generated or from env
-const JWT_SECRET = process.env.JWT_SECRET || crypto.randomBytes(32).toString('hex');
+// JWT configuration
 const JWT_EXPIRY = '3d'; // 3 days
+const JWT_ROTATION_DAYS = 7; // Rotate secret every 7 days
 
-if (!process.env.JWT_SECRET) {
-  console.warn('WARNING: Using auto-generated JWT_SECRET. Set JWT_SECRET in .env for production.');
+// JWT secret - managed with rotation
+let JWT_SECRET = null;
+
+/**
+ * Initialize or rotate JWT secret
+ * Returns true if secret was rotated, false otherwise
+ */
+function initializeJWTSecret() {
+  const now = Date.now();
+  const storedSecret = getSetting('jwt_secret');
+  const lastRotation = getSetting('last_jwt_rotation');
+
+  let needsRotation = false;
+  let isFirstTime = false;
+
+  if (!storedSecret) {
+    // First time setup
+    needsRotation = true;
+    isFirstTime = true;
+  } else if (lastRotation) {
+    // Check if rotation is needed
+    const rotationDate = new Date(lastRotation).getTime();
+    const daysSinceRotation = (now - rotationDate) / (1000 * 60 * 60 * 24);
+
+    if (daysSinceRotation >= JWT_ROTATION_DAYS) {
+      needsRotation = true;
+    }
+  } else {
+    // Has secret but no rotation date (migration case)
+    needsRotation = true;
+  }
+
+  if (needsRotation) {
+    // Generate new secret
+    JWT_SECRET = crypto.randomBytes(32).toString('hex');
+    setSetting('jwt_secret', JWT_SECRET);
+    setSetting('last_jwt_rotation', new Date().toISOString());
+
+    if (isFirstTime) {
+      console.log('✓ JWT secret initialized');
+    } else {
+      console.log(`✓ JWT secret rotated (users will need to log in again)`);
+    }
+
+    return true;
+  } else {
+    // Use existing secret
+    JWT_SECRET = storedSecret;
+
+    if (lastRotation) {
+      const rotationDate = new Date(lastRotation);
+      const daysUntilRotation = JWT_ROTATION_DAYS - Math.floor((now - rotationDate.getTime()) / (1000 * 60 * 60 * 24));
+      console.log(`✓ JWT secret loaded (rotates in ${daysUntilRotation} days)`);
+    }
+
+    return false;
+  }
 }
+
+// Initialize secret on startup
+initializeJWTSecret();
+
+// Check for rotation daily
+setInterval(() => {
+  initializeJWTSecret();
+}, 24 * 60 * 60 * 1000); // Check every 24 hours
 
 /**
  * Generate a JWT token
@@ -109,5 +172,6 @@ module.exports = {
   checkRateLimit,
   resetRateLimit,
   verifyPassword,
-  hashPassword
+  hashPassword,
+  initializeJWTSecret
 };

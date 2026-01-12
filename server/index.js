@@ -2,7 +2,7 @@ require('dotenv').config();
 const https = require('https');
 const fs = require('fs');
 const path = require('path');
-const { handleAPI } = require('./routes/api');
+const { handleAPI } = require('./routes/index');
 const { initializeDefaultServer } = require('./utils/default-server');
 const { ensureAdminCert, getActiveCertPaths } = require('./utils/admin-cert');
 const { initializeACMEWebroot } = require('./utils/acme-setup');
@@ -177,6 +177,11 @@ server.listen(HTTPS_PORT, () => {
 
   // Start WAF log parser daemon
   const wafLogParser = getWAFLogParser();
+
+  // Configure WAF log parser to broadcast events via SSE
+  const { broadcastWAFEvent } = require('./routes/shared/sse');
+  wafLogParser.setBroadcastFunction(broadcastWAFEvent);
+
   wafLogParser.start().catch(err => {
     console.error('Failed to start WAF log parser:', err.message);
   });
@@ -187,29 +192,22 @@ server.listen(HTTPS_PORT, () => {
     try {
       const { startDetectionEngine, startCleanupJob } = require('./utils/detection-engine');
       const { getBanQueue } = require('./utils/ban-queue');
-      const { cleanupExpiredBans } = require('./utils/ban-service');
+      const { getBanSyncService } = require('./utils/ban-sync-service');
 
       // Start detection engine (polls WAF events every 5 seconds)
       startDetectionEngine();
       startCleanupJob();
       console.log('✓ Detection engine started');
 
-      // Start ban queue processor (processes every 60 seconds)
+      // Start ban queue processor (processes every 5 seconds)
       const banQueue = getBanQueue();
       banQueue.start();
       console.log('✓ Ban queue processor started');
 
-      // Cleanup expired bans every hour
-      setInterval(async () => {
-        try {
-          const cleaned = await cleanupExpiredBans();
-          if (cleaned > 0) {
-            console.log(`✓ Cleaned up ${cleaned} expired bans`);
-          }
-        } catch (error) {
-          console.error('Error cleaning up expired bans:', error);
-        }
-      }, 60 * 60 * 1000);
+      // Start ban synchronization service (syncs every 60 seconds)
+      const banSyncService = getBanSyncService();
+      banSyncService.start();
+      console.log('✓ Ban synchronization service started');
 
       console.log('✓ Ban system services started');
     } catch (error) {
@@ -270,10 +268,13 @@ function shutdown(signal) {
     try {
       const { stopDetectionEngine } = require('./utils/detection-engine');
       const { getBanQueue } = require('./utils/ban-queue');
+      const { getBanSyncService } = require('./utils/ban-sync-service');
 
       stopDetectionEngine();
       const banQueue = getBanQueue();
-      await banQueue.stop();
+      banQueue.stop();
+      const banSyncService = getBanSyncService();
+      banSyncService.stop();
       console.log('✓ Ban system stopped');
     } catch (err) {
       console.error('Error stopping ban system:', err.message);

@@ -10,6 +10,7 @@
 const { exec } = require('child_process');
 const { promisify } = require('util');
 const { getSetting, db } = require('../db');
+const { getWAFDb } = require('../waf-db');
 
 const execAsync = promisify(exec);
 
@@ -64,6 +65,8 @@ class NotificationService {
       this.notifyOnSystemErrors = getSetting('notification_system_errors') === '1';
       this.notifyOnProxyChanges = getSetting('notification_proxy_changes') === '1';
       this.notifyOnCertExpiry = getSetting('notification_cert_expiry') === '1';
+      this.notifyOnBanIssued = getSetting('notification_ban_issued') === '1';
+      this.notifyOnBanCleared = getSetting('notification_ban_cleared') === '1';
 
       this.wafThreshold = parseInt(getSetting('notification_waf_threshold') || '10');
       this.wafThresholdMinutes = parseInt(getSetting('notification_waf_threshold_minutes') || '5');
@@ -364,14 +367,94 @@ Please renew this certificate immediately to avoid service disruption.`;
   }
 
   /**
+   * Send ban issued notification (auto and manual)
+   */
+  async notifyBanIssued(banDetails) {
+    this.loadSettings();
+
+    if (!this.notifyOnBanIssued) {
+      return;
+    }
+
+    const { ip_address, reason, attack_type, event_count, severity, ban_duration, detection_rule, auto_banned, banned_by_username } = banDetails;
+
+    const durationText = ban_duration
+      ? `${Math.floor(ban_duration / 3600)} hours`
+      : 'Permanent';
+
+    const banType = auto_banned ? 'Auto-Ban' : 'Manual Ban';
+    const banIcon = auto_banned ? '🤖' : '👤';
+
+    const title = `🚫 ${banType} Issued`;
+    const body = `**IP Address:** ${ip_address}
+**Reason:** ${reason}
+${attack_type ? `**Attack Type:** ${attack_type}` : ''}
+${event_count ? `**Events:** ${event_count} events detected` : ''}
+**Severity:** ${severity}
+**Ban Duration:** ${durationText}
+${detection_rule ? `**Detection Rule:** ${detection_rule}` : ''}
+${banned_by_username ? `**Banned By:** ${banned_by_username}` : ''}
+**Type:** ${banIcon} ${banType}
+
+This IP has been banned and firewall rules have been applied.`;
+
+    return await this.send({
+      title,
+      body,
+      type: 'warning',
+      tag: 'ban-issued'
+    });
+  }
+
+  /**
+   * Send ban cleared notification (auto and manual)
+   */
+  async notifyBanCleared(banDetails) {
+    this.loadSettings();
+
+    if (!this.notifyOnBanCleared) {
+      return;
+    }
+
+    const { ip_address, reason, banned_at, expires_at, manual, unbanned_by_username, auto_banned } = banDetails;
+
+    const bannedDuration = expires_at
+      ? Math.floor((new Date(expires_at) - new Date(banned_at)) / 1000 / 3600)
+      : 'N/A';
+
+    const clearType = manual ? 'Manual Unban' : 'Automatic Expiry';
+    const clearIcon = manual ? '👤' : '⏰';
+    const originalType = auto_banned ? 'Auto-ban' : 'Manual ban';
+
+    const title = `✅ Ban Cleared`;
+    const body = `**IP Address:** ${ip_address}
+**Original Reason:** ${reason}
+**Original Type:** ${originalType}
+**Banned At:** ${new Date(banned_at).toLocaleString()}
+**Ban Duration:** ${bannedDuration !== 'N/A' ? `${bannedDuration} hours` : 'Was permanent'}
+${unbanned_by_username ? `**Unbanned By:** ${unbanned_by_username}` : ''}
+**Cleared:** ${clearIcon} ${clearType}
+
+This IP is no longer banned and can access your infrastructure. Firewall rules have been removed.`;
+
+    return await this.send({
+      title,
+      body,
+      type: 'info',
+      tag: 'ban-cleared'
+    });
+  }
+
+  /**
    * Get count of recent WAF events
    */
   getRecentWAFEvents(minutes) {
     try {
-      if (!db) return 0;
+      const wafDb = getWAFDb();
+      if (!wafDb) return 0;
 
       const cutoffTime = new Date(Date.now() - minutes * 60 * 1000).toISOString();
-      const result = db.prepare(`
+      const result = wafDb.prepare(`
         SELECT COUNT(*) as count FROM waf_events
         WHERE timestamp > ? AND blocked = 1
       `).get(cutoffTime);
@@ -444,6 +527,14 @@ async function sendTestNotification(urls = null) {
   return await getNotificationService().testNotification(urls);
 }
 
+async function notifyBanIssued(banDetails) {
+  return await getNotificationService().notifyBanIssued(banDetails);
+}
+
+async function notifyBanCleared(banDetails) {
+  return await getNotificationService().notifyBanCleared(banDetails);
+}
+
 module.exports = {
   getNotificationService,
   notifyWAFBlock,
@@ -451,5 +542,7 @@ module.exports = {
   notifySystemError,
   notifyProxyChange,
   notifyCertExpiry,
-  sendTestNotification
+  sendTestNotification,
+  notifyBanIssued,
+  notifyBanCleared
 };

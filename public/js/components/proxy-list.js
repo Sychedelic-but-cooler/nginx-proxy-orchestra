@@ -56,11 +56,16 @@ export async function renderProxies(container) {
                   statusText = 'Disabled';
                 }
 
-                // Build URL for the proxy (if applicable)
-                const firstDomain = proxy.domain_names.split(',')[0].trim();
-                const proxyUrl = (proxy.type === 'reverse' && firstDomain !== 'N/A')
-                  ? `${proxy.ssl_enabled ? 'https' : 'http'}://${firstDomain}`
-                  : null;
+                // Build launch URL (custom or auto-generated)
+                let launchUrl = proxy.launch_url; // Use custom if defined
+
+                if (!launchUrl && proxy.type === 'reverse') {
+                  // Fall back to auto-generated for reverse proxies
+                  const firstDomain = proxy.domain_names.split(',')[0].trim();
+                  if (firstDomain !== 'N/A') {
+                    launchUrl = `${proxy.ssl_enabled ? 'https' : 'http'}://${firstDomain}`;
+                  }
+                }
 
                 // Build forward to display based on type
                 let forwardTo;
@@ -81,8 +86,8 @@ export async function renderProxies(container) {
                 return `
                 <tr ${proxy.config_status === 'error' ? 'style="background-color: rgba(220, 53, 69, 0.05);"' : ''}>
                   <td>
-                    ${proxyUrl ? `
-                      <a href="${proxyUrl}" target="_blank" rel="noopener noreferrer" title="Open ${proxyUrl}" style="display: inline-block; vertical-align: middle; margin-right: 8px; color: var(--primary-color); text-decoration: none;">
+                    ${launchUrl ? `
+                      <a href="${escapeHtml(launchUrl)}" target="_blank" rel="noopener noreferrer" title="Open ${escapeHtml(launchUrl)}" style="display: inline-block; vertical-align: middle; margin-right: 8px; color: var(--primary-color); text-decoration: none;">
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                           <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
                           <polyline points="15 3 21 3 21 9"></polyline>
@@ -187,905 +192,154 @@ async function showProxyForm(id = null) {
   showLoading();
 
   try {
-    const [modules, certificates, rateLimits] = await Promise.all([
-      api.getModules(),
+    // Fetch modules, certificates, and WAF profiles
+    const [modules, certificates, wafProfiles] = await Promise.all([
+      api.request('/api/modules/snippets'),
       api.getCertificates(),
-      id ? api.getRateLimits(id) : Promise.resolve({ rateLimits: [] })
+      api.getWAFProfiles()
     ]);
 
-    let proxy = null;
-    let currentRateLimit = null;
+    let proxyData = null;
+    let initialConfig = '';
+    let currentWAFProfile = null;
+
     if (id) {
-      proxy = await api.getProxy(id);
-      currentRateLimit = rateLimits.rateLimits.find(rl => rl.proxy_id === id);
+      // Edit existing - fetch raw config and WAF assignment (will auto-migrate if needed)
+      [proxyData, currentWAFProfile] = await Promise.all([
+        api.request(`/api/config/raw/${id}`),
+        api.request(`/api/proxies/${id}/waf`).catch(() => ({ profile: null }))
+      ]);
+      initialConfig = proxyData.config;
+    } else {
+      // New proxy - load default template
+      const template = await api.request('/api/config/template', {
+        method: 'POST',
+        body: {
+          type: 'reverse',
+          name: 'New Proxy',
+          options: { ssl_enabled: true }
+        }
+      });
+      initialConfig = template.config;
     }
+
+    hideLoading();
 
     const modal = document.getElementById('modalContainer');
     modal.innerHTML = `
       <div class="modal-overlay" id="proxyModal">
-        <div class="modal">
+        <div class="modal" style="width: 80%; max-width: 1600px;">
           <div class="modal-header">
             <h3>${id ? 'Edit' : 'Add'} Proxy Host</h3>
             <button class="modal-close" id="closeProxyModal">&times;</button>
           </div>
 
-          <!-- Tabs -->
-          <div class="tabs">
-            <button class="tab active" data-tab="basic">Basic</button>
-            <button class="tab" data-tab="advanced">Advanced</button>
-          </div>
-
           <div class="modal-body">
-
-          <!-- Basic Tab -->
-          <div id="basicTab" class="tab-content active">
-          <form id="proxyForm">
-            <div class="form-group">
-              <label for="proxyName">Name *</label>
-              <input type="text" id="proxyName" required value="${proxy?.name || ''}">
-            </div>
-
-            <div class="form-group">
-              <label for="proxyType">Host Type *</label>
-              <select id="proxyType">
-                <option value="reverse" ${!proxy || proxy.type === 'reverse' ? 'selected' : ''}>Reverse Proxy</option>
-                <option value="stream" ${proxy?.type === 'stream' ? 'selected' : ''}>Stream (TCP/UDP)</option>
-                <option value="404" ${proxy?.type === '404' ? 'selected' : ''}>404 Host</option>
-              </select>
-              <small class="field-help" id="typeHelp"></small>
-            </div>
-
-            <!-- Domain Names (Reverse & 404 only) -->
-            <div class="form-group" id="domainNamesGroup">
-              <label for="domainNames">Domain Names * (comma-separated)</label>
-              <input type="text" id="domainNames" value="${proxy?.domain_names || ''}" placeholder="example.com, www.example.com">
-            </div>
-
-            <!-- Stream Protocol (Stream only) -->
-            <div class="form-group" id="streamProtocolGroup" style="display: none;">
-              <label for="streamProtocol">Protocol *</label>
-              <select id="streamProtocol">
-                <option value="tcp" ${!proxy || proxy.stream_protocol === 'tcp' ? 'selected' : ''}>TCP</option>
-                <option value="udp" ${proxy?.stream_protocol === 'udp' ? 'selected' : ''}>UDP</option>
-              </select>
-            </div>
-
-            <!-- Incoming Port (Stream only) -->
-            <div class="form-group" id="incomingPortGroup" style="display: none;">
-              <label for="incomingPort">Incoming Port *</label>
-              <input type="number" id="incomingPort" value="${proxy?.incoming_port || ''}" min="1" max="65535" placeholder="8080">
-              <small>The port nginx will listen on</small>
-            </div>
-
-            <!-- Forward Scheme (Reverse only) -->
-            <div class="form-group" id="forwardSchemeGroup">
-              <label for="forwardScheme">Forward Scheme</label>
-              <select id="forwardScheme">
-                <option value="http" ${!proxy || proxy.forward_scheme === 'http' ? 'selected' : ''}>http</option>
-                <option value="https" ${proxy?.forward_scheme === 'https' ? 'selected' : ''}>https</option>
-              </select>
-            </div>
-
-            <!-- Forward Host (Reverse & Stream only) -->
-            <div class="form-group" id="forwardHostGroup">
-              <label for="forwardHost">Forward Host *</label>
-              <input type="text" id="forwardHost" value="${proxy?.forward_host || ''}" placeholder="192.168.1.100 or hostname">
-            </div>
-
-            <!-- Forward Port (Reverse & Stream only) -->
-            <div class="form-group" id="forwardPortGroup">
-              <label for="forwardPort">Forward Port *</label>
-              <input type="number" id="forwardPort" value="${proxy?.forward_port || '80'}" min="1" max="65535">
-            </div>
-
-            <div class="checkbox-group">
-              <input type="checkbox" id="sslEnabled" ${proxy?.ssl_enabled ? 'checked' : ''}>
-              <label for="sslEnabled">Enable TLS</label>
-            </div>
-
-            <div class="form-group" id="sslCertGroup" style="${proxy?.ssl_enabled ? '' : 'display: none;'}">
-              <label for="sslCert">TLS Certificate</label>
-              <select id="sslCert">
-                <option value="">-- Select Certificate --</option>
-                ${certificates.map(cert => `
-                  <option value="${cert.id}" ${proxy?.ssl_cert_id === cert.id ? 'selected' : ''}>
-                    ${cert.name} (${cert.domain_names})
-                  </option>
-                `).join('')}
-              </select>
-            </div>
-
-            <hr style="margin: 24px 0; border: none; border-top: 1px solid var(--border-color);">
-
-            <!-- Rate Limiting Section -->
-            <div class="form-group">
-              <div class="checkbox-group">
-                <input type="checkbox" id="rateLimitEnabled" ${currentRateLimit ? 'checked' : ''}>
-                <label for="rateLimitEnabled">Enable Rate Limiting</label>
-                <small style="display: block; margin-left: 24px; color: var(--text-secondary);">
-                  Limit how many requests per minute clients can make to this host. Helps prevent abuse and DoS attacks.
-                </small>
+            <div class="proxy-editor-config-section">
+              <div class="section-header">
+                <h4>Proxy Configuration</h4>
+                <div class="form-group-checkbox-inline">
+                  <label>
+                    <input type="checkbox" id="proxyEnabled" ${!proxyData || proxyData.enabled ? 'checked' : ''}>
+                    <span>Enabled</span>
+                  </label>
+                  <small class="help-text-inline">Activate this proxy host in Nginx</small>
+                </div>
               </div>
 
-              <div id="rateLimitConfig" style="${currentRateLimit ? '' : 'display: none;'}">
+              <div class="proxy-editor-grid">
                 <div class="form-group">
-                  <label for="rateLimitRate">Request Rate *</label>
-                  <select id="rateLimitRate" class="form-control">
-                    <option value="60r/m" ${currentRateLimit?.rate === '60r/m' ? 'selected' : ''}>60 requests/minute (Recommended)</option>
-                    <option value="360r/m" ${currentRateLimit?.rate === '360r/m' ? 'selected' : ''}>360 requests/minute (6 per second)</option>
-                    <option value="1000r/m" ${currentRateLimit?.rate === '1000r/m' ? 'selected' : ''}>1000 requests/minute (16 per second)</option>
-                    <option value="5000r/m" ${currentRateLimit?.rate === '5000r/m' ? 'selected' : ''}>5000 requests/minute (83 per second)</option>
+                  <label for="proxyName">Proxy Name *</label>
+                  <input type="text" id="proxyName" value="${escapeHtml(proxyData?.name || '')}" required placeholder="e.g., example.com">
+                </div>
+
+                <div class="form-group">
+                  <label for="proxyType">Type *</label>
+                  <select id="proxyType" ${id ? 'disabled' : ''}>
+                    <option value="reverse" ${!proxyData || proxyData.type === 'reverse' ? 'selected' : ''}>Reverse Proxy</option>
+                    <option value="stream" ${proxyData?.type === 'stream' ? 'selected' : ''}>Stream (TCP/UDP)</option>
+                    <option value="404" ${proxyData?.type === '404' ? 'selected' : ''}>404 Host</option>
                   </select>
-                  <small>Choose how many requests each IP can make</small>
                 </div>
 
                 <div class="form-group">
-                  <label for="rateLimitBurst">Burst Allowance</label>
-                  <input type="number" id="rateLimitBurst" class="form-control" min="0" max="500"
-                    value="${currentRateLimit?.burst || 50}" placeholder="50">
-                  <small>Allow short bursts above the rate limit. Default is 50.</small>
+                  <label for="launchUrl">Launch URL <span class="optional-label">(optional)</span></label>
+                  <input type="text" id="launchUrl" value="${escapeHtml(proxyData?.launch_url || '')}" placeholder="https://example.com">
+                  <small class="field-help">Custom URL for the launch button</small>
                 </div>
 
-                <div class="checkbox-group">
-                  <input type="checkbox" id="rateLimitNodelay" ${currentRateLimit?.nodelay ? 'checked' : ''}>
-                  <label for="rateLimitNodelay">Reject Immediately (No Delay)</label>
+                <div class="form-group">
+                  <label for="wafProfileSelect">WAF Profile <span class="optional-label">(optional)</span></label>
+                  <select id="wafProfileSelect">
+                    <option value="">None</option>
+                    ${wafProfiles.profiles?.map(profile => `
+                      <option
+                        value="${profile.id}"
+                        ${currentWAFProfile?.profile?.id === profile.id ? 'selected' : ''}
+                      >
+                        ${escapeHtml(profile.name)} - Paranoia ${profile.paranoia_level}${profile.enabled ? '' : ' (Disabled)'}
+                      </option>
+                    `).join('') || ''}
+                  </select>
+                  <small class="field-help">ModSecurity protection profile</small>
                 </div>
-                <small style="display: block; margin-left: 24px; color: var(--text-secondary); margin-top: -8px;">
-                  When burst is exceeded, reject requests immediately instead of queuing them. More aggressive but prevents slowdowns.
-                </small>
               </div>
             </div>
 
-            <hr style="margin: 24px 0; border: none; border-top: 1px solid var(--border-color);">
-
-            <div class="form-group">
-              <label>Modules</label>
-              <small style="display: block; color: var(--text-secondary); margin-bottom: 8px;">
-                Select optional features for this proxy
-              </small>
-              ${modules
-                .filter(module => module.name !== 'Gzip Compression') // Always enabled
-                .map(module => {
-                  const isForceHTTPS = module.name === 'Force HTTPS';
-                  const isHTTP2 = module.name === 'HTTP/2';
-                  const isChecked = proxy?.modules?.some(m => m.id === module.id);
-
-                  // Update descriptions for clarity
-                  let description = module.description || '';
-                  if (isHTTP2) {
-                    description = 'Enable HTTP/2 protocol for faster performance';
-                  }
-
-                  return `
-                    <div class="checkbox-group" ${isForceHTTPS ? 'data-force-https="true"' : ''}>
-                      <input type="checkbox"
-                        id="module_${module.id}"
-                        value="${module.id}"
-                        ${isChecked ? 'checked' : ''}
-                        ${isForceHTTPS ? 'disabled' : ''}>
-                      <label for="module_${module.id}">
-                        ${module.name}${description ? ' - ' + description : ''}
-                        ${isForceHTTPS ? '<span style="color: var(--success); font-size: 0.85em;"> (Auto-enabled for SSL)</span>' : ''}
-                      </label>
-                    </div>
-                  `;
-                }).join('')}
-            </div>
-
-            <hr style="margin: 24px 0; border: none; border-top: 1px solid var(--border-color);">
-
-            <!-- WAF Profile Section -->
-            <div class="form-group">
-              <label>WAF Profile (Web Application Firewall)</label>
-              <small style="display: block; color: var(--text-secondary); margin-bottom: 8px;">
-                Select a WAF profile to protect this proxy from attacks
-              </small>
-              <select id="wafProfiles" class="form-control">
-                <option value="">-- No WAF Protection --</option>
-                <!-- Will be populated dynamically -->
-              </select>
-              <small style="display: block; margin-top: 4px; color: var(--text-secondary);">
-                <a href="#/waf/profiles" style="color: var(--primary-color);">Manage WAF Profiles →</a>
-              </small>
-            </div>
-
-            <hr style="margin: 24px 0; border: none; border-top: 1px solid var(--border-color);">
-
-            <div class="form-group">
-              <label for="advancedConfig">Advanced Configuration (optional)</label>
-              <textarea id="advancedConfig" placeholder="# Additional nginx directives">${proxy?.advanced_config || ''}</textarea>
-            </div>
-
-            <div class="modal-footer">
-              <button type="button" class="btn btn-secondary" id="cancelBtn">Cancel</button>
-              <button type="submit" class="btn btn-primary" id="saveBasicBtn">Save</button>
-            </div>
-          </form>
-          </div>
-
-          <!-- Advanced Tab -->
-          <div id="advancedTab" class="tab-content">
-            <div class="advanced-editor-container">
-              <p style="color: var(--text-secondary); margin-bottom: 15px;">
-                ⚠️ <strong>Note:</strong> You must test the configuration before saving. The save button will only appear after a successful test.
-              </p>
-
-              <div class="form-group">
-                <label for="advancedConfigEditor">Nginx Configuration *</label>
-                <textarea
-                  id="advancedConfigEditor"
-                  style="min-height: 400px; font-family: 'Courier New', monospace; font-size: 13px; line-height: 1.5;"
-                  placeholder="# Enter your nginx configuration here"
-                ></textarea>
-                <small>Edit the raw nginx configuration. Click "Generate from Basic" to start with the form data.</small>
+            <div class="proxy-editor-split">
+              <div class="proxy-editor-main">
+                <div class="editor-header">
+                  <label>Nginx Configuration</label>
+                  <div class="certificate-selector">
+                    <select id="certSelect" class="cert-dropdown">
+                      <option value="">Select SSL Certificate...</option>
+                      ${certificates.map(cert => `
+                        <option value="${cert.id}" data-cert-path="${escapeHtml(cert.cert_path)}" data-key-path="${escapeHtml(cert.key_path)}">
+                          ${escapeHtml(cert.name)} (${escapeHtml(cert.domain_names)})
+                        </option>
+                      `).join('')}
+                    </select>
+                    <button id="applyCertBtn" class="btn btn-sm btn-primary" disabled>Apply Certificate</button>
+                  </div>
+                </div>
+                <div class="editor-actions" style="margin-bottom: 12px; display: flex; align-items: center; gap: 12px;">
+                  <button id="generateTemplateBtn" class="btn btn-secondary" style="display: flex; align-items: center; gap: 6px;">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                      <polyline points="14 2 14 8 20 8"></polyline>
+                      <line x1="12" y1="18" x2="12" y2="12"></line>
+                      <line x1="9" y1="15" x2="15" y2="15"></line>
+                    </svg>
+                    Generate Template
+                  </button>
+                  <small style="color: #6b7280; font-size: 13px;">Use the wizard to build a configuration with recipes and modules</small>
+                </div>
+                <textarea id="nginxConfig" class="config-editor" spellcheck="false">${escapeHtml(initialConfig)}</textarea>
+                <div class="editor-actions">
+                  <button id="testConfigBtn" class="btn btn-secondary">Test Configuration</button>
+                  <span id="testStatus"></span>
+                </div>
               </div>
 
-              <!-- Test Results -->
-              <div id="advancedTestResults" style="display: none;"></div>
+              <div class="proxy-editor-sidebar">
+                <h3>Module Snippets</h3>
+                <p class="help-text">Click to copy nginx directives</p>
 
-              <!-- Action Buttons -->
-              <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" id="cancelAdvancedBtn">Cancel</button>
-                <button type="button" class="btn btn-secondary" id="generateBtn">
-                  Generate from Basic
-                </button>
-                <button type="button" class="btn btn-warning" id="testAdvancedBtn">
-                  Test Configuration
-                </button>
-                <button
-                  type="button"
-                  class="btn btn-primary"
-                  id="saveAdvancedBtn"
-                  style="display: none;"
-                  disabled
-                >
-                  Save Configuration
-                </button>
+                ${renderModuleSidebar(modules)}
               </div>
             </div>
           </div>
 
+          <div class="modal-footer">
+            <button class="btn btn-secondary" id="cancelBtn">Cancel</button>
+            <button class="btn btn-primary" id="saveBtn" disabled>Save</button>
           </div>
         </div>
       </div>
     `;
 
-    // Close button handlers
-    const closeModal = () => {
-      document.getElementById('proxyModal')?.remove();
-    };
-
-    document.getElementById('closeProxyModal').addEventListener('click', closeModal);
-
-    // Click outside to close
-    document.getElementById('proxyModal').addEventListener('click', (e) => {
-      if (e.target.id === 'proxyModal') {
-        closeModal();
-      }
-    });
-
-    // Type change handler - show/hide fields based on type
-    const updateFieldVisibility = () => {
-      const type = document.getElementById('proxyType').value;
-      const typeHelp = document.getElementById('typeHelp');
-
-      // Show/hide field groups based on type
-      const showElement = (id, show) => {
-        const el = document.getElementById(id);
-        if (el) el.style.display = show ? 'block' : 'none';
-      };
-
-      if (type === 'reverse') {
-        // Reverse Proxy: Domain, Scheme, Forward Host/Port, SSL
-        typeHelp.textContent = 'Routes HTTP/HTTPS traffic based on domain name';
-        showElement('domainNamesGroup', true);
-        showElement('forwardSchemeGroup', true);
-        showElement('forwardHostGroup', true);
-        showElement('forwardPortGroup', true);
-        showElement('streamProtocolGroup', false);
-        showElement('incomingPortGroup', false);
-        document.getElementById('sslEnabled').closest('.checkbox-group').style.display = 'block';
-        document.querySelectorAll('.form-group').forEach(el => {
-          if (el.querySelector('label')?.textContent?.includes('Modules') ||
-              el.querySelector('label')?.textContent?.includes('Rate Limiting')) {
-            el.style.display = 'block';
-          }
-        });
-      } else if (type === 'stream') {
-        // Stream: Protocol, Incoming Port, Forward Host/Port (no domain, no SSL)
-        typeHelp.textContent = 'TCP/UDP proxy - forwards traffic to backend port';
-        showElement('domainNamesGroup', false);
-        showElement('forwardSchemeGroup', false);
-        showElement('forwardHostGroup', true);
-        showElement('forwardPortGroup', true);
-        showElement('streamProtocolGroup', true);
-        showElement('incomingPortGroup', true);
-        document.getElementById('sslEnabled').closest('.checkbox-group').style.display = 'none';
-        document.querySelectorAll('.form-group').forEach(el => {
-          if (el.querySelector('label')?.textContent?.includes('Modules') ||
-              el.querySelector('label')?.textContent?.includes('Rate Limiting')) {
-            el.style.display = 'none';
-          }
-        });
-      } else if (type === '404') {
-        // 404 Host: Domain only
-        typeHelp.textContent = 'Returns 404 for specified domains';
-        showElement('domainNamesGroup', true);
-        showElement('forwardSchemeGroup', false);
-        showElement('forwardHostGroup', false);
-        showElement('forwardPortGroup', false);
-        showElement('streamProtocolGroup', false);
-        showElement('incomingPortGroup', false);
-        document.getElementById('sslEnabled').closest('.checkbox-group').style.display = 'block';
-        document.querySelectorAll('.form-group').forEach(el => {
-          if (el.querySelector('label')?.textContent?.includes('Modules') ||
-              el.querySelector('label')?.textContent?.includes('Rate Limiting')) {
-            el.style.display = 'none';
-          }
-        });
-      }
-    };
-
-    // Initial field visibility
-    updateFieldVisibility();
-
-    // Update on type change
-    document.getElementById('proxyType').addEventListener('change', updateFieldVisibility);
-
-    // TLS checkbox handler
-    document.getElementById('sslEnabled').addEventListener('change', (e) => {
-      const isSSL = e.target.checked;
-      document.getElementById('sslCertGroup').style.display = isSSL ? 'block' : 'none';
-
-      // Show/hide Force HTTPS module based on SSL state
-      const forceHTTPSGroup = document.querySelector('[data-force-https="true"]');
-      if (forceHTTPSGroup) {
-        forceHTTPSGroup.style.display = isSSL ? 'flex' : 'none';
-        // Auto-check Force HTTPS when SSL is enabled
-        const forceHTTPSCheckbox = forceHTTPSGroup.querySelector('input[type="checkbox"]');
-        if (forceHTTPSCheckbox && isSSL) {
-          forceHTTPSCheckbox.checked = true;
-        }
-      }
-    });
-
-    // Initialize Force HTTPS module visibility on page load
-    const initialSSL = document.getElementById('sslEnabled').checked;
-    const forceHTTPSGroup = document.querySelector('[data-force-https="true"]');
-    if (forceHTTPSGroup) {
-      forceHTTPSGroup.style.display = initialSSL ? 'flex' : 'none';
-    }
-
-    // Rate limiting checkbox handler
-    document.getElementById('rateLimitEnabled').addEventListener('change', (e) => {
-      document.getElementById('rateLimitConfig').style.display = e.target.checked ? 'block' : 'none';
-    });
-
-    // Load and populate WAF profiles
-    (async () => {
-      try {
-        const wafProfilesSelect = document.getElementById('wafProfiles');
-        const wafResponse = await api.getWAFProfiles();
-        const wafProfiles = wafResponse.profiles || [];
-
-        // Get current proxy's WAF profile assignment (single)
-        let currentWAFProfileId = null;
-        if (id && proxy) {
-          try {
-            // Get the assigned WAF profile for this proxy
-            const db = await api.request(`/api/proxies/${id}/waf`);
-            currentWAFProfileId = db.profile?.id || null;
-          } catch (error) {
-            console.warn('Failed to load WAF assignment:', error);
-          }
-        }
-
-        // Populate WAF profiles select
-        wafProfiles.forEach(profile => {
-          const option = document.createElement('option');
-          option.value = profile.id;
-          option.textContent = `${profile.name} (Paranoia ${profile.paranoia_level || 1})`;
-          if (currentWAFProfileId === profile.id) {
-            option.selected = true;
-          }
-          wafProfilesSelect.appendChild(option);
-        });
-
-        if (wafProfiles.length === 0) {
-          wafProfilesSelect.innerHTML = '<option value="">-- No WAF Protection --</option><option value="" disabled>No WAF profiles available</option>';
-        }
-      } catch (error) {
-        console.error('Failed to load WAF profiles:', error);
-        document.getElementById('wafProfiles').innerHTML = '<option value="">-- No WAF Protection --</option><option value="" disabled>Failed to load WAF profiles</option>';
-      }
-    })();
-
-    // Load existing config if editing
-    if (id) {
-      try {
-        const response = await fetch(`/api/config/raw/${id}`, {
-          headers: {
-            'Authorization': `Bearer ${api.getToken()}`
-          }
-        });
-
-        if (response.ok) {
-          const data = await response.json();
-          if (data.config) {
-            document.getElementById('advancedConfigEditor').value = data.config;
-          }
-        }
-      } catch (error) {
-        console.error('Failed to load config:', error);
-      }
-    }
-
-    // Tab switching
-    let advancedTestPassed = false;
-    let advancedConfigLoaded = !!id; // Track if config has been loaded/generated
-    const tabs = document.querySelectorAll('.tab');
-    const tabContents = document.querySelectorAll('.tab-content');
-
-    tabs.forEach(tab => {
-      tab.addEventListener('click', () => {
-        const tabName = tab.dataset.tab;
-
-        // Update tab active states
-        tabs.forEach(t => t.classList.remove('active'));
-        tab.classList.add('active');
-
-        // Update content active states
-        tabContents.forEach(content => content.classList.remove('active'));
-        document.getElementById(`${tabName}Tab`).classList.add('active');
-
-        // Auto-generate config when switching to Advanced tab for the first time
-        if (tabName === 'advanced' && !advancedConfigLoaded) {
-          const currentConfig = document.getElementById('advancedConfigEditor').value.trim();
-          if (!currentConfig) {
-            // Automatically generate from basic form (silently, no error messages)
-            generateConfigFromBasic(false);
-            advancedConfigLoaded = true;
-          }
-        }
-
-        // Sync Basic form from Advanced config when switching back to Basic
-        if (tabName === 'basic' && advancedConfigLoaded) {
-          const advancedConfig = document.getElementById('advancedConfigEditor').value.trim();
-          if (advancedConfig) {
-            parseConfigToBasicForm(advancedConfig);
-          }
-        }
-      });
-    });
-
-    // Function to parse nginx config and populate basic form
-    const parseConfigToBasicForm = (config) => {
-      try {
-        // Extract server_name
-        const serverNameMatch = config.match(/server_name\s+([^;]+);/);
-        if (serverNameMatch) {
-          document.getElementById('domainNames').value = serverNameMatch[1].trim();
-        }
-
-        // Extract listen directives to determine TLS
-        const hasTLS = /listen\s+443\s+ssl/.test(config);
-        document.getElementById('sslEnabled').checked = hasTLS;
-        document.getElementById('sslCertGroup').style.display = hasTLS ? 'block' : 'none';
-
-        // Extract proxy_pass from the root location (/) only
-        // Match location / { ... proxy_pass ... } specifically
-        const locationRootMatch = config.match(/location\s+\/\s*\{([^}]*(?:\{[^}]*\}[^}]*)*)\}/s);
-        if (locationRootMatch) {
-          const locationContent = locationRootMatch[1];
-          const proxyPassMatch = locationContent.match(/proxy_pass\s+(https?):\/\/([^:/]+):(\d+)/);
-          if (proxyPassMatch) {
-            document.getElementById('forwardScheme').value = proxyPassMatch[1];
-            document.getElementById('forwardHost').value = proxyPassMatch[2];
-            document.getElementById('forwardPort').value = proxyPassMatch[3];
-          }
-        } else {
-          // Fallback: try to extract any proxy_pass if no location / found
-          const proxyPassMatch = config.match(/proxy_pass\s+(https?):\/\/([^:/]+):(\d+)/);
-          if (proxyPassMatch) {
-            document.getElementById('forwardScheme').value = proxyPassMatch[1];
-            document.getElementById('forwardHost').value = proxyPassMatch[2];
-            document.getElementById('forwardPort').value = proxyPassMatch[3];
-          }
-        }
-
-        // Try to extract name from comment
-        const nameMatch = config.match(/#\s*Proxy:\s*(.+)/);
-        if (nameMatch && !id) {
-          // Only set name if creating new (not editing)
-          document.getElementById('proxyName').value = nameMatch[1].trim();
-        }
-
-        return true;
-      } catch (error) {
-        console.error('Failed to parse config:', error);
-        return false;
-      }
-    };
-
-    // Function to generate config from basic form
-    const generateConfigFromBasic = (showMessage = true) => {
-      const name = document.getElementById('proxyName').value.trim();
-      const type = document.getElementById('proxyType').value;
-      const domainNames = document.getElementById('domainNames').value.trim();
-      const forwardScheme = document.getElementById('forwardScheme').value;
-      const forwardHost = document.getElementById('forwardHost').value.trim();
-      const forwardPort = document.getElementById('forwardPort').value;
-      const sslEnabled = document.getElementById('sslEnabled').checked;
-      const sslCertId = document.getElementById('sslCert').value;
-
-      if (!name || !domainNames || !forwardHost || !forwardPort) {
-        if (showMessage) {
-          showError('Please fill in all required fields in the Basic tab first');
-        }
-        return false;
-      }
-
-      // Generate nginx config based on form data
-      let config = `# Proxy: ${name}\n`;
-      config += `server {\n`;
-
-      if (sslEnabled) {
-        config += `    listen 443 ssl http2;\n`;
-        config += `    listen [::]:443 ssl http2;\n`;
-      } else {
-        config += `    listen 80;\n`;
-        config += `    listen [::]:80;\n`;
-      }
-
-      config += `\n`;
-      config += `    server_name ${domainNames.split(',').map(d => d.trim()).join(' ')};\n`;
-      config += `\n`;
-
-      if (sslEnabled && sslCertId) {
-        const selectedCert = certificates.find(c => c.id === parseInt(sslCertId));
-        if (selectedCert) {
-          config += `    ssl_certificate /path/to/${selectedCert.name}.crt;\n`;
-          config += `    ssl_certificate_key /path/to/${selectedCert.name}.key;\n`;
-          config += `    ssl_protocols TLSv1.2 TLSv1.3;\n`;
-          config += `    ssl_ciphers HIGH:!aNULL:!MD5;\n`;
-          config += `\n`;
-        }
-      }
-
-      // Add selected modules
-      const selectedModules = Array.from(document.querySelectorAll('[id^="module_"]:checked'));
-      if (selectedModules.length > 0) {
-        selectedModules.forEach(checkbox => {
-          const moduleId = parseInt(checkbox.value);
-          const module = modules.find(m => m.id === moduleId);
-          if (module) {
-            config += `    # Module: ${module.name}\n`;
-            module.content.split('\n').forEach(line => {
-              if (line.trim()) {
-                config += `    ${line.trim()}\n`;
-              }
-            });
-            config += `\n`;
-          }
-        });
-      }
-
-      config += `    location / {\n`;
-      config += `        proxy_pass ${forwardScheme}://${forwardHost}:${forwardPort};\n`;
-      config += `        proxy_set_header Host $host;\n`;
-      config += `        proxy_set_header X-Real-IP $remote_addr;\n`;
-      config += `        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;\n`;
-      config += `        proxy_set_header X-Forwarded-Proto $scheme;\n`;
-
-      const advancedConfigText = document.getElementById('advancedConfig').value.trim();
-      if (advancedConfigText) {
-        config += `\n`;
-        advancedConfigText.split('\n').forEach(line => {
-          if (line.trim()) {
-            config += `        ${line.trim()}\n`;
-          }
-        });
-      }
-
-      config += `    }\n`;
-      config += `}\n`;
-
-      document.getElementById('advancedConfigEditor').value = config;
-      if (showMessage) {
-        showSuccess('Configuration generated from basic form');
-      }
-      advancedTestPassed = false;
-      document.getElementById('saveAdvancedBtn').style.display = 'none';
-      document.getElementById('advancedTestResults').style.display = 'none';
-      return true;
-    };
-
-    // Generate config from basic form button
-    document.getElementById('generateBtn').addEventListener('click', () => {
-      generateConfigFromBasic();
-      advancedConfigLoaded = true;
-    });
-
-    // Reset test status when advanced config changes
-    document.getElementById('advancedConfigEditor').addEventListener('input', () => {
-      advancedTestPassed = false;
-      document.getElementById('saveAdvancedBtn').style.display = 'none';
-      document.getElementById('advancedTestResults').style.display = 'none';
-    });
-
-    // Test advanced configuration
-    document.getElementById('testAdvancedBtn').addEventListener('click', async () => {
-      const config = document.getElementById('advancedConfigEditor').value.trim();
-      const name = document.getElementById('proxyName').value.trim();
-
-      if (!config) {
-        showError('Please enter nginx configuration');
-        return;
-      }
-
-      if (!name) {
-        showError('Please enter a proxy name in the Basic tab');
-        return;
-      }
-
-      const testBtn = document.getElementById('testAdvancedBtn');
-      const testResults = document.getElementById('advancedTestResults');
-
-      testBtn.disabled = true;
-      testBtn.textContent = 'Testing...';
-      testResults.style.display = 'none';
-
-      try {
-        const response = await fetch('/api/config/test', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${api.getToken()}`
-          },
-          body: JSON.stringify({ config, filename: name })
-        });
-
-        const data = await response.json();
-
-        if (response.ok && data.success) {
-          advancedTestPassed = true;
-          testResults.innerHTML = `
-            <div class="test-result success">
-              <strong>✅ Configuration Test Passed!</strong>
-              <p style="margin: 5px 0 0 0;">${data.message}</p>
-            </div>
-          `;
-          testResults.style.display = 'block';
-          document.getElementById('saveAdvancedBtn').style.display = 'inline-block';
-          document.getElementById('saveAdvancedBtn').disabled = false;
-        } else {
-          advancedTestPassed = false;
-          testResults.innerHTML = `
-            <div class="test-result error">
-              <strong>❌ Configuration Test Failed</strong>
-              <pre>${escapeHtml(data.error || data.message)}</pre>
-            </div>
-          `;
-          testResults.style.display = 'block';
-          document.getElementById('saveAdvancedBtn').style.display = 'none';
-        }
-      } catch (error) {
-        showError(error.message || 'Failed to test configuration');
-        advancedTestPassed = false;
-      } finally {
-        testBtn.disabled = false;
-        testBtn.textContent = 'Test Configuration';
-      }
-    });
-
-    // Save from advanced tab
-    document.getElementById('saveAdvancedBtn').addEventListener('click', async () => {
-      if (!advancedTestPassed) {
-        showError('Please test the configuration first');
-        return;
-      }
-
-      const name = document.getElementById('proxyName').value.trim();
-      const config = document.getElementById('advancedConfigEditor').value.trim();
-
-      if (!name || !config) {
-        showError('Please provide a name and configuration');
-        return;
-      }
-
-      // Parse config and populate Basic form to keep them in sync
-      parseConfigToBasicForm(config);
-
-      const confirmMessage = id
-        ? 'Save this configuration? This will update the existing proxy.'
-        : 'Save this configuration? This will create a new proxy.';
-
-      if (!confirm(confirmMessage)) {
-        return;
-      }
-
-      showLoading();
-
-      try {
-        const payload = { name, filename: name, config };
-        if (id) {
-          payload.id = id; // Include ID when editing
-        }
-
-        const response = await fetch('/api/config/save', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${api.getToken()}`
-          },
-          body: JSON.stringify(payload)
-        });
-
-        const data = await response.json();
-
-        if (response.ok) {
-          showSuccess(data.message || 'Configuration saved successfully!');
-          closeModal();
-          await renderProxies(document.getElementById('mainContent'));
-        } else {
-          throw new Error(data.error || 'Failed to save configuration');
-        }
-      } catch (error) {
-        hideLoading();
-        showError(error.message);
-      }
-    });
-
-    // Cancel from advanced tab
-    document.getElementById('cancelAdvancedBtn').addEventListener('click', closeModal);
-
-    // Form submit handler
-    document.getElementById('proxyForm').addEventListener('submit', async (e) => {
-      e.preventDefault();
-
-      const type = document.getElementById('proxyType').value;
-
-      // Build base data object
-      const data = {
-        name: document.getElementById('proxyName').value,
-        type: type
-      };
-
-      // Add type-specific fields
-      if (type === 'reverse') {
-        // Reverse proxy needs all standard fields
-        const selectedModules = Array.from(document.querySelectorAll('[id^="module_"]:checked'))
-          .map(cb => parseInt(cb.value));
-
-        data.domain_names = document.getElementById('domainNames').value;
-        data.forward_scheme = document.getElementById('forwardScheme').value;
-        data.forward_host = document.getElementById('forwardHost').value;
-        data.forward_port = parseInt(document.getElementById('forwardPort').value);
-        data.ssl_enabled = document.getElementById('sslEnabled').checked;
-        data.ssl_cert_id = document.getElementById('sslCert').value || null;
-        data.advanced_config = document.getElementById('advancedConfig').value || null;
-        data.module_ids = selectedModules;
-      } else if (type === 'stream') {
-        // Stream needs protocol, incoming port, forward host/port
-        data.domain_names = 'N/A'; // Not used for streams
-        data.stream_protocol = document.getElementById('streamProtocol').value;
-        data.incoming_port = parseInt(document.getElementById('incomingPort').value);
-        data.forward_scheme = 'tcp'; // Not used but required by schema
-        data.forward_host = document.getElementById('forwardHost').value;
-        data.forward_port = parseInt(document.getElementById('forwardPort').value);
-        data.ssl_enabled = false;
-        data.ssl_cert_id = null;
-        data.advanced_config = document.getElementById('advancedConfig').value || null;
-        data.module_ids = [];
-      } else if (type === '404') {
-        // 404 host only needs domain names
-        data.domain_names = document.getElementById('domainNames').value;
-        data.forward_scheme = 'http'; // Not used but required by schema
-        data.forward_host = 'localhost'; // Not used but required by schema
-        data.forward_port = 80; // Not used but required by schema
-        data.ssl_enabled = document.getElementById('sslEnabled').checked;
-        data.ssl_cert_id = document.getElementById('sslCert').value || null;
-        data.advanced_config = document.getElementById('advancedConfig').value || null;
-        data.module_ids = [];
-      }
-
-      // Collect rate limiting data (only for reverse proxies)
-      const rateLimitData = type === 'reverse' ? {
-        enabled: document.getElementById('rateLimitEnabled').checked,
-        rate: document.getElementById('rateLimitRate').value,
-        burst: parseInt(document.getElementById('rateLimitBurst').value) || 5,
-        nodelay: document.getElementById('rateLimitNodelay').checked ? 1 : 0
-      } : { enabled: false };
-
-      // Update Advanced tab with latest Basic form data to keep in sync
-      generateConfigFromBasic(false);
-      advancedConfigLoaded = true;
-
-      showLoading();
-      try {
-        let proxyId = id;
-
-        // Save proxy first
-        if (id) {
-          await api.updateProxy(id, data);
-        } else {
-          const result = await api.createProxy(data);
-          proxyId = result.id;
-        }
-
-        // Handle rate limiting
-        if (rateLimitData.enabled) {
-          // Create or update rate limit
-          if (currentRateLimit) {
-            // Update existing rate limit
-            await api.updateRateLimit(currentRateLimit.id, {
-              rate: rateLimitData.rate,
-              burst: rateLimitData.burst,
-              nodelay: rateLimitData.nodelay,
-              enabled: 1
-            });
-          } else {
-            // Create new rate limit
-            await api.createRateLimit({
-              proxy_id: proxyId,
-              rate: rateLimitData.rate,
-              burst: rateLimitData.burst,
-              nodelay: rateLimitData.nodelay,
-              enabled: 1
-            });
-          }
-        } else {
-          // Rate limiting disabled - delete if exists
-          if (currentRateLimit) {
-            await api.deleteRateLimit(currentRateLimit.id);
-          }
-        }
-
-        // Handle WAF profile assignment (single profile model)
-        const wafProfilesSelect = document.getElementById('wafProfiles');
-        const selectedProfileId = wafProfilesSelect.value ? parseInt(wafProfilesSelect.value) : null;
-
-        // Get current WAF profile assignment
-        let currentProfileId = null;
-        if (id) {
-          try {
-            const wafData = await api.request(`/api/proxies/${proxyId}/waf`);
-            currentProfileId = wafData.profile?.id || null;
-          } catch (error) {
-            console.warn('Failed to get current WAF assignment:', error);
-          }
-        }
-
-        // Update profile assignment if changed
-        if (selectedProfileId !== currentProfileId) {
-          if (selectedProfileId) {
-            // Assign new profile (replaces any existing)
-            try {
-              await api.assignWAFProfile(proxyId, selectedProfileId);
-            } catch (error) {
-              console.error(`Failed to assign WAF profile ${selectedProfileId}:`, error);
-            }
-          } else if (currentProfileId) {
-            // Remove current profile (user selected "No WAF Protection")
-            try {
-              await api.removeWAFProfile(proxyId);
-            } catch (error) {
-              console.error('Failed to remove WAF profile:', error);
-            }
-          }
-        }
-
-        showSuccess(id ? 'Proxy updated successfully' : 'Proxy created successfully');
-        closeModal();
-        await renderProxies(document.getElementById('mainContent'));
-      } catch (error) {
-        hideLoading();
-        showError(error.message);
-      }
-    });
-
-    // Cancel button
-    document.getElementById('cancelBtn').addEventListener('click', closeModal);
+    // Event handlers
+    setupEditorEventHandlers(modal, id, certificates);
 
     hideLoading();
   } catch (error) {
@@ -1093,3 +347,1538 @@ async function showProxyForm(id = null) {
     showError(error.message);
   }
 }
+
+function renderModuleSidebar(modules) {
+  let html = '';
+
+  // modules is now an object with tag names as keys
+  const tags = Object.keys(modules).sort();
+
+  if (tags.length === 0) {
+    return '<p class="help-text">No modules available</p>';
+  }
+
+  // Generate collapsible sections for each tag
+  tags.forEach((tag, index) => {
+    const tagModules = modules[tag];
+    if (!tagModules || tagModules.length === 0) return;
+
+    // First tag expanded by default, others collapsed
+    const isExpanded = index === 0;
+    const sectionId = `tag-section-${tag.replace(/\s+/g, '-').toLowerCase()}`;
+
+    html += `
+      <div class="module-tag-section">
+        <div class="module-tag-header" data-section-id="${sectionId}" style="cursor: pointer;">
+          <h4 style="margin: 0; display: flex; align-items: center; justify-content: space-between;">
+            <span>
+              <span id="${sectionId}-icon" class="collapse-icon">${isExpanded ? '▼' : '▶'}</span>
+              ${escapeHtml(tag)}
+            </span>
+            <span class="badge badge-secondary" style="font-size: 11px;">${tagModules.length}</span>
+          </h4>
+        </div>
+        <div id="${sectionId}" class="module-tag-content" style="display: ${isExpanded ? 'block' : 'none'};">
+          ${tagModules.map(m => `
+            <div class="module-snippet">
+              <div class="module-header">
+                <strong>${escapeHtml(m.name)}</strong>
+                ${m.level ? `<span class="badge badge-info" style="font-size: 10px; margin-left: 4px;">${escapeHtml(m.level)}</span>` : ''}
+              </div>
+              ${m.description ? `<p style="font-size: 12px; color: #666; margin: 4px 0;">${escapeHtml(m.description)}</p>` : ''}
+              <pre><code>${escapeHtml(m.content)}</code></pre>
+              <button class="btn btn-sm copy-btn" data-content="${escapeHtml(m.content)}">Copy</button>
+            </div>
+          `).join('')}
+        </div>
+      </div>
+    `;
+  });
+
+  return html;
+}
+
+function setupEditorEventHandlers(modal, proxyId, certificates) {
+  const testBtn = modal.querySelector('#testConfigBtn');
+  const saveBtn = modal.querySelector('#saveBtn');
+  const configTextarea = modal.querySelector('#nginxConfig');
+  const testStatus = modal.querySelector('#testStatus');
+  const proxyTypeSelect = modal.querySelector('#proxyType');
+  const certSelect = modal.querySelector('#certSelect');
+  const applyCertBtn = modal.querySelector('#applyCertBtn');
+
+  // Certificate selection handler
+  certSelect.addEventListener('change', (e) => {
+    applyCertBtn.disabled = !e.target.value;
+  });
+
+  // Apply certificate handler
+  applyCertBtn.addEventListener('click', () => {
+    const selectedOption = certSelect.options[certSelect.selectedIndex];
+    if (!selectedOption || !selectedOption.value) return;
+
+    const certPath = selectedOption.dataset.certPath;
+    const keyPath = selectedOption.dataset.keyPath;
+
+    let config = configTextarea.value;
+
+    // Replace placeholders
+    config = config.replace(/ssl_certificate\s+{{SSL_CERT_PATH}};/g, `ssl_certificate ${certPath};`);
+    config = config.replace(/ssl_certificate_key\s+{{SSL_KEY_PATH}};/g, `ssl_certificate_key ${keyPath};`);
+
+    configTextarea.value = config;
+
+    // Reset test status
+    testStatus.textContent = '';
+    testStatus.className = '';
+    saveBtn.disabled = true;
+
+    showSuccess(`Certificate paths inserted for ${selectedOption.text.split(' (')[0]}`);
+  });
+
+  // Generate Template button handler
+  const generateTemplateBtn = modal.querySelector('#generateTemplateBtn');
+  if (generateTemplateBtn) {
+    generateTemplateBtn.addEventListener('click', () => {
+      const currentConfig = configTextarea.value;
+      const proxyName = modal.querySelector('#proxyName').value || '';
+      const proxyType = modal.querySelector('#proxyType').value;
+
+      showTemplateWizard(currentConfig, proxyName, proxyType, (result) => {
+        // Apply generated config to editor
+        configTextarea.value = result.config;
+
+        // Populate form fields from wizard
+        if (result.name) {
+          modal.querySelector('#proxyName').value = result.name;
+        }
+
+        if (result.launchUrl) {
+          const launchUrlField = modal.querySelector('#launchUrl');
+          if (launchUrlField) {
+            launchUrlField.value = result.launchUrl;
+          }
+        }
+
+        if (result.wafProfileId) {
+          const wafSelect = modal.querySelector('#wafProfileSelect');
+          if (wafSelect) {
+            wafSelect.value = result.wafProfileId;
+          }
+        }
+
+        // Reset test status (requires re-testing)
+        testStatus.textContent = '';
+        testStatus.className = '';
+        saveBtn.disabled = true;
+
+        showSuccess('Template applied! Please test the configuration before saving.');
+      });
+    });
+  }
+
+  // Type change -> load template
+  proxyTypeSelect.addEventListener('change', async (e) => {
+    if (!proxyId && confirm('Load template for this proxy type? This will replace the current config.')) {
+      const type = e.target.value;
+      const name = modal.querySelector('#proxyName').value || 'New Proxy';
+
+      try {
+        const template = await api.request('/api/config/template', {
+          method: 'POST',
+          body: {
+            type,
+            name,
+            options: { ssl_enabled: type === 'reverse' || type === '404' }
+          }
+        });
+        configTextarea.value = template.config;
+        testStatus.textContent = '';
+        testStatus.className = '';
+        saveBtn.disabled = true;
+      } catch (error) {
+        showError('Failed to load template: ' + error.message);
+      }
+    }
+  });
+
+  // Test configuration
+  testBtn.addEventListener('click', async () => {
+    testBtn.disabled = true;
+    testBtn.textContent = 'Testing...';
+    testStatus.textContent = '';
+    testStatus.className = '';
+
+    const config = configTextarea.value;
+
+    try {
+      const result = await api.request('/api/config/test', {
+        method: 'POST',
+        body: { config }
+      });
+
+      if (result.success) {
+        testStatus.textContent = '✓ Valid configuration';
+        testStatus.className = 'test-success';
+        saveBtn.disabled = false;
+      } else {
+        testStatus.textContent = `✗ Invalid: ${result.error}`;
+        testStatus.className = 'test-error';
+        saveBtn.disabled = true;
+      }
+    } catch (error) {
+      testStatus.textContent = `✗ Error: ${error.message}`;
+      testStatus.className = 'test-error';
+      saveBtn.disabled = true;
+    }
+
+    testBtn.disabled = false;
+    testBtn.textContent = 'Test Configuration';
+  });
+
+  // Save
+  saveBtn.addEventListener('click', async () => {
+    const name = modal.querySelector('#proxyName').value.trim();
+    const type = modal.querySelector('#proxyType').value;
+    const config = configTextarea.value;
+    const enabled = modal.querySelector('#proxyEnabled').checked;
+    const launch_url = modal.querySelector('#launchUrl').value.trim() || null;
+    const wafProfileId = modal.querySelector('#wafProfileSelect').value;
+
+    if (!name) {
+      showError('Name is required');
+      return;
+    }
+
+    saveBtn.disabled = true;
+    saveBtn.textContent = 'Saving...';
+
+    try {
+      const saveResponse = await api.request('/api/config/save', {
+        method: 'POST',
+        body: {
+          proxyId,
+          name,
+          type,
+          config,
+          enabled,
+          launch_url
+        }
+      });
+
+      const savedProxyId = proxyId || saveResponse.proxyId;
+
+      // Handle WAF profile assignment after save
+      if (savedProxyId) {
+        if (wafProfileId) {
+          // Assign selected profile
+          await api.assignWAFProfile(savedProxyId, wafProfileId);
+        } else if (proxyId) {
+          // Editing existing proxy - remove profile if "None" selected
+          await api.removeWAFProfile(savedProxyId).catch(() => {
+            // Ignore error if no profile was assigned
+          });
+        }
+      }
+
+      modal.querySelector('#proxyModal').remove();
+      showSuccess('Proxy saved successfully');
+
+      // Reload proxy list
+      const container = document.querySelector('#proxies');
+      if (container) {
+        renderProxies(container);
+      }
+    } catch (error) {
+      showError(error.message);
+      saveBtn.disabled = false;
+      saveBtn.textContent = 'Save';
+    }
+  });
+
+  // Copy module snippets
+  modal.querySelectorAll('.copy-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const content = btn.dataset.content;
+
+      try {
+        await navigator.clipboard.writeText(content);
+        const originalText = btn.textContent;
+        btn.textContent = '✓ Copied';
+        btn.style.background = '#10b981';
+        btn.style.color = 'white';
+
+        setTimeout(() => {
+          btn.textContent = originalText;
+          btn.style.background = '';
+          btn.style.color = '';
+        }, 2000);
+      } catch (error) {
+        console.error('Failed to copy:', error);
+        showError('Failed to copy to clipboard');
+      }
+    });
+  });
+
+  // Tag section toggle
+  modal.querySelectorAll('.module-tag-header').forEach(header => {
+    header.addEventListener('click', () => {
+      const sectionId = header.dataset.sectionId;
+      const content = document.getElementById(sectionId);
+      const icon = document.getElementById(`${sectionId}-icon`);
+
+      if (content && icon) {
+        if (content.style.display === 'none') {
+          content.style.display = 'block';
+          icon.textContent = '▼';
+        } else {
+          content.style.display = 'none';
+          icon.textContent = '▶';
+        }
+      }
+    });
+  });
+
+  // Cancel/Close
+  const closeModal = () => {
+    modal.querySelector('#proxyModal').remove();
+  };
+
+  modal.querySelector('#cancelBtn').addEventListener('click', closeModal);
+  modal.querySelector('#closeProxyModal').addEventListener('click', closeModal);
+
+  // Close on overlay click
+  modal.querySelector('#proxyModal').addEventListener('click', (e) => {
+    if (e.target.id === 'proxyModal') {
+      closeModal();
+    }
+  });
+}
+
+// ============================================
+// TEMPLATE WIZARD CONFIGURATION RECIPES
+// ============================================
+
+const RECIPE_DEFINITIONS = {
+  'secure-api': {
+    id: 'secure-api',
+    name: 'Secure API Proxy',
+    icon: '',
+    description: 'Production-ready API proxy with security hardening, SSL/TLS encryption, and proper headers for secure API communication.',
+    type: 'reverse',
+    ssl: true,
+    modules: ['HSTS', 'Security Headers', 'Real IP', 'HTTP/2', 'Force HTTPS'],
+    settings: {
+      forward_scheme: 'http',
+      forward_host: 'localhost',
+      forward_port: '8080',
+      websocket_support: false
+    }
+  },
+  'websocket': {
+    id: 'websocket',
+    name: 'WebSocket Server',
+    icon: '',
+    description: 'Real-time WebSocket server with proper upgrade headers, SSL support, and connection handling for bi-directional communication.',
+    type: 'reverse',
+    ssl: true,
+    modules: ['WebSocket Support', 'Real IP', 'Force HTTPS'],
+    settings: {
+      forward_scheme: 'http',
+      forward_host: 'localhost',
+      forward_port: '3000',
+      websocket_support: true
+    }
+  },
+  'static-site': {
+    id: 'static-site',
+    name: 'Static Website',
+    icon: '',
+    description: 'Optimized static site hosting with compression, security headers, and SSL for maximum performance and security.',
+    type: 'reverse',
+    ssl: true,
+    modules: ['Security Headers', 'Brotli Compression', 'HTTP/2', 'Force HTTPS'],
+    settings: {
+      forward_scheme: 'http',
+      forward_host: 'localhost',
+      forward_port: '8080',
+      websocket_support: false
+    }
+  },
+  'high-performance': {
+    id: 'high-performance',
+    name: 'High Performance',
+    icon: '',
+    description: 'Maximum performance configuration with HTTP/2, HTTP/3 (QUIC), aggressive compression, and modern protocol support.',
+    type: 'reverse',
+    ssl: true,
+    modules: ['HTTP/2', 'HTTP/3 (QUIC)', 'Brotli Compression', 'Security Headers', 'Force HTTPS'],
+    settings: {
+      forward_scheme: 'http',
+      forward_host: 'localhost',
+      forward_port: '8080',
+      websocket_support: false
+    }
+  },
+  'basic-http': {
+    id: 'basic-http',
+    name: 'Basic HTTP Proxy',
+    icon: '',
+    description: 'Simple HTTP proxy without SSL, minimal configuration for development or internal services that don\'t require encryption.',
+    type: 'reverse',
+    ssl: false,
+    modules: [],
+    settings: {
+      forward_scheme: 'http',
+      forward_host: 'localhost',
+      forward_port: '8080',
+      websocket_support: false
+    }
+  },
+  'custom': {
+    id: 'custom',
+    name: 'Custom Configuration',
+    icon: '',
+    description: 'Start from scratch with a blank template and manually select all options, modules, and settings for complete control.',
+    type: 'reverse',
+    ssl: false,
+    modules: [],
+    settings: {
+      forward_scheme: 'http',
+      forward_host: '',
+      forward_port: '',
+      websocket_support: false
+    }
+  }
+};
+
+// ============================================
+// TEMPLATE WIZARD IMPLEMENTATION
+// ============================================
+
+/**
+ * Main wizard function - Shows template generator wizard
+ * @param {string} currentConfig - Current config in editor
+ * @param {string} proxyName - Current proxy name
+ * @param {string} proxyType - Current proxy type
+ * @param {Function} onComplete - Callback when template is applied
+ */
+async function showTemplateWizard(currentConfig, proxyName, proxyType, onComplete) {
+  try {
+    // Initialize wizard state
+    const wizardState = {
+      currentStep: 1,
+      totalSteps: 6,
+      recipe: null,
+      settings: {
+        name: proxyName || '',
+        type: proxyType || 'reverse',
+        domains: '',
+        ssl_enabled: false,
+        certificate_id: null,
+        forward_scheme: 'http',
+        forward_host: 'localhost',
+        forward_port: '8080',
+        listen_port: 80,
+        target_port: 443,
+        websocket_support: false
+      },
+      selectedModules: [],
+      availableModules: null,
+      certificates: [],
+      wafProfiles: [],
+      advanced: {
+        waf_profile_id: null,
+        launch_url: '',
+        custom_directives: ''
+      }
+    };
+
+    // Fetch required data
+    try {
+      const [modulesData, certificatesData, wafProfilesData] = await Promise.all([
+        api.request('/api/modules/snippets'),
+        api.getCertificates(),
+        api.getWAFProfiles()
+      ]);
+
+      wizardState.availableModules = modulesData;
+      wizardState.certificates = certificatesData;
+      wizardState.wafProfiles = wafProfilesData.profiles || [];
+    } catch (error) {
+      console.error('Error fetching wizard data:', error);
+      showError('Failed to load wizard data. Please try again.');
+      return;
+    }
+
+    // Create and show wizard
+    const wizardHTML = createWizardHTML(wizardState);
+    document.body.insertAdjacentHTML('beforeend', wizardHTML);
+
+    // Setup event handlers
+    setupWizardHandlers(wizardState, currentConfig, onComplete);
+
+  } catch (error) {
+    console.error('Error showing template wizard:', error);
+    showError('Failed to open template wizard.');
+  }
+}
+
+/**
+ * Create wizard HTML structure
+ */
+function createWizardHTML(state) {
+  const steps = [
+    { number: 1, label: 'Recipe' },
+    { number: 2, label: 'Settings' },
+    { number: 3, label: 'SSL' },
+    { number: 4, label: 'Modules' },
+    { number: 5, label: 'Advanced' },
+    { number: 6, label: 'Preview' }
+  ];
+
+  return `
+    <div class="wizard-overlay" id="templateWizard">
+      <div class="wizard-container">
+        <!-- Header -->
+        <div class="wizard-header">
+          <h2>Generate Configuration Template</h2>
+          <button class="wizard-close-btn" id="closeWizard" aria-label="Close">&times;</button>
+        </div>
+
+        <!-- Progress Indicator -->
+        <div class="wizard-progress">
+          <div class="wizard-steps">
+            ${steps.map(step => `
+              <div class="wizard-step-indicator ${step.number === 1 ? 'active' : ''}" data-step="${step.number}">
+                <div class="step-circle">${step.number}</div>
+                <div class="step-line"></div>
+                <div class="step-label">${step.label}</div>
+              </div>
+            `).join('')}
+          </div>
+        </div>
+
+        <!-- Body -->
+        <div class="wizard-body">
+          <div class="wizard-step-content" id="wizardStepContent">
+            ${createStep1RecipeSelection(state)}
+          </div>
+        </div>
+
+        <!-- Footer -->
+        <div class="wizard-footer">
+          <div class="wizard-footer-left">
+            <button class="wizard-btn wizard-btn-secondary" id="wizardCancel">Cancel</button>
+          </div>
+          <div class="wizard-footer-right">
+            <button class="wizard-btn wizard-btn-secondary" id="wizardBack" disabled>Back</button>
+            <button class="wizard-btn wizard-btn-primary" id="wizardNext">Next</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+/**
+ * Step 1: Recipe Selection
+ */
+function createStep1RecipeSelection(state) {
+  const recipes = Object.values(RECIPE_DEFINITIONS);
+
+  return `
+    <h2 class="wizard-step-title">Choose a Configuration Recipe</h2>
+    <p class="wizard-step-description">Select a pre-configured template to get started, or choose custom to build from scratch.</p>
+
+    <div class="recipe-grid">
+      ${recipes.map(recipe => `
+        <div class="recipe-card ${state.recipe?.id === recipe.id ? 'selected' : ''}" data-recipe-id="${recipe.id}">
+          <div class="recipe-name">${recipe.name}</div>
+          <p class="recipe-description">${recipe.description}</p>
+          <div class="recipe-features">
+            ${recipe.ssl ? '<span class="recipe-feature-tag">SSL/TLS</span>' : ''}
+            ${recipe.modules.map(m => `<span class="recipe-feature-tag">${m}</span>`).join('')}
+          </div>
+        </div>
+      `).join('')}
+    </div>
+  `;
+}
+
+/**
+ * Step 2: Basic Settings
+ */
+function createStep2BasicSettings(state) {
+  const showDomains = state.settings.type === 'reverse' || state.settings.type === '404';
+  const showForward = state.settings.type === 'reverse';
+  const showPorts = state.settings.type === 'stream';
+
+  return `
+    <h2 class="wizard-step-title">Basic Configuration</h2>
+    <p class="wizard-step-description">Configure the basic settings for your proxy host.</p>
+
+    <div class="wizard-form-grid">
+      <div class="wizard-form-group">
+        <label>Proxy Name <span class="required">*</span></label>
+        <input type="text" id="wizardName" value="${escapeHtml(state.settings.name)}" placeholder="e.g., api.example.com" required>
+        <small>A friendly name to identify this proxy</small>
+        <span class="error">Name is required</span>
+      </div>
+
+      <div class="wizard-form-group">
+        <label>Proxy Type</label>
+        <select id="wizardType">
+          <option value="reverse" ${state.settings.type === 'reverse' ? 'selected' : ''}>Reverse Proxy</option>
+          <option value="stream" ${state.settings.type === 'stream' ? 'selected' : ''}>Stream (TCP/UDP)</option>
+          <option value="404" ${state.settings.type === '404' ? 'selected' : ''}>404 Page</option>
+        </select>
+        <small>Type of proxy configuration</small>
+      </div>
+
+      ${showDomains ? `
+        <div class="wizard-form-group full-width">
+          <label>Domain Names <span class="required">*</span></label>
+          <input type="text" id="wizardDomains" value="${escapeHtml(state.settings.domains)}" placeholder="example.com, www.example.com" required>
+          <small>Comma-separated list of domains</small>
+          <span class="error">At least one domain is required</span>
+        </div>
+      ` : ''}
+
+      ${showForward ? `
+        <div class="wizard-form-group">
+          <label>Forward Scheme</label>
+          <select id="wizardForwardScheme">
+            <option value="http" ${state.settings.forward_scheme === 'http' ? 'selected' : ''}>HTTP</option>
+            <option value="https" ${state.settings.forward_scheme === 'https' ? 'selected' : ''}>HTTPS</option>
+          </select>
+          <small>Backend server protocol</small>
+        </div>
+
+        <div class="wizard-form-group">
+          <label>Forward Host <span class="required">*</span></label>
+          <input type="text" id="wizardForwardHost" value="${escapeHtml(state.settings.forward_host)}" placeholder="localhost or 192.168.1.100" required>
+          <small>Backend server hostname or IP</small>
+          <span class="error">Forward host is required</span>
+        </div>
+
+        <div class="wizard-form-group">
+          <label>Forward Port <span class="required">*</span></label>
+          <input type="number" id="wizardForwardPort" value="${state.settings.forward_port}" placeholder="8080" min="1" max="65535" required>
+          <small>Backend server port (1-65535)</small>
+          <span class="error">Valid port is required (1-65535)</span>
+        </div>
+      ` : ''}
+
+      ${showPorts ? `
+        <div class="wizard-form-group">
+          <label>Listen Port <span class="required">*</span></label>
+          <input type="number" id="wizardListenPort" value="${state.settings.listen_port}" placeholder="80" min="1" max="65535" required>
+          <small>Port to listen on (1-65535)</small>
+          <span class="error">Valid port is required</span>
+        </div>
+
+        <div class="wizard-form-group">
+          <label>Target Port <span class="required">*</span></label>
+          <input type="number" id="wizardTargetPort" value="${state.settings.target_port}" placeholder="443" min="1" max="65535" required>
+          <small>Port to forward to (1-65535)</small>
+          <span class="error">Valid port is required</span>
+        </div>
+      ` : ''}
+    </div>
+  `;
+}
+
+/**
+ * Step 3: SSL Configuration
+ */
+function createStep3SSLConfiguration(state) {
+  const sslEnabled = state.settings.ssl_enabled;
+  const disableSSL = state.settings.type === 'stream';
+
+  return `
+    <h2 class="wizard-step-title">SSL/TLS Configuration</h2>
+    <p class="wizard-step-description">Configure SSL certificate for encrypted connections.${disableSSL ? ' (Not available for stream proxies)' : ''}</p>
+
+    <div class="wizard-toggle-section">
+      <div class="wizard-toggle-header">
+        <span class="wizard-toggle-label">Enable SSL/TLS</span>
+        <label class="toggle-switch">
+          <input type="checkbox" id="wizardSSLEnabled" ${sslEnabled ? 'checked' : ''} ${disableSSL ? 'disabled' : ''}>
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
+      ${sslEnabled && !disableSSL ? `
+        <div class="wizard-toggle-content">
+          <div class="wizard-form-group">
+            <label>SSL Certificate ${sslEnabled ? '<span class="required">*</span>' : ''}</label>
+            <select id="wizardCertificate" ${sslEnabled ? 'required' : ''}>
+              <option value="">Select a certificate...</option>
+              ${state.certificates.map(cert => `
+                <option value="${cert.id}" ${state.settings.certificate_id === cert.id ? 'selected' : ''}>
+                  ${escapeHtml(cert.name)} (${escapeHtml(cert.domain_names)})
+                </option>
+              `).join('')}
+            </select>
+            <small>Choose an SSL certificate for HTTPS</small>
+            ${state.certificates.length === 0 ? '<small style="color: #ef4444;">No certificates available. Create one in the Certificates section first.</small>' : ''}
+            <span class="error">Certificate is required when SSL is enabled</span>
+          </div>
+        </div>
+      ` : ''}
+    </div>
+  `;
+}
+
+/**
+ * Step 4: Module Selection
+ */
+function createStep4ModuleSelection(state) {
+  const modules = state.availableModules || {};
+  const tags = Object.keys(modules).sort();
+  const selectedModuleNames = state.selectedModules.map(m => m.name);
+
+  // Auto-enabled modules when SSL is on
+  const autoEnabledModules = state.settings.ssl_enabled ? ['Force HTTPS', 'HTTP/2'] : [];
+
+  return `
+    <h2 class="wizard-step-title">Select Modules</h2>
+    <p class="wizard-step-description">Choose nginx modules and features to include in your configuration. Some modules are auto-enabled based on your settings.</p>
+
+    <div class="module-categories">
+      ${tags.length === 0 ? '<p>No modules available</p>' : ''}
+      ${tags.map((tag, index) => {
+        const tagModules = modules[tag] || [];
+        const isExpanded = index === 0;
+
+        return `
+          <div class="module-category ${isExpanded ? 'expanded' : ''}" data-category="${escapeHtml(tag)}">
+            <div class="module-category-header">
+              <div class="module-category-title">
+                <span class="module-category-icon">▶</span>
+                ${escapeHtml(tag)}
+              </div>
+              <span class="module-category-count">${tagModules.length}</span>
+            </div>
+            <div class="module-category-content">
+              ${tagModules.map(module => {
+                const isAutoEnabled = autoEnabledModules.includes(module.name);
+                const isChecked = isAutoEnabled || selectedModuleNames.includes(module.name);
+
+                return `
+                  <div class="module-checkbox-item">
+                    <input
+                      type="checkbox"
+                      id="module-${module.id}"
+                      data-module-id="${module.id}"
+                      data-module-name="${escapeHtml(module.name)}"
+                      ${isChecked ? 'checked' : ''}
+                      ${isAutoEnabled ? 'disabled' : ''}
+                    >
+                    <div class="module-info">
+                      <div class="module-name">
+                        ${escapeHtml(module.name)}
+                        ${module.level ? `<span class="module-level-badge">${module.level}</span>` : ''}
+                      </div>
+                      ${module.description ? `<div class="module-description">${escapeHtml(module.description)}</div>` : ''}
+                      ${isAutoEnabled ? '<div class="module-auto-enabled">Auto-enabled with SSL</div>' : ''}
+                    </div>
+                  </div>
+                `;
+              }).join('')}
+            </div>
+          </div>
+        `;
+      }).join('')}
+    </div>
+  `;
+}
+
+/**
+ * Step 5: Advanced Options
+ */
+function createStep5AdvancedOptions(state) {
+  return `
+    <h2 class="wizard-step-title">Advanced Options</h2>
+    <p class="wizard-step-description">Optional advanced settings for your proxy configuration.</p>
+
+    <div class="wizard-form-grid">
+      <div class="wizard-form-group">
+        <label>WAF Profile</label>
+        <select id="wizardWAFProfile">
+          <option value="">None (No WAF protection)</option>
+          ${state.wafProfiles.map(profile => `
+            <option value="${profile.id}" ${state.advanced.waf_profile_id === profile.id ? 'selected' : ''}>
+              ${escapeHtml(profile.name)} - Paranoia ${profile.paranoia_level} ${profile.enabled ? '' : '(Disabled)'}
+            </option>
+          `).join('')}
+        </select>
+        <small>ModSecurity/OWASP CRS protection profile</small>
+      </div>
+
+      <div class="wizard-form-group">
+        <label>Launch URL</label>
+        <input type="text" id="wizardLaunchURL" value="${escapeHtml(state.advanced.launch_url)}" placeholder="https://example.com">
+        <small>Optional URL to open when clicking "View" button</small>
+      </div>
+
+      <div class="wizard-form-group full-width">
+        <label>Custom Nginx Directives</label>
+        <textarea id="wizardCustomDirectives" rows="6" placeholder="# Add custom nginx directives here...">${escapeHtml(state.advanced.custom_directives)}</textarea>
+        <small>Advanced: Add custom nginx configuration directives (inserted in location block)</small>
+      </div>
+    </div>
+  `;
+}
+
+/**
+ * Step 6: Config Preview
+ */
+function createStep6Preview(state, generatedConfig = '') {
+  const tags = [];
+  if (state.settings.ssl_enabled) tags.push('<span class="preview-highlight-tag ssl">SSL/TLS Enabled</span>');
+  if (state.selectedModules.length > 0) tags.push(`<span class="preview-highlight-tag modules">${state.selectedModules.length} Modules</span>`);
+  if (state.advanced.waf_profile_id) tags.push('<span class="preview-highlight-tag waf">WAF Protected</span>');
+
+  return `
+    <h2 class="wizard-step-title">Review & Apply Template</h2>
+    <p class="wizard-step-description">Review your generated configuration and apply it to the editor.</p>
+
+    <div class="config-preview-container">
+      ${tags.length > 0 ? `<div class="preview-tags">${tags.join('')}</div>` : ''}
+
+      <textarea id="wizardPreviewConfig" class="config-preview-editor" readonly>${escapeHtml(generatedConfig)}</textarea>
+
+      <div class="preview-actions" style="margin-top: 16px;">
+        <button class="wizard-btn wizard-btn-primary" id="wizardUseTemplate">
+          Use This Template
+        </button>
+        <small style="color: #6b7280; margin-left: 12px;">This will replace the current configuration in the editor</small>
+      </div>
+    </div>
+  `;
+}
+
+/**
+ * Setup wizard event handlers
+ */
+function setupWizardHandlers(state, currentConfig, onComplete) {
+  const wizard = document.getElementById('templateWizard');
+  if (!wizard) return;
+
+  const nextBtn = wizard.querySelector('#wizardNext');
+  const backBtn = wizard.querySelector('#wizardBack');
+  const cancelBtn = wizard.querySelector('#wizardCancel');
+  const closeBtn = wizard.querySelector('#closeWizard');
+
+  // Close wizard
+  const closeWizard = () => {
+    wizard.remove();
+  };
+
+  closeBtn.addEventListener('click', closeWizard);
+  cancelBtn.addEventListener('click', closeWizard);
+
+  // Close on overlay click
+  wizard.addEventListener('click', (e) => {
+    if (e.target.id === 'templateWizard') {
+      closeWizard();
+    }
+  });
+
+  // Step 1: Recipe selection
+  wizard.querySelectorAll('.recipe-card').forEach(card => {
+    card.addEventListener('click', () => {
+      // Update state
+      const recipeId = card.dataset.recipeId;
+      state.recipe = RECIPE_DEFINITIONS[recipeId];
+
+      // Apply recipe defaults
+      if (state.recipe && state.recipe.id !== 'custom') {
+        state.settings.type = state.recipe.type;
+        state.settings.ssl_enabled = state.recipe.ssl;
+        state.settings.forward_scheme = state.recipe.settings.forward_scheme;
+        state.settings.forward_host = state.recipe.settings.forward_host;
+        state.settings.forward_port = state.recipe.settings.forward_port;
+
+        // Pre-select modules
+        state.selectedModules = [];
+        state.recipe.modules.forEach(moduleName => {
+          // Find module by name
+          for (const tag in state.availableModules) {
+            const found = state.availableModules[tag].find(m => m.name === moduleName);
+            if (found) {
+              state.selectedModules.push(found);
+            }
+          }
+        });
+      }
+
+      // Update UI
+      wizard.querySelectorAll('.recipe-card').forEach(c => c.classList.remove('selected'));
+      card.classList.add('selected');
+    });
+  });
+
+  // Navigation
+  nextBtn.addEventListener('click', () => handleWizardNext(wizard, state, currentConfig, onComplete));
+  backBtn.addEventListener('click', () => handleWizardBack(wizard, state));
+}
+
+/**
+ * Handle wizard next button
+ */
+async function handleWizardNext(wizard, state, currentConfig, onComplete) {
+  // Validate current step
+  if (!validateWizardStep(wizard, state)) {
+    return;
+  }
+
+  // Collect data from current step
+  collectStepData(wizard, state);
+
+  // Move to next step
+  if (state.currentStep < state.totalSteps) {
+    state.currentStep++;
+    await updateWizardUI(wizard, state, currentConfig, onComplete);
+  }
+}
+
+/**
+ * Handle wizard back button
+ */
+async function handleWizardBack(wizard, state) {
+  if (state.currentStep > 1) {
+    state.currentStep--;
+    await updateWizardUI(wizard, state);
+  }
+}
+
+/**
+ * Validate current wizard step
+ */
+function validateWizardStep(wizard, state) {
+  // Clear previous errors
+  wizard.querySelectorAll('.wizard-form-group').forEach(group => {
+    group.classList.remove('has-error');
+  });
+
+  switch (state.currentStep) {
+    case 1: // Recipe selection
+      if (!state.recipe) {
+        showError('Please select a configuration recipe');
+        return false;
+      }
+      return true;
+
+    case 2: // Basic settings
+      let isValid = true;
+
+      // Name required
+      const name = wizard.querySelector('#wizardName')?.value.trim();
+      if (!name) {
+        wizard.querySelector('#wizardName')?.closest('.wizard-form-group')?.classList.add('has-error');
+        isValid = false;
+      }
+
+      // Domains required for reverse/404
+      if (state.settings.type === 'reverse' || state.settings.type === '404') {
+        const domains = wizard.querySelector('#wizardDomains')?.value.trim();
+        if (!domains) {
+          wizard.querySelector('#wizardDomains')?.closest('.wizard-form-group')?.classList.add('has-error');
+          isValid = false;
+        }
+      }
+
+      // Forward host/port required for reverse
+      if (state.settings.type === 'reverse') {
+        const host = wizard.querySelector('#wizardForwardHost')?.value.trim();
+        const port = wizard.querySelector('#wizardForwardPort')?.value;
+
+        if (!host) {
+          wizard.querySelector('#wizardForwardHost')?.closest('.wizard-form-group')?.classList.add('has-error');
+          isValid = false;
+        }
+
+        if (!port || port < 1 || port > 65535) {
+          wizard.querySelector('#wizardForwardPort')?.closest('.wizard-form-group')?.classList.add('has-error');
+          isValid = false;
+        }
+      }
+
+      return isValid;
+
+    case 3: // SSL configuration
+      if (state.settings.ssl_enabled && state.settings.type !== 'stream') {
+        const certId = wizard.querySelector('#wizardCertificate')?.value;
+        if (!certId) {
+          wizard.querySelector('#wizardCertificate')?.closest('.wizard-form-group')?.classList.add('has-error');
+          showError('Please select an SSL certificate');
+          return false;
+        }
+      }
+      return true;
+
+    case 4: // Module selection (optional)
+    case 5: // Advanced options (optional)
+      return true;
+
+    case 6: // Preview
+      return true;
+
+    default:
+      return true;
+  }
+}
+
+/**
+ * Collect data from current step
+ */
+function collectStepData(wizard, state) {
+  switch (state.currentStep) {
+    case 1:
+      // Recipe already collected in click handler
+      break;
+
+    case 2:
+      // Basic settings
+      state.settings.name = wizard.querySelector('#wizardName')?.value.trim() || '';
+      state.settings.type = wizard.querySelector('#wizardType')?.value || 'reverse';
+      state.settings.domains = wizard.querySelector('#wizardDomains')?.value.trim() || '';
+      state.settings.forward_scheme = wizard.querySelector('#wizardForwardScheme')?.value || 'http';
+      state.settings.forward_host = wizard.querySelector('#wizardForwardHost')?.value.trim() || '';
+      state.settings.forward_port = wizard.querySelector('#wizardForwardPort')?.value || '';
+      state.settings.listen_port = wizard.querySelector('#wizardListenPort')?.value || 80;
+      state.settings.target_port = wizard.querySelector('#wizardTargetPort')?.value || 443;
+      break;
+
+    case 3:
+      // SSL configuration
+      const sslEnabledCheckbox = wizard.querySelector('#wizardSSLEnabled');
+      state.settings.ssl_enabled = sslEnabledCheckbox?.checked || false;
+      state.settings.certificate_id = wizard.querySelector('#wizardCertificate')?.value || null;
+      break;
+
+    case 4:
+      // Module selection
+      state.selectedModules = [];
+      wizard.querySelectorAll('.module-checkbox-item input[type="checkbox"]:checked:not(:disabled)').forEach(checkbox => {
+        const moduleId = checkbox.dataset.moduleId;
+        const moduleName = checkbox.dataset.moduleName;
+
+        // Find full module data
+        for (const tag in state.availableModules) {
+          const found = state.availableModules[tag].find(m => m.id == moduleId);
+          if (found) {
+            state.selectedModules.push(found);
+            break;
+          }
+        }
+      });
+      break;
+
+    case 5:
+      // Advanced options
+      state.advanced.waf_profile_id = wizard.querySelector('#wizardWAFProfile')?.value || null;
+      state.advanced.launch_url = wizard.querySelector('#wizardLaunchURL')?.value.trim() || '';
+      state.advanced.custom_directives = wizard.querySelector('#wizardCustomDirectives')?.value.trim() || '';
+      break;
+  }
+}
+
+/**
+ * Update wizard UI for current step
+ */
+async function updateWizardUI(wizard, state, currentConfig, onComplete) {
+  const contentDiv = wizard.querySelector('#wizardStepContent');
+  const nextBtn = wizard.querySelector('#wizardNext');
+  const backBtn = wizard.querySelector('#wizardBack');
+
+  // Update progress indicators
+  wizard.querySelectorAll('.wizard-step-indicator').forEach((indicator, index) => {
+    const stepNum = index + 1;
+    indicator.classList.remove('active', 'completed');
+
+    if (stepNum === state.currentStep) {
+      indicator.classList.add('active');
+    } else if (stepNum < state.currentStep) {
+      indicator.classList.add('completed');
+    }
+  });
+
+  // Update button states
+  backBtn.disabled = state.currentStep === 1;
+
+  // Update content and button text
+  let newContent = '';
+
+  switch (state.currentStep) {
+    case 1:
+      newContent = createStep1RecipeSelection(state);
+      nextBtn.textContent = 'Next';
+      break;
+    case 2:
+      newContent = createStep2BasicSettings(state);
+      nextBtn.textContent = 'Next';
+      break;
+    case 3:
+      newContent = createStep3SSLConfiguration(state);
+      nextBtn.textContent = 'Next';
+
+      // Setup SSL toggle handler
+      setTimeout(() => {
+        const sslToggle = wizard.querySelector('#wizardSSLEnabled');
+        if (sslToggle) {
+          sslToggle.addEventListener('change', () => {
+            state.settings.ssl_enabled = sslToggle.checked;
+            updateWizardUI(wizard, state, currentConfig, onComplete);
+          });
+        }
+      }, 0);
+      break;
+    case 4:
+      newContent = createStep4ModuleSelection(state);
+      nextBtn.textContent = 'Next';
+
+      // Setup module category expand/collapse
+      setTimeout(() => {
+        wizard.querySelectorAll('.module-category-header').forEach(header => {
+          header.addEventListener('click', () => {
+            const category = header.closest('.module-category');
+            category.classList.toggle('expanded');
+          });
+        });
+      }, 0);
+      break;
+    case 5:
+      newContent = createStep5AdvancedOptions(state);
+      nextBtn.textContent = 'Next';
+      break;
+    case 6:
+      // Generate config preview
+      const generatedConfig = await generateConfigPreview(state);
+      newContent = createStep6Preview(state, generatedConfig);
+      nextBtn.style.display = 'none';
+
+      // Setup "Use Template" button
+      setTimeout(() => {
+        const useTemplateBtn = wizard.querySelector('#wizardUseTemplate');
+        if (useTemplateBtn) {
+          useTemplateBtn.addEventListener('click', () => {
+            // Check if current config has content
+            if (currentConfig && currentConfig.trim().length > 50) {
+              showConfirmDialog(
+                'Replace Current Configuration?',
+                'This will replace your current configuration in the editor. This action cannot be undone. Are you sure you want to continue?',
+                () => {
+                  // User confirmed
+                  wizard.remove();
+                  onComplete({
+                    config: generatedConfig,
+                    name: state.settings.name,
+                    launchUrl: state.advanced.launch_url,
+                    wafProfileId: state.advanced.waf_profile_id
+                  });
+                }
+              );
+            } else {
+              // No content, just apply
+              wizard.remove();
+              onComplete({
+                config: generatedConfig,
+                name: state.settings.name,
+                launchUrl: state.advanced.launch_url,
+                wafProfileId: state.advanced.waf_profile_id
+              });
+            }
+          });
+        }
+      }, 0);
+      break;
+  }
+
+  contentDiv.innerHTML = newContent;
+
+  // Re-setup recipe click handlers for step 1
+  if (state.currentStep === 1) {
+    setTimeout(() => {
+      wizard.querySelectorAll('.recipe-card').forEach(card => {
+        card.addEventListener('click', () => {
+          const recipeId = card.dataset.recipeId;
+          state.recipe = RECIPE_DEFINITIONS[recipeId];
+
+          // Apply recipe defaults
+          if (state.recipe && state.recipe.id !== 'custom') {
+            state.settings.type = state.recipe.type;
+            state.settings.ssl_enabled = state.recipe.ssl;
+            state.settings.forward_scheme = state.recipe.settings.forward_scheme;
+            state.settings.forward_host = state.recipe.settings.forward_host;
+            state.settings.forward_port = state.recipe.settings.forward_port;
+
+            // Pre-select modules
+            state.selectedModules = [];
+            state.recipe.modules.forEach(moduleName => {
+              for (const tag in state.availableModules) {
+                const found = state.availableModules[tag].find(m => m.name === moduleName);
+                if (found) {
+                  state.selectedModules.push(found);
+                }
+              }
+            });
+          }
+
+          wizard.querySelectorAll('.recipe-card').forEach(c => c.classList.remove('selected'));
+          card.classList.add('selected');
+        });
+      });
+    }, 0);
+  }
+}
+
+/**
+ * Generate config preview
+ */
+async function generateConfigPreview(state) {
+  try {
+    // Call template API
+    const templateResponse = await api.request('/api/config/template', {
+      method: 'POST',
+      body: {
+        type: state.settings.type,
+        name: state.settings.name,
+        options: {
+          ssl_enabled: state.settings.ssl_enabled
+        }
+      }
+    });
+
+    let config = templateResponse.config;
+
+    // Replace placeholders based on type
+    if (state.settings.type === 'reverse' || state.settings.type === '404') {
+      // Replace domains - use exact user-entered domains only (no automatic www)
+      const userDomains = state.settings.domains.trim();
+
+      // Replace the entire "example.com www.example.com" pattern with just user domains
+      // This handles the template's default pattern: "server_name example.com www.example.com;"
+      config = config.replace(/server_name\s+example\.com\s+www\.example\.com;/g, `server_name ${userDomains};`);
+
+      // Also handle single example.com (in case template format changes)
+      config = config.replace(/server_name\s+example\.com;/g, `server_name ${userDomains};`);
+
+      // Replace backend for reverse proxy
+      if (state.settings.type === 'reverse') {
+        const backendUrl = `${state.settings.forward_scheme}://${state.settings.forward_host}:${state.settings.forward_port}`;
+        config = config.replace(/http:\/\/localhost:8080/g, backendUrl);
+        config = config.replace(/proxy_pass [^;]+;/g, `proxy_pass ${backendUrl};`);
+      }
+    }
+
+    // Apply certificate if SSL enabled
+    if (state.settings.ssl_enabled && state.settings.certificate_id) {
+      const cert = state.certificates.find(c => c.id == state.settings.certificate_id);
+      if (cert) {
+        config = config.replace(/ssl_certificate\s+.*;/g, `ssl_certificate ${cert.cert_path};`);
+        config = config.replace(/ssl_certificate_key\s+.*;/g, `ssl_certificate_key ${cert.key_path};`);
+      }
+    }
+
+    // Add WAF configuration if profile is selected
+    if (state.advanced.waf_profile_id && state.wafProfiles && state.wafProfiles.length > 0) {
+      const wafProfile = state.wafProfiles.find(p => p.id == state.advanced.waf_profile_id);
+      if (wafProfile) {
+        // Generate WAF directives
+        const config_data = wafProfile.config_json ? JSON.parse(wafProfile.config_json) : {};
+        const ruleEngineMode = config_data.rule_engine_mode || 'DetectionOnly';
+
+        let wafConfig = `\n  # ═════════════════════════════════════════════════════\n`;
+        wafConfig += `  # WAF Protection: ${wafProfile.name}\n`;
+        wafConfig += `  # Paranoia Level: ${wafProfile.paranoia_level}\n`;
+        wafConfig += `  # Rule Engine Mode: ${ruleEngineMode}\n`;
+        wafConfig += `  # ═════════════════════════════════════════════════════\n\n`;
+        wafConfig += `  modsecurity on;\n`;
+        wafConfig += `  modsecurity_rules_file /nginx-proxy-orchestra/data/modsec-profiles/exclusions_profile_${wafProfile.id}.conf;\n`;
+        wafConfig += `  modsecurity_rules_file /etc/nginx/modsec/main.conf;\n`;
+        wafConfig += `  modsecurity_rules_file /nginx-proxy-orchestra/data/modsec-profiles/profile_${wafProfile.id}.conf;\n`;
+        wafConfig += `\n`;
+
+        // Insert WAF config in HTTPS server block (after SSL config, before ACME/locations)
+        // WAF should be in the main HTTPS server block, not HTTP redirect
+        const lines = config.split('\n');
+        let inHttpsServer = false;
+        let foundSSLCipherLine = false;
+
+        for (let i = 0; i < lines.length; i++) {
+          const line = lines[i];
+
+          // Detect HTTPS server block by listen 443
+          if (line.includes('listen 443 ssl') || line.includes('listen 443 quic')) {
+            inHttpsServer = true;
+          }
+
+          // Insert WAF config after SSL configuration (after ssl_prefer_server_ciphers line)
+          // This ensures it's in HTTPS block and before ACME/location blocks
+          if (inHttpsServer && !foundSSLCipherLine && line.includes('ssl_prefer_server_ciphers')) {
+            lines[i] = line + wafConfig;
+            foundSSLCipherLine = true;
+            break;
+          }
+        }
+
+        // If no ssl_prefer_server_ciphers found, try after server_name in HTTPS block
+        if (!foundSSLCipherLine) {
+          inHttpsServer = false;
+          for (let i = 0; i < lines.length; i++) {
+            const line = lines[i];
+
+            if (line.includes('listen 443 ssl') || line.includes('listen 443 quic')) {
+              inHttpsServer = true;
+            }
+
+            if (inHttpsServer && line.match(/server_name\s+[^;]+;/)) {
+              lines[i] = line + wafConfig;
+              break;
+            }
+          }
+        }
+
+        config = lines.join('\n');
+      }
+    }
+
+    // Insert selected modules - ONLY in HTTPS server block (listen 443)
+    if (state.selectedModules.length > 0) {
+      const serverModules = state.selectedModules.filter(m => m.level === 'server');
+      const locationModules = state.selectedModules.filter(m => m.level === 'location');
+      const redirectModules = state.selectedModules.filter(m => m.level === 'redirect');
+
+      // Check if HTTP/3 (QUIC) module is enabled - need to add QUIC listeners
+      const hasHTTP3 = state.selectedModules.some(m => m.name === 'HTTP/3 (QUIC)');
+      if (hasHTTP3 && state.settings.ssl_enabled) {
+        // Replace listen 443 ssl with QUIC-enabled listeners in HTTPS server block
+        // Find the HTTPS server block (not the HTTP redirect block)
+        const lines = config.split('\n');
+        let inHttpsServer = false;
+        let foundFirstSSLListener = false;
+
+        for (let i = 0; i < lines.length; i++) {
+          const line = lines[i];
+
+          // Detect HTTPS server block by finding "listen 443 ssl"
+          if (line.match(/listen\s+443\s+ssl/) && !foundFirstSSLListener) {
+            inHttpsServer = true;
+            foundFirstSSLListener = true;
+          }
+
+          // Replace the listen directives in HTTPS server block
+          if (inHttpsServer) {
+            if (line.match(/^\s*listen\s+443\s+ssl;$/)) {
+              lines[i] = '    listen 443 quic;\n    listen 443 ssl;';
+            } else if (line.match(/^\s*listen\s+\[::\]:443\s+ssl;$/)) {
+              lines[i] = '    listen [::]:443 quic;\n    listen [::]:443 ssl;';
+              inHttpsServer = false; // Done with HTTPS server block listeners
+            }
+          }
+        }
+
+        config = lines.join('\n');
+      }
+
+      // Insert server-level modules in HTTPS server block only (after listen 443 and server_name)
+      if (serverModules.length > 0) {
+        const serverModuleContent = serverModules.map(m => `    ${m.content}`).join('\n');
+
+        // Target HTTPS server block specifically (listen 443)
+        config = config.replace(/(listen\s+443\s+ssl[^;]*;[\s\S]*?server_name[^;]+;)/,
+          `$1\n\n    # Server-level modules\n${serverModuleContent}`);
+      }
+
+      // Check if Real IP module is selected - need to remove default proxy headers to avoid duplicates
+      const hasRealIP = state.selectedModules.some(m => m.name === 'Real IP');
+      if (hasRealIP) {
+        // Remove default proxy headers that will be duplicated by Real IP module
+        const lines = config.split('\n');
+        const filteredLines = lines.filter(line => {
+          // Remove default X-Real-IP, X-Forwarded-For, X-Forwarded-Proto headers in location blocks
+          // But keep them in the template comments
+          if (line.includes('proxy_set_header') &&
+              (line.includes('X-Real-IP') ||
+               line.includes('X-Forwarded-For') ||
+               line.includes('X-Forwarded-Proto')) &&
+              !line.trim().startsWith('#')) {
+            // Only remove if it's the default value, not custom
+            if (line.includes('$remote_addr') ||
+                line.includes('$proxy_add_x_forwarded_for') ||
+                line.includes('$scheme')) {
+              return false;
+            }
+          }
+          return true;
+        });
+        config = filteredLines.join('\n');
+      }
+
+      // Insert location-level modules in HTTPS server block only
+      if (locationModules.length > 0 || redirectModules.length > 0) {
+        const allLocationModules = [...locationModules, ...redirectModules];
+        const locationModuleContent = allLocationModules.map(m => `        ${m.content}`).join('\n');
+
+        // Find the HTTPS server block by searching for "listen 443 ssl"
+        // Then find the location / block within it
+        const lines = config.split('\n');
+        let inHttpsServer = false;
+        let braceDepth = 0;
+        let httpsServerStart = -1;
+        let foundLocationSlash = false;
+
+        for (let i = 0; i < lines.length; i++) {
+          const line = lines[i];
+
+          // Detect start of HTTPS server block
+          if (line.includes('listen 443 ssl')) {
+            inHttpsServer = true;
+            // Find the server { line before this
+            for (let j = i - 1; j >= 0; j--) {
+              if (lines[j].match(/^\s*server\s*\{/)) {
+                httpsServerStart = j;
+                braceDepth = 1;
+                break;
+              }
+            }
+          }
+
+          // If we're in the HTTPS server block, look for location /
+          if (inHttpsServer && httpsServerStart >= 0) {
+            // Track brace depth
+            const openBraces = (line.match(/\{/g) || []).length;
+            const closeBraces = (line.match(/\}/g) || []).length;
+            braceDepth += openBraces - closeBraces;
+
+            // Found location / block - insert modules after the opening brace
+            if (line.match(/location\s+\/\s*\{/) && !foundLocationSlash) {
+              lines[i] = line + '\n        # Location-level modules\n' + locationModuleContent;
+              foundLocationSlash = true;
+              break;
+            }
+
+            // Exit HTTPS server block when braces close
+            if (braceDepth === 0) {
+              inHttpsServer = false;
+            }
+          }
+        }
+
+        config = lines.join('\n');
+      }
+
+      // Add custom directives in HTTPS server block only
+      if (state.advanced.custom_directives && state.advanced.custom_directives.trim()) {
+        const lines = config.split('\n');
+        let inHttpsServer = false;
+        let braceDepth = 0;
+        let httpsServerStart = -1;
+        let foundLocationSlash = false;
+
+        for (let i = 0; i < lines.length; i++) {
+          const line = lines[i];
+
+          // Detect start of HTTPS server block
+          if (line.includes('listen 443 ssl')) {
+            inHttpsServer = true;
+            // Find the server { line before this
+            for (let j = i - 1; j >= 0; j--) {
+              if (lines[j].match(/^\s*server\s*\{/)) {
+                httpsServerStart = j;
+                braceDepth = 1;
+                break;
+              }
+            }
+          }
+
+          // If we're in the HTTPS server block, look for location /
+          if (inHttpsServer && httpsServerStart >= 0) {
+            // Track brace depth
+            const openBraces = (line.match(/\{/g) || []).length;
+            const closeBraces = (line.match(/\}/g) || []).length;
+            braceDepth += openBraces - closeBraces;
+
+            // Found location / block - insert custom directives after the opening brace
+            if (line.match(/location\s+\/\s*\{/) && !foundLocationSlash) {
+              const customDirectivesFormatted = state.advanced.custom_directives
+                .split('\n')
+                .map(l => `        ${l}`)
+                .join('\n');
+              lines[i] = line + '\n        # Custom directives\n' + customDirectivesFormatted;
+              foundLocationSlash = true;
+              break;
+            }
+
+            // Exit HTTPS server block when braces close
+            if (braceDepth === 0) {
+              inHttpsServer = false;
+            }
+          }
+        }
+
+        config = lines.join('\n');
+      }
+    }
+
+    return config;
+
+  } catch (error) {
+    console.error('Error generating config:', error);
+    return '# Error generating configuration\n# Please try again or contact support';
+  }
+}
+
+/**
+ * Show confirmation dialog
+ */
+function showConfirmDialog(title, message, onConfirm) {
+  const dialogHTML = `
+    <div class="confirm-dialog-overlay" id="confirmDialog">
+      <div class="confirm-dialog">
+        <div class="confirm-dialog-header">
+          <h3 class="confirm-dialog-title">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+              <line x1="12" y1="9" x2="12" y2="13"></line>
+              <line x1="12" y1="17" x2="12.01" y2="17"></line>
+            </svg>
+            ${escapeHtml(title)}
+          </h3>
+        </div>
+        <div class="confirm-dialog-body">
+          <p class="confirm-dialog-message">${escapeHtml(message)}</p>
+        </div>
+        <div class="confirm-dialog-footer">
+          <button class="wizard-btn wizard-btn-secondary" id="confirmDialogCancel">Cancel</button>
+          <button class="wizard-btn wizard-btn-primary" id="confirmDialogConfirm">Yes, Replace</button>
+        </div>
+      </div>
+    </div>
+  `;
+
+  document.body.insertAdjacentHTML('beforeend', dialogHTML);
+
+  const dialog = document.getElementById('confirmDialog');
+  const cancelBtn = dialog.querySelector('#confirmDialogCancel');
+  const confirmBtn = dialog.querySelector('#confirmDialogConfirm');
+
+  const closeDialog = () => dialog.remove();
+
+  cancelBtn.addEventListener('click', closeDialog);
+  confirmBtn.addEventListener('click', () => {
+    closeDialog();
+    onConfirm();
+  });
+
+  // Close on overlay click
+  dialog.addEventListener('click', (e) => {
+    if (e.target.id === 'confirmDialog') {
+      closeDialog();
+    }
+  });
+}
+

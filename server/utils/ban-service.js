@@ -127,6 +127,42 @@ async function banIP(ip, options = {}) {
     // Ignore circular dependency errors during startup
   }
 
+  // Send notification
+  try {
+    const { notifyBanIssued } = require('./notification-service');
+
+    // Get detection rule name if applicable
+    let detection_rule = null;
+    if (detection_rule_id) {
+      const rule = db.prepare('SELECT name FROM ips_detection_rules WHERE id = ?').get(detection_rule_id);
+      detection_rule = rule?.name;
+    }
+
+    // Get username if manually banned
+    let banned_by_username = null;
+    if (banned_by) {
+      const user = db.prepare('SELECT username FROM users WHERE id = ?').get(banned_by);
+      banned_by_username = user?.username;
+    }
+
+    notifyBanIssued({
+      ip_address: ip,
+      reason,
+      attack_type,
+      event_count,
+      severity,
+      ban_duration,
+      detection_rule,
+      auto_banned,
+      banned_by_username
+    }).catch(err => {
+      console.error('Failed to send ban notification:', err.message);
+    });
+  } catch (error) {
+    // Ignore errors during notification
+    console.error('Error sending ban notification:', error.message);
+  }
+
   return {
     success: true,
     ban_id: banId,
@@ -182,6 +218,31 @@ async function unbanIP(ip, unbanned_by = null) {
       // Ignore circular dependency errors during startup
     }
 
+    // Send notification
+    try {
+      const { notifyBanCleared } = require('./notification-service');
+
+      let unbanned_by_username = null;
+      if (unbanned_by) {
+        const user = db.prepare('SELECT username FROM users WHERE id = ?').get(unbanned_by);
+        unbanned_by_username = user?.username;
+      }
+
+      notifyBanCleared({
+        ip_address: ip,
+        reason: ban.reason,
+        banned_at: ban.banned_at,
+        expires_at: ban.expires_at,
+        manual: !!unbanned_by,
+        unbanned_by_username,
+        auto_banned: ban.auto_banned
+      }).catch(err => {
+        console.error('Failed to send ban cleared notification:', err.message);
+      });
+    } catch (error) {
+      console.error('Error sending ban cleared notification:', error.message);
+    }
+
     return {
       success: true,
       message: 'Ban removed (no upstream integrations to notify)'
@@ -222,6 +283,31 @@ async function unbanIP(ip, unbanned_by = null) {
     // Ignore circular dependency errors during startup
   }
 
+  // Send notification
+  try {
+    const { notifyBanCleared } = require('./notification-service');
+
+    let unbanned_by_username = null;
+    if (unbanned_by) {
+      const user = db.prepare('SELECT username FROM users WHERE id = ?').get(unbanned_by);
+      unbanned_by_username = user?.username;
+    }
+
+    notifyBanCleared({
+      ip_address: ip,
+      reason: ban.reason,
+      banned_at: ban.banned_at,
+      expires_at: ban.expires_at,
+      manual: !!unbanned_by,
+      unbanned_by_username,
+      auto_banned: ban.auto_banned
+    }).catch(err => {
+      console.error('Failed to send ban cleared notification:', err.message);
+    });
+  } catch (error) {
+    console.error('Error sending ban cleared notification:', error.message);
+  }
+
   return {
     success: true,
     integrations_queued: integrationsNotified.length,
@@ -232,27 +318,45 @@ async function unbanIP(ip, unbanned_by = null) {
 /**
  * Make a ban permanent
  */
-function makeBanPermanent(ip) {
-  const result = db.prepare(`
-    UPDATE ip_bans
-    SET expires_at = NULL
+async function makeBanPermanent(ip) {
+  // Get the ban ID before updating
+  const ban = db.prepare(`
+    SELECT id FROM ip_bans
     WHERE ip_address = ?
       AND unbanned_at IS NULL
       AND (expires_at IS NULL OR expires_at > CURRENT_TIMESTAMP)
-  `).run(ip);
+  `).get(ip);
 
-  if (result.changes === 0) {
+  if (!ban) {
     return {
       success: false,
       message: 'No active ban found for this IP'
     };
   }
 
+  // Update database to make ban permanent
+  db.prepare(`
+    UPDATE ip_bans
+    SET expires_at = NULL
+    WHERE id = ?
+  `).run(ban.id);
+
   console.log(`✓ Made ban permanent for IP ${ip}`);
+
+  // Sync with firewall to update from temporary to permanent
+  try {
+    const { getBanSyncService } = require('./ban-sync-service');
+    const syncService = getBanSyncService();
+    await syncService.updateBanExpiry(ban.id, null);
+    console.log(`✓ Synced permanent ban to firewall for ${ip}`);
+  } catch (error) {
+    console.error(`⚠️  Failed to sync permanent ban to firewall for ${ip}:`, error.message);
+    // Don't fail the operation, just log the error
+  }
 
   return {
     success: true,
-    message: 'Ban is now permanent'
+    message: 'Ban is now permanent and synced to firewall'
   };
 }
 

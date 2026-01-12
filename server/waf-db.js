@@ -80,10 +80,13 @@ function initializeWAFDatabase() {
 class WAFEventBatcher {
   constructor() {
     this.buffer = [];
-    this.maxBufferSize = 100;
+    this.maxBufferSize = 100; // Flush threshold
+    this.absoluteMaxBufferSize = 10000; // Hard limit to prevent memory exhaustion
     this.flushInterval = 2000; // 2 seconds
     this.flushTimer = null;
     this.insertStmt = null;
+    this.droppedEventCount = 0;
+    this.lastWarningTime = 0;
   }
 
   start() {
@@ -99,7 +102,23 @@ class WAFEventBatcher {
   }
 
   addEvent(event) {
+    // Check if buffer has reached absolute maximum
+    if (this.buffer.length >= this.absoluteMaxBufferSize) {
+      // Drop oldest event (FIFO) to prevent memory exhaustion
+      this.buffer.shift();
+      this.droppedEventCount++;
+
+      // Log warning at most once per minute to avoid log spam
+      const now = Date.now();
+      if (now - this.lastWarningTime > 60000) {
+        console.warn(`⚠️  WAF event buffer at capacity (${this.absoluteMaxBufferSize} events). Dropping oldest events. Total dropped: ${this.droppedEventCount}`);
+        this.lastWarningTime = now;
+      }
+    }
+
     this.buffer.push(event);
+
+    // Trigger flush if we've reached the normal flush threshold
     if (this.buffer.length >= this.maxBufferSize) {
       this.flush();
     }
@@ -125,9 +144,30 @@ class WAFEventBatcher {
 
       insertMany(eventsToInsert);
 
+      // Reset dropped event counter on successful flush
+      if (this.droppedEventCount > 0) {
+        console.log(`✓ WAF event buffer recovered. Total events dropped during high load: ${this.droppedEventCount}`);
+        this.droppedEventCount = 0;
+      }
+
     } catch (error) {
       console.error('Error flushing WAF events:', error);
-      this.buffer.unshift(...eventsToInsert);
+
+      // Only re-queue events if buffer won't exceed absolute maximum
+      const spaceAvailable = this.absoluteMaxBufferSize - this.buffer.length;
+      if (spaceAvailable > 0) {
+        const eventsToRequeue = eventsToInsert.slice(0, spaceAvailable);
+        this.buffer.unshift(...eventsToRequeue);
+
+        if (eventsToInsert.length > spaceAvailable) {
+          const dropped = eventsToInsert.length - spaceAvailable;
+          this.droppedEventCount += dropped;
+          console.warn(`⚠️  Dropped ${dropped} events due to buffer capacity limit after flush failure`);
+        }
+      } else {
+        this.droppedEventCount += eventsToInsert.length;
+        console.error(`❌ Buffer full, dropped all ${eventsToInsert.length} failed events`);
+      }
     }
   }
 

@@ -14,6 +14,7 @@ const {
   writeNginxConfig,
   readNginxConfig,
   deleteNginxConfig,
+  forceDeleteNginxConfig,
   enableNginxConfig,
   disableNginxConfig,
   sanitizeFilename
@@ -202,6 +203,10 @@ async function handleAPI(req, res, parsedUrl) {
       return handleDeleteModule(req, res, parsedUrl);
     }
 
+    if (pathname === '/api/modules/snippets' && method === 'GET') {
+      return handleGetModuleSnippets(req, res);
+    }
+
     // SSL certificate routes
     if (pathname === '/api/certificates' && method === 'GET') {
       return handleGetCertificates(req, res);
@@ -262,6 +267,10 @@ async function handleAPI(req, res, parsedUrl) {
 
     if (pathname === '/api/config/save' && method === 'POST') {
       return await handleSaveCustomConfig(req, res);
+    }
+
+    if (pathname === '/api/config/template' && method === 'POST') {
+      return await handleGetConfigTemplate(req, res);
     }
 
     if (pathname.startsWith('/api/config/raw/') && method === 'GET') {
@@ -436,11 +445,23 @@ async function handleAPI(req, res, parsedUrl) {
     }
 
     if (pathname.match(/^\/api\/ban\/bans\/\d+\/permanent$/) && method === 'PUT') {
-      return handleMakeBanPermanent(req, res, parsedUrl);
+      return await handleMakeBanPermanent(req, res, parsedUrl);
     }
 
     if (pathname === '/api/ban/bans/stats' && method === 'GET') {
       return handleGetBanStats(req, res);
+    }
+
+    if (pathname === '/api/ban/bans/sync' && method === 'POST') {
+      return await handleSyncAllBans(req, res);
+    }
+
+    if (pathname.match(/^\/api\/ban\/bans\/sync\/[\d\.:]+$/) && method === 'POST') {
+      return await handleSyncSingleIP(req, res, parsedUrl);
+    }
+
+    if (pathname === '/api/ban/sync/status' && method === 'GET') {
+      return handleGetSyncStatus(req, res);
     }
 
     // IP Whitelist
@@ -802,35 +823,44 @@ async function handleCreateProxy(req, res) {
 
     // Insert proxy with initial status (default to enabled if not specified)
     const isEnabled = enabled !== undefined ? (enabled ? 1 : 0) : 1;
-    const result = db.prepare(`
-      INSERT INTO proxy_hosts (name, type, domain_names, forward_scheme, forward_host, forward_port,
-                                ssl_enabled, ssl_cert_id, advanced_config, config_filename, config_status,
-                                stream_protocol, incoming_port, enabled)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?)
-    `).run(name, type || 'reverse', domain_names, forward_scheme || 'http', forward_host, forward_port,
-           ssl_enabled ? 1 : 0, ssl_cert_id || null, advanced_config || null, configFilename,
-           stream_protocol || null, incoming_port || null, isEnabled);
 
-    proxyId = result.lastInsertRowid;
+    // Wrap database operations in a transaction for atomicity
+    const createProxyTransaction = db.transaction(() => {
+      const result = db.prepare(`
+        INSERT INTO proxy_hosts (name, type, domain_names, forward_scheme, forward_host, forward_port,
+                                  ssl_enabled, ssl_cert_id, advanced_config, config_filename, config_status,
+                                  stream_protocol, incoming_port, enabled)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?)
+      `).run(name, type || 'reverse', domain_names, forward_scheme || 'http', forward_host, forward_port,
+             ssl_enabled ? 1 : 0, ssl_cert_id || null, advanced_config || null, configFilename,
+             stream_protocol || null, incoming_port || null, isEnabled);
 
-    // Associate modules
-    if (module_ids && Array.isArray(module_ids)) {
-      const insertModule = db.prepare('INSERT INTO proxy_modules (proxy_id, module_id) VALUES (?, ?)');
-      for (const moduleId of module_ids) {
-        insertModule.run(proxyId, moduleId);
+      proxyId = result.lastInsertRowid;
+
+      // Associate modules
+      if (module_ids && Array.isArray(module_ids)) {
+        const insertModule = db.prepare('INSERT INTO proxy_modules (proxy_id, module_id) VALUES (?, ?)');
+        for (const moduleId of module_ids) {
+          insertModule.run(proxyId, moduleId);
+        }
       }
-    }
 
-    // Auto-enable Force HTTPS module for SSL-enabled proxies
-    if (ssl_enabled) {
-      const forceHTTPSModule = db.prepare('SELECT id FROM modules WHERE name = ?').get('Force HTTPS');
-      if (forceHTTPSModule) {
-        db.prepare(`
-          INSERT OR IGNORE INTO proxy_modules (proxy_id, module_id)
-          VALUES (?, ?)
-        `).run(proxyId, forceHTTPSModule.id);
+      // Auto-enable Force HTTPS module for SSL-enabled proxies
+      if (ssl_enabled) {
+        const forceHTTPSModule = db.prepare('SELECT id FROM modules WHERE name = ?').get('Force HTTPS');
+        if (forceHTTPSModule) {
+          db.prepare(`
+            INSERT OR IGNORE INTO proxy_modules (proxy_id, module_id)
+            VALUES (?, ?)
+          `).run(proxyId, forceHTTPSModule.id);
+        }
       }
-    }
+
+      return proxyId;
+    });
+
+    // Execute transaction
+    proxyId = createProxyTransaction();
 
     // Get proxy with modules for config generation
     const proxy = db.prepare('SELECT * FROM proxy_hosts WHERE id = ?').get(proxyId);
@@ -928,43 +958,49 @@ async function handleUpdateProxy(req, res, parsedUrl) {
   const { name, domain_names, forward_scheme, forward_host, forward_port, ssl_enabled, ssl_cert_id, advanced_config, module_ids, stream_protocol, incoming_port } = body;
 
   try {
-    db.prepare(`
-      UPDATE proxy_hosts
-      SET name = ?, domain_names = ?, forward_scheme = ?, forward_host = ?, forward_port = ?,
-          ssl_enabled = ?, ssl_cert_id = ?, advanced_config = ?, stream_protocol = ?, incoming_port = ?,
-          updated_at = CURRENT_TIMESTAMP
-      WHERE id = ?
-    `).run(name || proxy.name, domain_names || proxy.domain_names, forward_scheme || proxy.forward_scheme,
-           forward_host || proxy.forward_host, forward_port || proxy.forward_port,
-           ssl_enabled !== undefined ? (ssl_enabled ? 1 : 0) : proxy.ssl_enabled,
-           ssl_cert_id !== undefined ? ssl_cert_id : proxy.ssl_cert_id,
-           advanced_config !== undefined ? advanced_config : proxy.advanced_config,
-           stream_protocol !== undefined ? stream_protocol : proxy.stream_protocol,
-           incoming_port !== undefined ? incoming_port : proxy.incoming_port,
-           id);
+    // Wrap database operations in a transaction for atomicity
+    const updateProxyTransaction = db.transaction(() => {
+      db.prepare(`
+        UPDATE proxy_hosts
+        SET name = ?, domain_names = ?, forward_scheme = ?, forward_host = ?, forward_port = ?,
+            ssl_enabled = ?, ssl_cert_id = ?, advanced_config = ?, stream_protocol = ?, incoming_port = ?,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+      `).run(name || proxy.name, domain_names || proxy.domain_names, forward_scheme || proxy.forward_scheme,
+             forward_host || proxy.forward_host, forward_port || proxy.forward_port,
+             ssl_enabled !== undefined ? (ssl_enabled ? 1 : 0) : proxy.ssl_enabled,
+             ssl_cert_id !== undefined ? ssl_cert_id : proxy.ssl_cert_id,
+             advanced_config !== undefined ? advanced_config : proxy.advanced_config,
+             stream_protocol !== undefined ? stream_protocol : proxy.stream_protocol,
+             incoming_port !== undefined ? incoming_port : proxy.incoming_port,
+             id);
 
-    // Update modules
-    if (module_ids !== undefined) {
-      db.prepare('DELETE FROM proxy_modules WHERE proxy_id = ?').run(id);
-      if (Array.isArray(module_ids) && module_ids.length > 0) {
-        const insertModule = db.prepare('INSERT INTO proxy_modules (proxy_id, module_id) VALUES (?, ?)');
-        for (const moduleId of module_ids) {
-          insertModule.run(id, moduleId);
+      // Update modules
+      if (module_ids !== undefined) {
+        db.prepare('DELETE FROM proxy_modules WHERE proxy_id = ?').run(id);
+        if (Array.isArray(module_ids) && module_ids.length > 0) {
+          const insertModule = db.prepare('INSERT INTO proxy_modules (proxy_id, module_id) VALUES (?, ?)');
+          for (const moduleId of module_ids) {
+            insertModule.run(id, moduleId);
+          }
         }
       }
-    }
 
-    // Auto-enable Force HTTPS module if SSL is being enabled
-    const finalSSLState = ssl_enabled !== undefined ? ssl_enabled : proxy.ssl_enabled;
-    if (finalSSLState) {
-      const forceHTTPSModule = db.prepare('SELECT id FROM modules WHERE name = ?').get('Force HTTPS');
-      if (forceHTTPSModule) {
-        db.prepare(`
-          INSERT OR IGNORE INTO proxy_modules (proxy_id, module_id)
-          VALUES (?, ?)
-        `).run(id, forceHTTPSModule.id);
+      // Auto-enable Force HTTPS module if SSL is being enabled
+      const finalSSLState = ssl_enabled !== undefined ? ssl_enabled : proxy.ssl_enabled;
+      if (finalSSLState) {
+        const forceHTTPSModule = db.prepare('SELECT id FROM modules WHERE name = ?').get('Force HTTPS');
+        if (forceHTTPSModule) {
+          db.prepare(`
+            INSERT OR IGNORE INTO proxy_modules (proxy_id, module_id)
+            VALUES (?, ?)
+          `).run(id, forceHTTPSModule.id);
+        }
       }
-    }
+    });
+
+    // Execute transaction
+    updateProxyTransaction();
 
     // Regenerate config
     const updatedProxy = db.prepare('SELECT * FROM proxy_hosts WHERE id = ?').get(id);
@@ -1158,6 +1194,25 @@ function handleDeleteModule(req, res, parsedUrl) {
   } catch (error) {
     sendJSON(res, { error: error.message }, 500);
   }
+}
+
+function handleGetModuleSnippets(req, res) {
+  // Get all modules except Gzip Compression (always enabled)
+  const modules = db.prepare(`
+    SELECT id, name, description, content, level
+    FROM modules
+    WHERE name != 'Gzip Compression'
+    ORDER BY level, name
+  `).all();
+
+  // Group by level
+  const grouped = {
+    server: modules.filter(m => m.level === 'server'),
+    location: modules.filter(m => m.level === 'location'),
+    redirect: modules.filter(m => m.level === 'redirect')
+  };
+
+  sendJSON(res, grouped);
 }
 
 function handleMigrateCompressionModules(req, res) {
@@ -1613,44 +1668,71 @@ async function handleUpdateSettings(req, res) {
 function handleGetRawConfig(req, res, parsedUrl) {
   const id = parseInt(parsedUrl.pathname.split('/')[4]);
 
-  const proxy = db.prepare('SELECT name, config_filename, advanced_config, type FROM proxy_hosts WHERE id = ?').get(id);
+  const proxy = db.prepare('SELECT * FROM proxy_hosts WHERE id = ?').get(id);
   if (!proxy) {
     return sendJSON(res, { error: 'Proxy not found' }, 404);
   }
 
   try {
-    // If type is 'custom', return the advanced_config field (contains full config)
-    if (proxy.type === 'custom' && proxy.advanced_config) {
-      return sendJSON(res, { config: proxy.advanced_config });
+    let config = proxy.advanced_config;
+
+    // If advanced_config is empty, generate from structured fields (lazy migration)
+    if (!config || !config.trim()) {
+      const { migrateProxyToTextEditor } = require('../utils/config-migration');
+
+      // Get associated modules for this proxy
+      const modules = db.prepare(`
+        SELECT m.* FROM modules m
+        INNER JOIN proxy_modules pm ON m.id = pm.module_id
+        WHERE pm.proxy_id = ?
+      `).all(proxy.id);
+
+      config = migrateProxyToTextEditor(proxy, modules, db);
     }
 
-    // Otherwise, read the actual nginx config file
-    const filename = proxy.config_filename || `${sanitizeFilename(proxy.name)}.conf`;
-    const config = readNginxConfig(filename);
-
-    if (!config) {
-      return sendJSON(res, { error: 'Config file not found' }, 404);
-    }
-
-    sendJSON(res, { config });
+    sendJSON(res, {
+      config,
+      name: proxy.name,
+      type: proxy.type,
+      enabled: proxy.enabled === 1,
+      launch_url: proxy.launch_url || null
+    });
   } catch (error) {
     console.error('Get raw config error:', error);
     sendJSON(res, { error: error.message }, 500);
   }
 }
 
-async function handleTestCustomConfig(req, res) {
+async function handleGetConfigTemplate(req, res) {
   const body = await parseBody(req);
-  const { config, filename } = body;
+  const { type, name, options } = body;
 
-  if (!config || !filename) {
-    return sendJSON(res, { error: 'Config content and filename required' }, 400);
+  if (!type) {
+    return sendJSON(res, { error: 'Proxy type required' }, 400);
   }
 
   try {
-    // Sanitize filename
-    const safeFilename = sanitizeFilename(filename);
-    const testFilename = `test_${Date.now()}_${safeFilename}`;
+    const { getTemplateForType } = require('../utils/config-templates');
+    const config = getTemplateForType(type, name || 'New Proxy', options || {});
+
+    sendJSON(res, { config });
+  } catch (error) {
+    console.error('Get config template error:', error);
+    sendJSON(res, { error: error.message }, 500);
+  }
+}
+
+async function handleTestCustomConfig(req, res) {
+  const body = await parseBody(req);
+  const { config } = body;
+
+  if (!config) {
+    return sendJSON(res, { error: 'Config content required' }, 400);
+  }
+
+  try {
+    // Generate test filename
+    const testFilename = `test_${Date.now()}.conf`;
 
     // Write temporary config file
     writeNginxConfig(testFilename, config);
@@ -1658,9 +1740,9 @@ async function handleTestCustomConfig(req, res) {
     // Test nginx configuration
     const testResult = testNginxConfig();
 
-    // Clean up test file
+    // Clean up test file (force delete, don't rename)
     try {
-      deleteNginxConfig(testFilename);
+      forceDeleteNginxConfig(testFilename);
     } catch (cleanupError) {
       console.error('Test config cleanup error:', cleanupError);
     }
@@ -1675,8 +1757,7 @@ async function handleTestCustomConfig(req, res) {
 
     sendJSON(res, {
       success: true,
-      message: 'Configuration test passed! You can now save this configuration.',
-      filename: `${safeFilename}.conf`
+      message: 'Configuration test passed! You can now save this configuration.'
     });
   } catch (error) {
     console.error('Test custom config error:', error);
@@ -1689,68 +1770,57 @@ async function handleTestCustomConfig(req, res) {
 
 async function handleSaveCustomConfig(req, res) {
   const body = await parseBody(req);
-  const { id, name, config, filename } = body;
+  const { proxyId, name, type, enabled, config, launch_url } = body;
 
-  if (!name || !config || !filename) {
-    return sendJSON(res, { error: 'Name, config content, and filename required' }, 400);
+  if (!name || !config) {
+    return sendJSON(res, { error: 'Name and config content required' }, 400);
   }
 
-  let proxyId = id ? parseInt(id) : null;
-  let isUpdate = false;
+  let finalProxyId = proxyId ? parseInt(proxyId) : null;
+  const isUpdate = !!finalProxyId;
 
   try {
-    // Sanitize filename
-    const safeFilename = sanitizeFilename(filename);
-    const configFilename = `${safeFilename}.conf`;
-
-    // Check if we're updating an existing proxy
-    if (proxyId) {
-      // Updating by ID
-      const existing = db.prepare('SELECT id, name FROM proxy_hosts WHERE id = ?').get(proxyId);
-      if (!existing) {
-        return sendJSON(res, { error: 'Proxy not found' }, 404);
-      }
-      isUpdate = true;
-    } else {
-      // Check if a proxy with this name already exists
-      const existingByName = db.prepare('SELECT id FROM proxy_hosts WHERE name = ?').get(name);
-      if (existingByName) {
-        proxyId = existingByName.id;
-        isUpdate = true;
-      }
-    }
+    // Generate filename from name
+    const safeFilename = sanitizeFilename(name);
+    const configFilename = `${finalProxyId || 'new'}-${safeFilename}.conf`;
 
     // Update or insert
     if (isUpdate) {
       // Update existing proxy
+      const existing = db.prepare('SELECT id FROM proxy_hosts WHERE id = ?').get(finalProxyId);
+      if (!existing) {
+        return sendJSON(res, { error: 'Proxy not found' }, 404);
+      }
+
       db.prepare(`
         UPDATE proxy_hosts
-        SET name = ?, advanced_config = ?, config_filename = ?, config_status = 'pending',
-            type = 'custom', updated_at = CURRENT_TIMESTAMP
+        SET name = ?, type = ?, enabled = ?, advanced_config = ?, launch_url = ?,
+            config_filename = ?, config_status = 'pending', updated_at = CURRENT_TIMESTAMP
         WHERE id = ?
-      `).run(name, config, configFilename, proxyId);
+      `).run(name, type, enabled ? 1 : 0, config, launch_url || null, configFilename, finalProxyId);
     } else {
       // Insert new proxy
       const result = db.prepare(`
-        INSERT INTO proxy_hosts (name, type, domain_names, forward_scheme, forward_host, forward_port,
-                                  ssl_enabled, advanced_config, config_filename, config_status)
-        VALUES (?, 'custom', 'N/A', 'N/A', 'N/A', 0, 0, ?, ?, 'pending')
-      `).run(name, config, configFilename);
-      proxyId = result.lastInsertRowid;
+        INSERT INTO proxy_hosts (name, type, enabled, advanced_config, launch_url, config_filename,
+                                  config_status, domain_names, forward_host, forward_port)
+        VALUES (?, ?, ?, ?, ?, ?, 'pending', 'N/A', 'N/A', 0)
+      `).run(name, type, enabled ? 1 : 0, config, launch_url || null, configFilename);
+      finalProxyId = result.lastInsertRowid;
+
+      // Update filename with actual ID
+      const actualFilename = `${finalProxyId}-${safeFilename}.conf`;
+      db.prepare('UPDATE proxy_hosts SET config_filename = ? WHERE id = ?').run(actualFilename, finalProxyId);
+      configFilename = actualFilename;
     }
 
     // Write nginx config
     writeNginxConfig(configFilename, config);
 
-    // Get the proxy to check its enabled state
-    const proxy = db.prepare('SELECT enabled FROM proxy_hosts WHERE id = ?').get(proxyId);
-    if (proxy && proxy.enabled) {
+    // Enable or disable based on enabled flag
+    if (enabled) {
       enableNginxConfig(configFilename);
-    } else if (proxy && !proxy.enabled) {
-      disableNginxConfig(configFilename);
     } else {
-      // New proxy, default to enabled
-      enableNginxConfig(configFilename);
+      disableNginxConfig(configFilename);
     }
 
     // Test nginx configuration
@@ -1765,47 +1835,38 @@ async function handleSaveCustomConfig(req, res) {
     // Update status to active
     db.prepare(`
       UPDATE proxy_hosts
-      SET config_status = 'active', config_error = NULL, enabled = 1
+      SET config_status = 'active', config_error = NULL
       WHERE id = ?
-    `).run(proxyId);
+    `).run(finalProxyId);
 
-    logAudit(req.user.userId, isUpdate ? 'update' : 'create', 'custom_config', proxyId, JSON.stringify({ name, filename: configFilename }), getClientIP(req));
+    logAudit(req.user.userId, isUpdate ? 'update' : 'create', 'proxy', finalProxyId, JSON.stringify({ name, type, launch_url }), getClientIP(req));
 
     // Get updated proxy for response
-    const updatedProxy = db.prepare('SELECT * FROM proxy_hosts WHERE id = ?').get(proxyId);
+    const updatedProxy = db.prepare('SELECT * FROM proxy_hosts WHERE id = ?').get(finalProxyId);
 
     sendJSON(res, {
       success: true,
-      id: proxyId,
+      proxyId: finalProxyId,
       proxy: updatedProxy,
-      message: isUpdate ? 'Configuration updated and activated successfully!' : 'Custom configuration saved and activated successfully!'
+      message: isUpdate ? 'Proxy updated successfully!' : 'Proxy created successfully!'
     }, isUpdate ? 200 : 201);
   } catch (error) {
-    console.error('Save custom config error:', error);
+    console.error('Save config error:', error);
 
-    // Rollback: mark as error and disabled if proxy was created
-    if (proxyId) {
+    // Rollback: mark as error if proxy was created
+    if (finalProxyId) {
       try {
         db.prepare(`
           UPDATE proxy_hosts
           SET config_status = 'error', config_error = ?, enabled = 0
           WHERE id = ?
-        `).run(error.message || 'Configuration failed', proxyId);
-
-        // Try to clean up config file
-        const safeFilename = sanitizeFilename(filename);
-        const configFilename = `${safeFilename}.conf`;
-        try {
-          deleteNginxConfig(configFilename);
-        } catch (cleanupError) {
-          console.error('Config cleanup error:', cleanupError);
-        }
+        `).run(error.message || 'Configuration failed', finalProxyId);
       } catch (rollbackError) {
         console.error('Rollback error:', rollbackError);
       }
     }
 
-    sendJSON(res, { error: error.message || 'Failed to save custom configuration' }, 500);
+    sendJSON(res, { error: error.message || 'Failed to save configuration' }, 500);
   }
 }
 
@@ -4031,7 +4092,9 @@ function handleGetNotificationSettings(req, res) {
         system_errors: getSetting('notification_system_errors') === '1',
         proxy_changes: getSetting('notification_proxy_changes') === '1',
         cert_expiry: getSetting('notification_cert_expiry') === '1',
-        cert_expiry_days: parseInt(getSetting('notification_cert_expiry_days') || '7')
+        cert_expiry_days: parseInt(getSetting('notification_cert_expiry_days') || '7'),
+        ban_issued: getSetting('notification_ban_issued') === '1',
+        ban_cleared: getSetting('notification_ban_cleared') === '1'
       }
     };
 
@@ -4061,6 +4124,8 @@ async function handleUpdateNotificationSettings(req, res) {
       setSetting('notification_proxy_changes', body.triggers.proxy_changes ? '1' : '0');
       setSetting('notification_cert_expiry', body.triggers.cert_expiry ? '1' : '0');
       setSetting('notification_cert_expiry_days', String(body.triggers.cert_expiry_days || 7));
+      setSetting('notification_ban_issued', body.triggers.ban_issued ? '1' : '0');
+      setSetting('notification_ban_cleared', body.triggers.ban_cleared ? '1' : '0');
     }
 
     logAudit(req.user.id, 'update_notification_settings', 'settings', null,
@@ -4484,7 +4549,7 @@ async function handleUnban(req, res, parsedUrl) {
   }
 }
 
-function handleMakeBanPermanent(req, res, parsedUrl) {
+async function handleMakeBanPermanent(req, res, parsedUrl) {
   try {
     const id = parsedUrl.pathname.split('/')[4];
 
@@ -4493,7 +4558,7 @@ function handleMakeBanPermanent(req, res, parsedUrl) {
       return sendJSON(res, { error: 'Ban not found' }, 404);
     }
 
-    const result = makeBanPermanentService(ban.ip_address);
+    const result = await makeBanPermanentService(ban.ip_address);
 
     if (!result.success) {
       return sendJSON(res, { error: result.message }, 400);
@@ -4528,6 +4593,66 @@ function handleGetBanStats(req, res) {
     });
   } catch (error) {
     console.error('Get ban stats error:', error);
+    sendJSON(res, { error: error.message }, 500);
+  }
+}
+
+async function handleSyncAllBans(req, res) {
+  try {
+    const { getBanSyncService } = require('../utils/ban-sync-service');
+    const syncService = getBanSyncService();
+
+    console.log(`Manual ban sync triggered by user ${req.user.userId}`);
+
+    // Trigger full sync
+    await syncService.syncAllBans();
+
+    logAudit(req.user.userId, 'sync_all_bans', 'ban_system', null, null, getClientIP(req));
+
+    sendJSON(res, {
+      success: true,
+      message: 'Ban synchronization completed successfully'
+    });
+  } catch (error) {
+    console.error('Sync all bans error:', error);
+    sendJSON(res, { error: error.message }, 500);
+  }
+}
+
+async function handleSyncSingleIP(req, res, parsedUrl) {
+  try {
+    const ip = decodeURIComponent(parsedUrl.pathname.split('/')[5]);
+
+    if (!ip) {
+      return sendJSON(res, { error: 'IP address is required' }, 400);
+    }
+
+    const { getBanSyncService } = require('../utils/ban-sync-service');
+    const syncService = getBanSyncService();
+
+    console.log(`Manual sync for IP ${ip} triggered by user ${req.user.userId}`);
+
+    const result = await syncService.syncIP(ip);
+
+    logAudit(req.user.userId, 'sync_single_ip', 'ban_system', null, JSON.stringify({ ip }), getClientIP(req));
+
+    sendJSON(res, result);
+  } catch (error) {
+    console.error('Sync single IP error:', error);
+    sendJSON(res, { error: error.message }, 500);
+  }
+}
+
+function handleGetSyncStatus(req, res) {
+  try {
+    const { getBanSyncService } = require('../utils/ban-sync-service');
+    const syncService = getBanSyncService();
+
+    const status = syncService.getStatus();
+
+    sendJSON(res, status);
+  } catch (error) {
+    console.error('Get sync status error:', error);
     sendJSON(res, { error: error.message }, 500);
   }
 }

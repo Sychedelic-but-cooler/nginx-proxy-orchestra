@@ -212,7 +212,7 @@ function runBanSystemMigration(db) {
         VALUES
         ('High Frequency Attack',
          'Ban IPs that trigger 20+ WAF events in 60 seconds',
-         1, 10, 20, 60, NULL, 'ALL', 3600, 'HIGH'),
+         1, 10, 20, 60, NULL, 'ALL', 21600, 'HIGH'),
 
         ('Critical Attack Pattern',
          'Ban IPs that trigger 5+ CRITICAL severity events in 30 seconds',
@@ -220,11 +220,30 @@ function runBanSystemMigration(db) {
 
         ('SQL Injection Attempts',
          'Ban IPs with 10+ SQL injection attempts in 2 minutes',
-         1, 15, 10, 120, '["SQL Injection"]', 'ALL', 7200, 'HIGH'),
+         1, 15, 10, 120, '["SQL Injection"]', 'ALL', 86400, 'HIGH'),
 
         ('Scanner Detection',
          'Ban automated scanners (15+ events in 2 minutes)',
-         1, 20, 15, 120, '["Scanner Detection"]', 'ALL', 3600, 'MEDIUM')
+         1, 20, 15, 120, '["Scanner Detection"]', 'ALL', 21600, 'MEDIUM')
+      `);
+
+      // Update existing rules with incorrect durations (from old migration)
+      db.exec(`
+        UPDATE ips_detection_rules
+        SET ban_duration = 21600, updated_at = CURRENT_TIMESTAMP
+        WHERE name = 'High Frequency Attack' AND ban_duration = 3600
+      `);
+
+      db.exec(`
+        UPDATE ips_detection_rules
+        SET ban_duration = 86400, updated_at = CURRENT_TIMESTAMP
+        WHERE name = 'SQL Injection Attempts' AND ban_duration = 7200
+      `);
+
+      db.exec(`
+        UPDATE ips_detection_rules
+        SET ban_duration = 21600, updated_at = CURRENT_TIMESTAMP
+        WHERE name = 'Scanner Detection' AND ban_duration = 3600
       `);
 
       console.log('  ✓ Created ips_detection_rules table with default rules');
