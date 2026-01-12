@@ -1,13 +1,13 @@
 # Project Overview
 
-Over my years of homelabbing, I have not been very happy with the existing options for **WAF / Proxy combinations**, and so this side project was born. Most WAF solutions I have encountered are either:
+Over my years of homelabbing, I have not been very happy with the existing options for WAF / Proxy combinations, and so this side project was born. Most WAF solutions I have encountered are either:
 
 - Far too bulky, adding massive processing overhead, or
 - Lacking features or implementing them in a way that is not user-friendly
 
-Homelabbing should be **fun**, not tedious.
+Homelabbing should be fun, not tedious.
 
-This project aims to offer a **simple and intuitive management framework** for deploying and managing proxies via **Nginx**, with added **Nginx security features** and **WAF capabilities**. Commonly known *“enterprise”* features will **always be free**.
+This project aims to offer a simple and intuitive management framework for deploying and managing proxies via Nginx, with added **Nginx security features** and **WAF capabilities**. Commonly known *“enterprise”* features will always be free.
 
 ---
 
@@ -20,13 +20,12 @@ This project aims to offer a **simple and intuitive management framework** for d
 
 - **Better-SQLite3**  
   SQLite3 runs in a dual-database configuration:
-  - **WAF-DB**: Handles high-volume activity specifically for WAF tasks.
-  - **Nginx-DB**: Handles all other application data as the primary database.  
+  - WAF-DB: Handles high-volume activity specifically for WAF tasks.
+  - Nginx-DB: Handles all other application data as the primary database.  
   - https://github.com/WiseLibs/better-sqlite3
 
 - **Authentication & Security**
-  - JWT authentication with **7-day key rotation**
-  - **bcrypt** password hashing  
+  - JWT authentication with 7-day key rotation and bcrypt password hashing  
   - https://github.com/kelektiv/node.bcrypt.js  
   - https://github.com/auth0/node-jsonwebtoken
 
@@ -44,7 +43,7 @@ This project aims to offer a **simple and intuitive management framework** for d
 
 - **Chart.js**
   - Used for all visualizations  
-  - This is the **only external frontend library**  
+  - This is the only external frontend library  
   - https://www.chartjs.org/
 
 - **Custom UI**
@@ -78,12 +77,12 @@ This project aims to offer a **simple and intuitive management framework** for d
 
 ## Architecture Choices
 
-- No external frameworks were used — **fewer dependencies means less risk**
-- WAF features are built using **Server-Sent Events (SSE)** for real-time responsiveness
+- No external frameworks were used — fewer dependencies means less risk
+- WAF features are built using Server-Sent Events for real-time responsiveness and actioning
 - **Modular routing and utilities**
   - Core features are split into modular JavaScript files under `server/routes/`
 - Administrators should have **full control** over any application they host  
-  - This project was built with **control-first design principles**
+  - This project was built with control-first design principles
 
 ---
 
