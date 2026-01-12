@@ -23,7 +23,6 @@ function isWhitelisted(ip) {
     for (const entry of whitelist) {
       // Direct IP match
       if (entry.ip_address === ip) {
-        console.log(`✓ IP ${ip} whitelisted: ${entry.type} - ${entry.reason}`);
         return true;
       }
 
@@ -35,7 +34,6 @@ function isWhitelisted(ip) {
           const parsedRange = [range, parseInt(rangeBits, 10)];
 
           if (addr.kind() === range.kind() && addr.match(parsedRange)) {
-            console.log(`✓ IP ${ip} whitelisted: ${entry.type} - Range ${entry.ip_range} - ${entry.reason}`);
             return true;
           }
         } catch (err) {
@@ -63,7 +61,6 @@ function autoWhitelistAdmin(ip, userId) {
 
     // Check if already whitelisted
     if (isWhitelisted(ip)) {
-      console.log(`IP ${ip} already whitelisted, skipping auto-whitelist`);
       return;
     }
 
@@ -73,7 +70,6 @@ function autoWhitelistAdmin(ip, userId) {
     ).get(ip, 'admin_auto');
 
     if (existing) {
-      console.log(`Admin IP ${ip} already has auto-whitelist entry`);
       return;
     }
 

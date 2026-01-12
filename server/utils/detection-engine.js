@@ -189,8 +189,6 @@ function startDetectionEngine() {
       `).all(lastProcessedEventId);
 
       if (events.length > 0) {
-        console.log(`Processing ${events.length} new WAF events...`);
-
         for (const event of events) {
           trackEvent(event.client_ip, event);
           lastProcessedEventId = event.id;
@@ -232,10 +230,6 @@ function startCleanupJob() {
       } else if (filtered.length !== events.length) {
         ipEvents.set(ip, filtered);
       }
-    }
-
-    if (cleaned > 0) {
-      console.log(`✓ Cleaned up event tracking for ${cleaned} IPs`);
     }
   }, 5 * 60 * 1000);  // Every 5 minutes
 
