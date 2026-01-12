@@ -3,6 +3,12 @@ const loginButton = document.getElementById('loginButton');
 const usernameInput = document.getElementById('username');
 const passwordInput = document.getElementById('password');
 
+// Apply saved theme preference
+const savedTheme = localStorage.getItem('theme') || 'light';
+if (savedTheme === 'dark') {
+  document.body.classList.add('dark-mode');
+}
+
 // Handle login
 async function performLogin() {
   // Disable button to prevent double submission

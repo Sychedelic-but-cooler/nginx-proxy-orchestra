@@ -41,6 +41,33 @@ function getUsernameFromToken() {
 // Display username in header
 document.getElementById('usernameDisplay').textContent = getUsernameFromToken();
 
+// Theme toggle functionality
+const themeToggle = document.getElementById('themeToggle');
+const sunIcon = document.getElementById('sunIcon');
+const moonIcon = document.getElementById('moonIcon');
+
+// Check for saved theme preference or default to light mode
+const currentTheme = localStorage.getItem('theme') || 'light';
+if (currentTheme === 'dark') {
+  document.body.classList.add('dark-mode');
+  sunIcon.style.display = 'none';
+  moonIcon.style.display = 'block';
+}
+
+themeToggle.addEventListener('click', () => {
+  document.body.classList.toggle('dark-mode');
+  
+  if (document.body.classList.contains('dark-mode')) {
+    localStorage.setItem('theme', 'dark');
+    sunIcon.style.display = 'none';
+    moonIcon.style.display = 'block';
+  } else {
+    localStorage.setItem('theme', 'light');
+    sunIcon.style.display = 'block';
+    moonIcon.style.display = 'none';
+  }
+});
+
 // Main content container
 const mainContent = document.getElementById('mainContent');
 const headerTitle = document.getElementById('headerTitle');

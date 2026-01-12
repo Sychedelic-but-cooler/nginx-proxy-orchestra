@@ -21,6 +21,76 @@
   --sidebar-text: #cbd5e1;
 }
 
+/* Dark mode */
+body.dark-mode {
+  --primary-color: #3b82f6;
+  --primary-hover: #2563eb;
+  --secondary-color: #6b7280;
+  --success-color: #3b82f6;
+  --bg-color: #0f172a;
+  --card-bg: #1e293b;
+  --border-color: #334155;
+  --text-primary: #f1f5f9;
+  --text-secondary: #94a3b8;
+  --sidebar-bg: #020617;
+  --sidebar-text: #cbd5e1;
+}
+
+body.dark-mode .main-header {
+  background: var(--card-bg);
+}
+
+body.dark-mode .user-dropdown {
+  background: var(--card-bg);
+}
+
+body.dark-mode .modal-content {
+  background: var(--card-bg);
+}
+
+body.dark-mode .login-page {
+  background: linear-gradient(135deg, #020617 0%, #1e293b 50%, #334155 100%);
+}
+
+body.dark-mode .login-card {
+  background: var(--card-bg);
+  border: 1px solid var(--border-color);
+}
+
+body.dark-mode .modal,
+body.dark-mode .stats-card,
+body.dark-mode .action-card,
+body.dark-mode .proxy-item,
+body.dark-mode .cert-item,
+body.dark-mode .log-item,
+body.dark-mode .module-item,
+body.dark-mode .waf-event-item,
+body.dark-mode .rule-item,
+body.dark-mode .ban-item,
+body.dark-mode .alert-info,
+body.dark-mode .integration-card,
+body.dark-mode .exclusion-item,
+body.dark-mode .detection-rule-item {
+  background: var(--card-bg) !important;
+}
+
+body.dark-mode input,
+body.dark-mode select,
+body.dark-mode textarea {
+  background: var(--bg-color);
+  color: var(--text-primary);
+  border-color: var(--border-color);
+}
+
+body.dark-mode .user-menu-btn:hover {
+  background: var(--bg-color);
+}
+
+body.dark-mode .alert-warning {
+  background: rgba(245, 158, 11, 0.1) !important;
+  border-color: var(--warning-color);
+}
+
 body {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
   font-size: 14px;
@@ -535,6 +605,31 @@ body {
   display: flex;
   align-items: center;
   gap: 20px;
+}
+
+/* Theme toggle */
+.theme-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  background: var(--bg-color);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s;
+  color: var(--text-primary);
+}
+
+.theme-toggle:hover {
+  background: var(--card-bg);
+  border-color: var(--primary-color);
+}
+
+.theme-toggle svg {
+  width: 20px;
+  height: 20px;
 }
 
 /* User menu */
