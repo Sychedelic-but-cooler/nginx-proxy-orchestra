@@ -42,20 +42,20 @@ class WAFLogParser {
     // Check if WAF is enabled
     const wafEnabled = getSetting('waf_enabled');
     if (wafEnabled !== '1') {
-      console.log('ℹ️  WAF monitoring disabled in settings');
+      console.log('ℹWAF monitoring disabled in settings');
       return;
     }
 
     // Check if log file exists
     if (!fs.existsSync(this.logPath)) {
-      console.warn(`⚠️  ModSecurity audit log not found: ${this.logPath}`);
+      console.warn(`ModSecurity audit log not found: ${this.logPath}`);
       console.warn('   WAF event monitoring will not start.');
       console.warn('   Create the log file or update waf_audit_log_path setting.');
       return;
     }
 
     try {
-      console.log(`📊 Starting WAF log parser daemon...`);
+      console.log(`Starting WAF log parser daemon...`);
       console.log(`   Monitoring: ${this.logPath}`);
 
       // Spawn tail -F process (follows log rotation)
@@ -83,7 +83,7 @@ class WAFLogParser {
         // Attempt restart after 5 seconds
         setTimeout(() => {
           if (!this.isRunning) {
-            console.log('🔄 Attempting to restart WAF log parser...');
+            console.log('Attempting to restart WAF log parser...');
             this.start().catch(err => {
               console.error('Failed to restart WAF log parser:', err);
             });
@@ -97,13 +97,13 @@ class WAFLogParser {
       });
 
       this.isRunning = true;
-      console.log('✅ WAF log parser daemon started successfully');
+      console.log('WAF log parser daemon started successfully');
 
       // Start periodic backfill for HTTP/3 events (every 2 minutes)
       this.startPeriodicBackfill();
 
     } catch (error) {
-      console.error('❌ Failed to start WAF log parser:', error.message);
+      console.error('Failed to start WAF log parser:', error.message);
       throw error;
     }
   }
@@ -177,7 +177,7 @@ class WAFLogParser {
       }
 
       if (resolved > 0) {
-        console.log(`🔄 Backfilled ${resolved} HTTP/3 event(s) with proxy_id`);
+        console.log(`Backfilled ${resolved} HTTP/3 event(s) with proxy_id`);
       }
     } catch (error) {
       console.error('Error in backfill:', error.message);
@@ -502,7 +502,7 @@ class WAFLogParser {
       return;
     }
 
-    console.log('🛑 Stopping WAF log parser daemon...');
+    console.log('Stopping WAF log parser daemon...');
 
     // Stop backfill interval
     if (this.backfillInterval) {
@@ -527,7 +527,7 @@ class WAFLogParser {
     }
 
     this.isRunning = false;
-    console.log('✅ WAF log parser daemon stopped');
+    console.log('WAF log parser daemon stopped');
   }
 
   /**
