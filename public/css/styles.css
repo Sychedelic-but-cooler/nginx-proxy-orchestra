@@ -91,6 +91,254 @@ body.dark-mode .alert-warning {
   border-color: var(--warning-color);
 }
 
+/* Dark mode for badges */
+body.dark-mode .badge-success {
+  background: rgba(34, 197, 94, 0.2);
+  color: #86efac;
+}
+
+body.dark-mode .badge-danger {
+  background: rgba(239, 68, 68, 0.2);
+  color: #fca5a5;
+}
+
+body.dark-mode .badge-warning {
+  background: rgba(245, 158, 11, 0.2);
+  color: #fde047;
+}
+
+body.dark-mode .badge-info {
+  background: rgba(59, 130, 246, 0.2);
+  color: #93c5fd;
+}
+
+/* Dark mode for certificate urgency rows */
+body.dark-mode .table tr.cert-critical {
+  background: rgba(239, 68, 68, 0.1);
+  border-left-color: var(--danger-color);
+}
+
+body.dark-mode .table tr.cert-critical:hover {
+  background: rgba(239, 68, 68, 0.15);
+}
+
+body.dark-mode .table tr.cert-warning {
+  background: rgba(245, 158, 11, 0.1);
+  border-left-color: var(--warning-color);
+}
+
+body.dark-mode .table tr.cert-warning:hover {
+  background: rgba(245, 158, 11, 0.15);
+}
+
+/* Dark mode for error messages */
+body.dark-mode .error-message {
+  background: rgba(239, 68, 68, 0.15);
+  color: #fca5a5;
+  border-color: rgba(239, 68, 68, 0.3);
+}
+
+/* Dark mode for config editor and forms */
+body.dark-mode .config-editor,
+body.dark-mode .wizard-form-group input[type="text"],
+body.dark-mode .wizard-form-group input[type="number"],
+body.dark-mode .wizard-form-group select,
+body.dark-mode .wizard-form-group textarea {
+  background: var(--bg-color);
+  border-color: var(--border-color);
+  color: var(--text-primary);
+}
+
+body.dark-mode .btn-secondary {
+  background: var(--card-bg);
+  color: var(--text-primary);
+  border-color: var(--border-color);
+}
+
+body.dark-mode .btn-secondary:hover:not(:disabled) {
+  background: var(--bg-color);
+}
+
+/* Dark mode for module snippets and cards */
+body.dark-mode .module-snippet,
+body.dark-mode .recipe-card {
+  background: var(--card-bg);
+  border-color: var(--border-color);
+}
+
+body.dark-mode .module-snippet:hover,
+body.dark-mode .recipe-card:hover {
+  border-color: var(--primary-color);
+}
+
+/* Dark mode for test status indicators */
+body.dark-mode #testStatus.test-success {
+  background: rgba(34, 197, 94, 0.1);
+  border-color: rgba(34, 197, 94, 0.3);
+  color: #86efac;
+}
+
+body.dark-mode #testStatus.test-error {
+  background: rgba(239, 68, 68, 0.1);
+  border-color: rgba(239, 68, 68, 0.3);
+  color: #fca5a5;
+}
+
+/* Dark mode for recipe feature tags */
+body.dark-mode .recipe-feature-tag {
+  background: var(--bg-color);
+  color: var(--text-secondary);
+}
+
+body.dark-mode .recipe-card.selected .recipe-feature-tag {
+  background: rgba(59, 130, 246, 0.2);
+  color: var(--primary-color);
+}
+
+/* Dark mode for wizard toggle sections */
+body.dark-mode .wizard-toggle-section {
+  background: var(--bg-color);
+  border-color: var(--border-color);
+}
+
+/* Dark mode for toggle slider */
+body.dark-mode .toggle-slider {
+  background-color: var(--border-color);
+}
+
+body.dark-mode input:checked + .toggle-slider {
+  background-color: var(--primary-color);
+}
+
+/* Dark mode for section headers */
+body.dark-mode .module-section h4 {
+  color: var(--text-primary);
+  border-bottom-color: var(--border-color);
+}
+
+/* Dark mode for WAF dashboard live indicator */
+body.dark-mode .live-indicator {
+  background: rgba(34, 197, 94, 0.15) !important;
+  color: #86efac !important;
+}
+
+body.dark-mode .live-dot {
+  background: #4ade80 !important;
+}
+
+/* Dark mode for stat icon backgrounds - override inline styles */
+body.dark-mode .stat-icon[style*="#e3f2fd"],
+body.dark-mode .stat-icon[style*="background: #e3f2fd"] {
+  background: rgba(59, 130, 246, 0.15) !important;
+}
+
+body.dark-mode .stat-icon[style*="#ffebee"],
+body.dark-mode .stat-icon[style*="background: #ffebee"] {
+  background: rgba(239, 68, 68, 0.15) !important;
+}
+
+body.dark-mode .stat-icon[style*="#e8f5e9"],
+body.dark-mode .stat-icon[style*="background: #e8f5e9"] {
+  background: rgba(34, 197, 94, 0.15) !important;
+}
+
+body.dark-mode .stat-icon[style*="#fff3e0"],
+body.dark-mode .stat-icon[style*="background: #fff3e0"] {
+  background: rgba(245, 158, 11, 0.15) !important;
+}
+
+body.dark-mode .stat-icon[style*="#f3e5f5"],
+body.dark-mode .stat-icon[style*="background: #f3e5f5"] {
+  background: rgba(168, 85, 247, 0.15) !important;
+}
+
+body.dark-mode .stat-icon[style*="#e0f2f1"],
+body.dark-mode .stat-icon[style*="background: #e0f2f1"] {
+  background: rgba(20, 184, 166, 0.15) !important;
+}
+
+/* Dark mode for WAF profile cards and detail rows */
+body.dark-mode .profile-card {
+  background: var(--card-bg) !important;
+  border-color: var(--border-color) !important;
+}
+
+body.dark-mode .profile-card.default {
+  background: linear-gradient(135deg, var(--card-bg) 0%, var(--bg-color) 100%) !important;
+  border-color: var(--primary-color) !important;
+}
+
+body.dark-mode .detail-row {
+  background: var(--bg-color) !important;
+}
+
+body.dark-mode .profile-actions .btn,
+body.dark-mode .profile-actions .btn-secondary {
+  background: var(--bg-color) !important;
+  border-color: var(--border-color) !important;
+  color: var(--text-primary) !important;
+}
+
+body.dark-mode .profile-actions .btn-secondary:hover {
+  background: var(--card-bg) !important;
+  border-color: var(--primary-color) !important;
+}
+
+body.dark-mode .profile-actions .btn-danger {
+  background: var(--card-bg) !important;
+  border-color: rgba(239, 68, 68, 0.3) !important;
+}
+
+body.dark-mode .profile-actions .btn-danger:hover {
+  background: rgba(239, 68, 68, 0.1) !important;
+  border-color: var(--danger-color) !important;
+}
+
+body.dark-mode .empty-state {
+  background: var(--card-bg) !important;
+  border-color: var(--border-color) !important;
+}
+
+/* Dark mode for inline info boxes and notices */
+body.dark-mode div[style*="background: #e3f2fd"],
+body.dark-mode div[style*="background:#e3f2fd"] {
+  background: rgba(59, 130, 246, 0.15) !important;
+}
+
+body.dark-mode div[style*="background: #f8f9fa"],
+body.dark-mode div[style*="background:#f8f9fa"] {
+  background: var(--bg-color) !important;
+}
+
+body.dark-mode div[style*="background: #f1f5f9"],
+body.dark-mode div[style*="background:#f1f5f9"] {
+  background: var(--bg-color) !important;
+}
+
+body.dark-mode div[style*="background: #fef2f2"],
+body.dark-mode div[style*="background:#fef2f2"] {
+  background: rgba(239, 68, 68, 0.1) !important;
+}
+
+body.dark-mode tr[style*="background: #f8f9fa"],
+body.dark-mode tr[style*="background:#f8f9fa"] {
+  background: var(--bg-color) !important;
+}
+
+body.dark-mode span[style*="background: #e3f2fd"],
+body.dark-mode span[style*="background:#e3f2fd"] {
+  background: rgba(59, 130, 246, 0.15) !important;
+}
+
+/* Dark mode for paranoia dots */
+body.dark-mode .paranoia-dot {
+  background: var(--border-color) !important;
+}
+
+body.dark-mode .paranoia-dot.active {
+  background: #f87171 !important;
+}
+
 body {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
   font-size: 14px;
