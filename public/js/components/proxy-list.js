@@ -3,6 +3,10 @@ import { showLoading, hideLoading, showError, showSuccess } from '../app.js';
 import state from '../state.js';
 import { escapeHtml } from '../utils/sanitize.js';
 
+// Track selected proxies and SSE connection
+let selectedProxies = new Set();
+let proxyEventSource = null;
+
 export async function renderProxies(container) {
   showLoading();
 
@@ -23,9 +27,19 @@ export async function renderProxies(container) {
     } else {
       container.innerHTML = `
         <div class="card">
+          <div id="bulkActionsBar" style="padding: 15px; background: var(--card-bg); border-bottom: 1px solid var(--border-color); display: none; align-items: center; gap: 10px;">
+            <span id="selectionCount" style="font-weight: 600; color: var(--text-color);"></span>
+            <button class="btn btn-sm btn-success" id="bulkEnableBtn">Enable Selected</button>
+            <button class="btn btn-sm btn-secondary" id="bulkDisableBtn">Disable Selected</button>
+            <button class="btn btn-sm btn-danger" id="bulkDeleteBtn">Delete Selected</button>
+            <button class="btn btn-sm" id="clearSelectionBtn">Clear Selection</button>
+          </div>
           <table class="table">
             <thead>
               <tr>
+                <th style="width: 40px;">
+                  <input type="checkbox" id="selectAllProxies" style="cursor: pointer;" title="Select all">
+                </th>
                 <th>Name</th>
                 <th>Type</th>
                 <th>Domain(s)</th>
@@ -86,6 +100,9 @@ export async function renderProxies(container) {
                 return `
                 <tr ${proxy.config_status === 'error' ? 'style="background-color: rgba(220, 53, 69, 0.05);"' : ''}>
                   <td>
+                    <input type="checkbox" class="proxy-checkbox" data-id="${proxy.id}" style="cursor: pointer;" ${selectedProxies.has(proxy.id) ? 'checked' : ''}>
+                  </td>
+                  <td>
                     ${launchUrl ? `
                       <a href="${escapeHtml(launchUrl)}" target="_blank" rel="noopener noreferrer" title="Open ${escapeHtml(launchUrl)}" style="display: inline-block; vertical-align: middle; margin-right: 8px; color: var(--primary-color); text-decoration: none;">
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -145,10 +162,401 @@ export async function renderProxies(container) {
       document.querySelectorAll('.delete-proxy').forEach(btn => {
         btn.addEventListener('click', () => handleDeleteProxy(parseInt(btn.dataset.id), container));
       });
+
+      // Bulk selection event listeners
+      const selectAllCheckbox = document.getElementById('selectAllProxies');
+      selectAllCheckbox?.addEventListener('change', (e) => {
+        const checkboxes = document.querySelectorAll('.proxy-checkbox');
+        checkboxes.forEach(cb => {
+          cb.checked = e.target.checked;
+          const id = parseInt(cb.dataset.id);
+          if (e.target.checked) {
+            selectedProxies.add(id);
+          } else {
+            selectedProxies.delete(id);
+          }
+        });
+        updateBulkActionsBar();
+      });
+
+      document.querySelectorAll('.proxy-checkbox').forEach(cb => {
+        cb.addEventListener('change', (e) => {
+          const id = parseInt(cb.dataset.id);
+          if (e.target.checked) {
+            selectedProxies.add(id);
+          } else {
+            selectedProxies.delete(id);
+          }
+          updateBulkActionsBar();
+          
+          // Update select all checkbox state
+          const allCheckboxes = document.querySelectorAll('.proxy-checkbox');
+          const allChecked = Array.from(allCheckboxes).every(checkbox => checkbox.checked);
+          if (selectAllCheckbox) {
+            selectAllCheckbox.checked = allChecked;
+          }
+        });
+      });
+
+      // Bulk action buttons
+      document.getElementById('bulkEnableBtn')?.addEventListener('click', () => handleBulkToggle(true, container));
+      document.getElementById('bulkDisableBtn')?.addEventListener('click', () => handleBulkToggle(false, container));
+      document.getElementById('bulkDeleteBtn')?.addEventListener('click', () => handleBulkDelete(container));
+      document.getElementById('clearSelectionBtn')?.addEventListener('click', () => {
+        selectedProxies.clear();
+        document.querySelectorAll('.proxy-checkbox').forEach(cb => cb.checked = false);
+        if (selectAllCheckbox) selectAllCheckbox.checked = false;
+        updateBulkActionsBar();
+      });
+
+      updateBulkActionsBar();
     }
 
     // Add proxy button handler
     document.getElementById('addProxyBtn')?.addEventListener('click', () => showProxyForm());
+
+    // Setup SSE connection for real-time updates
+    setupProxyEventStream(container);
+
+  } catch (error) {
+    showError(error.message);
+    container.innerHTML = '<div class="empty-state"><h2>Failed to load proxies</h2></div>';
+  } finally {
+    hideLoading();
+  }
+}
+
+function updateBulkActionsBar() {
+  const bulkActionsBar = document.getElementById('bulkActionsBar');
+  const selectionCount = document.getElementById('selectionCount');
+  
+  if (selectedProxies.size > 0) {
+    bulkActionsBar.style.display = 'flex';
+    selectionCount.textContent = `${selectedProxies.size} proxy${selectedProxies.size > 1 ? 'es' : ''} selected`;
+  } else {
+    bulkActionsBar.style.display = 'none';
+  }
+}
+
+async function handleBulkToggle(enabled, container) {
+  if (selectedProxies.size === 0) {
+    showError('No proxies selected');
+    return;
+  }
+
+  const action = enabled ? 'enable' : 'disable';
+  if (!confirm(`Are you sure you want to ${action} ${selectedProxies.size} proxy${selectedProxies.size > 1 ? 'es' : ''}?`)) {
+    return;
+  }
+
+  showLoading();
+  try {
+    const result = await api.bulkToggleProxies(Array.from(selectedProxies), enabled);
+    
+    if (result.summary.failed > 0) {
+      showError(`${action} completed with ${result.summary.failed} failure(s). Check console for details.`);
+      console.error('Bulk toggle failures:', result.results.failed);
+    } else {
+      showSuccess(`Successfully ${action}d ${result.summary.succeeded} proxy${result.summary.succeeded > 1 ? 'es' : ''}`);
+    }
+    
+    selectedProxies.clear();
+    await renderProxies(container);
+  } catch (error) {
+    hideLoading();
+    showError(error.message);
+  }
+}
+
+async function handleBulkDelete(container) {
+  if (selectedProxies.size === 0) {
+    showError('No proxies selected');
+    return;
+  }
+
+  if (!confirm(`Are you sure you want to delete ${selectedProxies.size} proxy${selectedProxies.size > 1 ? 'es' : ''}? This action cannot be undone.`)) {
+    return;
+  }
+
+  showLoading();
+  try {
+    const result = await api.bulkDeleteProxies(Array.from(selectedProxies));
+    
+    if (result.summary.failed > 0) {
+      showError(`Delete completed with ${result.summary.failed} failure(s). Check console for details.`);
+      console.error('Bulk delete failures:', result.results.failed);
+    } else {
+      showSuccess(`Successfully deleted ${result.summary.succeeded} proxy${result.summary.succeeded > 1 ? 'es' : ''}`);
+    }
+    
+    selectedProxies.clear();
+    await renderProxies(container);
+  } catch (error) {
+    hideLoading();
+    showError(error.message);
+  }
+}
+
+function setupProxyEventStream(container) {
+  // Close existing connection if any
+  if (proxyEventSource) {
+    proxyEventSource.close();
+  }
+
+  try {
+    proxyEventSource = api.createProxyEventStream();
+
+    proxyEventSource.addEventListener('message', async (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        
+        if (data.type === 'proxy_event') {
+          console.log('[Proxy SSE] Received proxy event:', data.eventType);
+          
+          // Auto-refresh the proxy list when any proxy change occurs
+          // Don't show loading spinner for background refresh
+          const proxies = await api.getProxies();
+          state.set('proxies', proxies);
+          
+          // Re-render without showing loading spinner
+          await renderProxiesQuiet(container);
+        }
+      } catch (error) {
+        console.error('[Proxy SSE] Error processing event:', error);
+      }
+    });
+
+    proxyEventSource.addEventListener('error', (error) => {
+      console.error('[Proxy SSE] Connection error:', error);
+      // Try to reconnect after 5 seconds
+      setTimeout(() => {
+        if (document.getElementById('proxy-container')) {
+          setupProxyEventStream(container);
+        }
+      }, 5000);
+    });
+
+    console.log('[Proxy SSE] Connected to proxy event stream');
+  } catch (error) {
+    console.error('[Proxy SSE] Failed to setup event stream:', error);
+  }
+}
+
+// Quiet re-render without loading spinner (for SSE updates)
+async function renderProxiesQuiet(container) {
+  try {
+    const [proxies, allRateLimits] = await Promise.all([
+      api.getProxies(),
+      api.getRateLimits()
+    ]);
+    state.set('proxies', proxies);
+    
+    if (proxies.length === 0) {
+      container.innerHTML = `
+        <div class="empty-state">
+          <h2>No Proxy Hosts</h2>
+          <p>Create your first reverse proxy host to get started</p>
+        </div>
+      `;
+      return;
+    }
+
+    // Store current scroll position
+    const scrollY = window.scrollY;
+    
+    // Re-render the table (this will be the same code as above)
+    container.innerHTML = `
+      <div class="card">
+        <div id="bulkActionsBar" style="padding: 15px; background: var(--card-bg); border-bottom: 1px solid var(--border-color); display: none; align-items: center; gap: 10px;">
+          <span id="selectionCount" style="font-weight: 600; color: var(--text-color);"></span>
+          <button class="btn btn-sm btn-success" id="bulkEnableBtn">Enable Selected</button>
+          <button class="btn btn-sm btn-secondary" id="bulkDisableBtn">Disable Selected</button>
+          <button class="btn btn-sm btn-danger" id="bulkDeleteBtn">Delete Selected</button>
+          <button class="btn btn-sm" id="clearSelectionBtn">Clear Selection</button>
+        </div>
+        <table class="table">
+          <thead>
+            <tr>
+              <th style="width: 40px;">
+                <input type="checkbox" id="selectAllProxies" style="cursor: pointer;" title="Select all">
+              </th>
+              <th>Name</th>
+              <th>Type</th>
+              <th>Domain(s)</th>
+              <th>Forward To</th>
+              <th>TLS</th>
+              <th>Rate Limit</th>
+              <th>Status</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${proxies.map(proxy => {
+              const rateLimit = allRateLimits.rateLimits.find(rl => rl.proxy_id === proxy.id && rl.enabled);
+              let statusClass, statusText;
+              if (proxy.config_status === 'error') {
+                statusClass = 'badge-danger';
+                statusText = 'Error';
+              } else if (proxy.config_status === 'pending') {
+                statusClass = 'badge-warning';
+                statusText = 'Pending';
+              } else if (proxy.enabled) {
+                statusClass = 'badge-success';
+                statusText = 'Active';
+              } else {
+                statusClass = 'badge-secondary';
+                statusText = 'Disabled';
+              }
+
+              let launchUrl = proxy.launch_url;
+              if (!launchUrl && proxy.type === 'reverse') {
+                const firstDomain = proxy.domain_names.split(',')[0].trim();
+                if (firstDomain !== 'N/A') {
+                  launchUrl = `${proxy.ssl_enabled ? 'https' : 'http'}://${firstDomain}`;
+                }
+              }
+
+              let forwardTo;
+              if (proxy.type === 'stream') {
+                const protocol = (proxy.stream_protocol || 'tcp').toUpperCase();
+                forwardTo = `${protocol}: ${proxy.incoming_port || '?'} → ${escapeHtml(proxy.forward_host)}:${proxy.forward_port}`;
+              } else if (proxy.type === '404') {
+                forwardTo = '<span class="badge badge-secondary">404 Response</span>';
+              } else {
+                forwardTo = `${escapeHtml(proxy.forward_scheme)}://${escapeHtml(proxy.forward_host)}:${proxy.forward_port}`;
+              }
+
+              const domainDisplay = (proxy.domain_names === 'N/A' || !proxy.domain_names)
+                ? '<span class="badge badge-secondary">-</span>'
+                : escapeHtml(proxy.domain_names);
+
+              return `
+              <tr ${proxy.config_status === 'error' ? 'style="background-color: rgba(220, 53, 69, 0.05);"' : ''}>
+                <td>
+                  <input type="checkbox" class="proxy-checkbox" data-id="${proxy.id}" style="cursor: pointer;" ${selectedProxies.has(proxy.id) ? 'checked' : ''}>
+                </td>
+                <td>
+                  ${launchUrl ? `
+                    <a href="${escapeHtml(launchUrl)}" target="_blank" rel="noopener noreferrer" title="Open ${escapeHtml(launchUrl)}" style="display: inline-block; vertical-align: middle; margin-right: 8px; color: var(--primary-color); text-decoration: none;">
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
+                        <polyline points="15 3 21 3 21 9"></polyline>
+                        <line x1="10" y1="14" x2="21" y2="3"></line>
+                      </svg>
+                    </a>
+                  ` : ''}
+                  <strong>${escapeHtml(proxy.name)}</strong>
+                  ${proxy.waf_profile_name ? `<span class="badge badge-warning" style="margin-left: 8px;" title="WAF: ${escapeHtml(proxy.waf_profile_name)} (Paranoia ${proxy.waf_profile_paranoia || 1})">🛡️ WAF</span>` : ''}
+                  ${proxy.config_error ? `<br><small style="color: var(--danger-color);" title="${escapeHtml(proxy.config_error)}">⚠️ ${escapeHtml(proxy.config_error)}</small>` : ''}
+                </td>
+                <td><span class="badge badge-info">${escapeHtml(proxy.type)}</span></td>
+                <td>${domainDisplay}</td>
+                <td>${forwardTo}</td>
+                <td>
+                  ${proxy.type === 'stream' ? '<span class="badge badge-secondary">N/A</span>' :
+                    (proxy.ssl_enabled ?
+                      `<span class="badge badge-success">✓ ${escapeHtml(proxy.ssl_cert_name || 'Enabled')}</span>` :
+                      '<span class="badge badge-danger">✗</span>')}
+                </td>
+                <td>
+                  ${proxy.type === 'reverse' && rateLimit ?
+                    `<span class="badge badge-warning" title="Rate: ${rateLimit.rate}, Burst: ${rateLimit.burst}">⏱️ ${rateLimit.rate}</span>` :
+                    '<span class="badge badge-secondary">-</span>'}
+                </td>
+                <td>
+                  <span class="badge ${statusClass}" title="${proxy.config_error || ''}">
+                    ${statusText}
+                  </span>
+                </td>
+                <td class="action-buttons">
+                  <button class="btn btn-sm btn-secondary toggle-proxy" data-id="${proxy.id}">
+                    ${proxy.enabled ? 'Disable' : 'Enable'}
+                  </button>
+                  <button class="btn btn-sm btn-primary edit-proxy" data-id="${proxy.id}">Edit</button>
+                  <button class="btn btn-sm btn-danger delete-proxy" data-id="${proxy.id}">Delete</button>
+                </td>
+              </tr>
+            `;
+            }).join('')}
+          </tbody>
+        </table>
+      </div>
+    `;
+
+    // Reattach all event listeners (same as in renderProxies)
+    document.querySelectorAll('.toggle-proxy').forEach(btn => {
+      btn.addEventListener('click', () => handleToggleProxy(parseInt(btn.dataset.id), container));
+    });
+
+    document.querySelectorAll('.edit-proxy').forEach(btn => {
+      btn.addEventListener('click', () => handleEditProxy(parseInt(btn.dataset.id)));
+    });
+
+    document.querySelectorAll('.delete-proxy').forEach(btn => {
+      btn.addEventListener('click', () => handleDeleteProxy(parseInt(btn.dataset.id), container));
+    });
+
+    const selectAllCheckbox = document.getElementById('selectAllProxies');
+    selectAllCheckbox?.addEventListener('change', (e) => {
+      const checkboxes = document.querySelectorAll('.proxy-checkbox');
+      checkboxes.forEach(cb => {
+        cb.checked = e.target.checked;
+        const id = parseInt(cb.dataset.id);
+        if (e.target.checked) {
+          selectedProxies.add(id);
+        } else {
+          selectedProxies.delete(id);
+        }
+      });
+      updateBulkActionsBar();
+    });
+
+    document.querySelectorAll('.proxy-checkbox').forEach(cb => {
+      cb.addEventListener('change', (e) => {
+        const id = parseInt(cb.dataset.id);
+        if (e.target.checked) {
+          selectedProxies.add(id);
+        } else {
+          selectedProxies.delete(id);
+        }
+        updateBulkActionsBar();
+        
+        const allCheckboxes = document.querySelectorAll('.proxy-checkbox');
+        const allChecked = Array.from(allCheckboxes).every(checkbox => checkbox.checked);
+        if (selectAllCheckbox) {
+          selectAllCheckbox.checked = allChecked;
+        }
+      });
+    });
+
+    document.getElementById('bulkEnableBtn')?.addEventListener('click', () => handleBulkToggle(true, container));
+    document.getElementById('bulkDisableBtn')?.addEventListener('click', () => handleBulkToggle(false, container));
+    document.getElementById('bulkDeleteBtn')?.addEventListener('click', () => handleBulkDelete(container));
+    document.getElementById('clearSelectionBtn')?.addEventListener('click', () => {
+      selectedProxies.clear();
+      document.querySelectorAll('.proxy-checkbox').forEach(cb => cb.checked = false);
+      if (selectAllCheckbox) selectAllCheckbox.checked = false;
+      updateBulkActionsBar();
+    });
+
+    updateBulkActionsBar();
+
+    // Restore scroll position
+    window.scrollTo(0, scrollY);
+  } catch (error) {
+    console.error('Quiet refresh error:', error);
+  }
+}
+
+// Cleanup function to close SSE connection
+export function cleanupProxyList() {
+  if (proxyEventSource) {
+    proxyEventSource.close();
+    proxyEventSource = null;
+    console.log('[Proxy SSE] Connection closed');
+  }
+  selectedProxies.clear();
+}
 
   } catch (error) {
     showError(error.message);

@@ -6,6 +6,9 @@
   "scripts": {
     "start": "node server/index.js",
     "dev": "NODE_ENV=development node server/index.js",
+    "test": "node tests/input-validator.test.js",
+    "test:api": "node tests/api-injection.test.js",
+    "test:all": "npm test && npm run test:api",
     "pm2:start": "pm2 start ecosystem.config.js",
     "pm2:start:watch": "pm2 start ecosystem.config.js --watch",
     "pm2:stop": "pm2 stop nginx-proxy-orchestra",

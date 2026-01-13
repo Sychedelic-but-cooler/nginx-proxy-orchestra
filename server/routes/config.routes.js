@@ -15,6 +15,7 @@ const {
 } = require('../utils/nginx-parser');
 const { testNginxConfig } = require('../utils/nginx-ops');
 const { reloadManager } = require('../utils/nginx-reload-manager');
+const { validateNginxConfig } = require('../utils/input-validator');
 
 /**
  * Handle config-related routes
@@ -184,6 +185,13 @@ async function handleSaveCustomConfig(req, res) {
 
   if (!name || !config) {
     return sendJSON(res, { error: 'Name and config content required' }, 400);
+  }
+
+  // SECURITY: Validate nginx configuration
+  try {
+    validateNginxConfig(config);
+  } catch (error) {
+    return sendJSON(res, { error: `Invalid nginx config: ${error.message}` }, 400);
   }
 
   let finalProxyId = proxyId ? parseInt(proxyId) : null;

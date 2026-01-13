@@ -17,6 +17,7 @@ const {
 } = require('../utils/nginx-parser');
 const { testNginxConfig } = require('../utils/nginx-ops');
 const { reloadManager } = require('../utils/nginx-reload-manager');
+const { validateNginxConfig } = require('../utils/input-validator');
 
 /**
  * Handle proxy-related routes
@@ -51,6 +52,14 @@ async function handleProxyRoutes(req, res, parsedUrl) {
 
   if (pathname.match(/^\/api\/proxies\/\d+\/toggle$/) && method === 'POST') {
     return handleToggleProxy(req, res, parsedUrl);
+  }
+
+  if (pathname === '/api/proxies/bulk/toggle' && method === 'POST') {
+    return handleBulkToggleProxies(req, res);
+  }
+
+  if (pathname === '/api/proxies/bulk/delete' && method === 'POST') {
+    return handleBulkDeleteProxies(req, res);
   }
 
   sendJSON(res, { error: 'Not Found' }, 404);
@@ -135,6 +144,15 @@ async function handleCreateProxy(req, res) {
   // Validation based on type
   if (!name) {
     return sendJSON(res, { error: 'Name is required' }, 400);
+  }
+
+  // SECURITY: Validate advanced_config if provided
+  if (advanced_config) {
+    try {
+      validateNginxConfig(advanced_config);
+    } catch (error) {
+      return sendJSON(res, { error: `Invalid advanced config: ${error.message}` }, 400);
+    }
   }
 
   if (type === 'stream') {
@@ -267,6 +285,9 @@ async function handleCreateProxy(req, res) {
     // Get updated proxy for response
     const updatedProxy = db.prepare('SELECT * FROM proxy_hosts WHERE id = ?').get(proxyId);
 
+    // Broadcast proxy creation event to SSE clients
+    broadcastProxyEvent('created', { id: proxyId, name, type: type || 'reverse', enabled: !!isEnabled });
+
     sendJSON(res, { success: true, id: proxyId, proxy: updatedProxy, reloadId }, 201);
   } catch (error) {
     console.error('Create proxy error:', error);
@@ -315,6 +336,15 @@ async function handleUpdateProxy(req, res, parsedUrl) {
   }
 
   const { name, domain_names, forward_scheme, forward_host, forward_port, ssl_enabled, ssl_cert_id, advanced_config, module_ids, stream_protocol, incoming_port } = body;
+
+  // SECURITY: Validate advanced_config if provided
+  if (advanced_config !== undefined && advanced_config !== null) {
+    try {
+      validateNginxConfig(advanced_config);
+    } catch (error) {
+      return sendJSON(res, { error: `Invalid advanced config: ${error.message}` }, 400);
+    }
+  }
 
   try {
     // Wrap database operations in a transaction for atomicity
@@ -415,6 +445,9 @@ async function handleUpdateProxy(req, res, parsedUrl) {
 
     logAudit(req.user.userId, 'update', 'proxy', id, JSON.stringify({ name: name || proxy.name }), getClientIP(req));
 
+    // Broadcast proxy update event to SSE clients
+    broadcastProxyEvent('updated', { id, name: name || proxy.name });
+
     sendJSON(res, { success: true, proxy: updatedProxy, reloadId });
   } catch (error) {
     console.error('Update proxy error:', error);
@@ -470,6 +503,9 @@ async function handleDeleteProxy(req, res, parsedUrl) {
       console.warn('Failed to send proxy deletion notification:', notificationError);
     }
 
+    // Broadcast proxy deletion event to SSE clients
+    broadcastProxyEvent('deleted', { id, name: proxy.name });
+
     sendJSON(res, { success: true, reloadId });
   } catch (error) {
     console.error('Delete proxy error:', error);
@@ -510,9 +546,189 @@ async function handleToggleProxy(req, res, parsedUrl) {
 
     logAudit(req.user.userId, newEnabled ? 'enable' : 'disable', 'proxy', id, JSON.stringify({ name: proxy.name }), getClientIP(req));
 
+    // Broadcast proxy toggle event to SSE clients
+    broadcastProxyEvent('toggled', { id, name: proxy.name, enabled: !!newEnabled });
+
     sendJSON(res, { success: true, enabled: newEnabled, reloadId });
   } catch (error) {
     console.error('Toggle proxy error:', error);
+    sendJSON(res, { error: error.message }, 500);
+  }
+}
+
+/**
+ * Broadcast proxy change event to all connected SSE clients
+ *
+ * @param {string} eventType - Type of proxy event (created, updated, deleted, toggled, bulk_toggled, bulk_deleted)
+ * @param {Object} data - Event data
+ */
+function broadcastProxyEvent(eventType, data) {
+  try {
+    const { sseManager } = require('./shared/sse');
+    sseManager.broadcast('proxy_event', { eventType, data, timestamp: new Date().toISOString() });
+  } catch (error) {
+    console.warn('Failed to broadcast proxy event:', error);
+  }
+}
+
+/**
+ * Bulk toggle proxies enabled/disabled state
+ * Enables or disables multiple proxy hosts at once
+ *
+ * @param {IncomingMessage} req - HTTP request object
+ * @param {ServerResponse} res - HTTP response object
+ */
+async function handleBulkToggleProxies(req, res) {
+  const body = await parseBody(req);
+  const { ids, enabled } = body;
+
+  if (!Array.isArray(ids) || ids.length === 0) {
+    return sendJSON(res, { error: 'ids array is required and must not be empty' }, 400);
+  }
+
+  if (typeof enabled !== 'boolean') {
+    return sendJSON(res, { error: 'enabled must be a boolean value' }, 400);
+  }
+
+  const results = {
+    success: [],
+    failed: []
+  };
+
+  try {
+    // Process each proxy
+    for (const id of ids) {
+      try {
+        const proxy = db.prepare('SELECT name, enabled, config_filename FROM proxy_hosts WHERE id = ?').get(id);
+        if (!proxy) {
+          results.failed.push({ id, error: 'Proxy not found' });
+          continue;
+        }
+
+        // Update enabled state
+        db.prepare('UPDATE proxy_hosts SET enabled = ? WHERE id = ?').run(enabled ? 1 : 0, id);
+
+        // Use stored filename or generate for legacy records
+        const filename = proxy.config_filename || `${sanitizeFilename(proxy.name)}.conf`;
+        if (enabled) {
+          enableNginxConfig(filename);
+        } else {
+          disableNginxConfig(filename);
+        }
+
+        logAudit(req.user.userId, enabled ? 'enable' : 'disable', 'proxy', id, JSON.stringify({ name: proxy.name, bulk: true }), getClientIP(req));
+
+        results.success.push({ id, name: proxy.name, enabled });
+      } catch (error) {
+        console.error(`Bulk toggle error for proxy ${id}:`, error);
+        results.failed.push({ id, error: error.message });
+      }
+    }
+
+    // Queue single nginx reload for all changes
+    const { reloadId } = await reloadManager.queueReload();
+
+    // Broadcast proxy event to SSE clients
+    broadcastProxyEvent('bulk_toggled', {
+      count: results.success.length,
+      enabled,
+      failedCount: results.failed.length
+    });
+
+    sendJSON(res, {
+      success: true,
+      results,
+      reloadId,
+      summary: {
+        total: ids.length,
+        succeeded: results.success.length,
+        failed: results.failed.length
+      }
+    });
+  } catch (error) {
+    console.error('Bulk toggle error:', error);
+    sendJSON(res, { error: error.message }, 500);
+  }
+}
+
+/**
+ * Bulk delete proxies
+ * Deletes multiple proxy hosts at once
+ *
+ * @param {IncomingMessage} req - HTTP request object
+ * @param {ServerResponse} res - HTTP response object
+ */
+async function handleBulkDeleteProxies(req, res) {
+  const body = await parseBody(req);
+  const { ids } = body;
+
+  if (!Array.isArray(ids) || ids.length === 0) {
+    return sendJSON(res, { error: 'ids array is required and must not be empty' }, 400);
+  }
+
+  const results = {
+    success: [],
+    failed: []
+  };
+
+  try {
+    // Process each proxy
+    for (const id of ids) {
+      try {
+        const proxy = db.prepare('SELECT name, config_filename, domain_names FROM proxy_hosts WHERE id = ?').get(id);
+        if (!proxy) {
+          results.failed.push({ id, error: 'Proxy not found' });
+          continue;
+        }
+
+        // Use stored filename or generate for legacy records
+        const filename = proxy.config_filename || `${sanitizeFilename(proxy.name)}.conf`;
+        deleteNginxConfig(filename);
+
+        db.prepare('DELETE FROM proxy_hosts WHERE id = ?').run(id);
+
+        logAudit(req.user.userId, 'delete', 'proxy', id, JSON.stringify({ name: proxy.name, bulk: true }), getClientIP(req));
+
+        results.success.push({ id, name: proxy.name });
+
+        // Send notification for each deleted proxy
+        try {
+          const { notifyProxyLifecycle } = require('../utils/notification-service');
+          await notifyProxyLifecycle('deleted', {
+            name: proxy.name,
+            domain_names: proxy.domain_names || 'N/A',
+            enabled: false
+          }, req.user.username || req.user.userId);
+        } catch (notificationError) {
+          console.warn(`Failed to send proxy deletion notification for ${proxy.name}:`, notificationError);
+        }
+      } catch (error) {
+        console.error(`Bulk delete error for proxy ${id}:`, error);
+        results.failed.push({ id, error: error.message });
+      }
+    }
+
+    // Queue single nginx reload for all changes
+    const { reloadId } = await reloadManager.queueReload();
+
+    // Broadcast proxy event to SSE clients
+    broadcastProxyEvent('bulk_deleted', {
+      count: results.success.length,
+      failedCount: results.failed.length
+    });
+
+    sendJSON(res, {
+      success: true,
+      results,
+      reloadId,
+      summary: {
+        total: ids.length,
+        succeeded: results.success.length,
+        failed: results.failed.length
+      }
+    });
+  } catch (error) {
+    console.error('Bulk delete error:', error);
     sendJSON(res, { error: error.message }, 500);
   }
 }

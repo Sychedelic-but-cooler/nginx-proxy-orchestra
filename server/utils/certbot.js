@@ -10,6 +10,7 @@ const {
   deleteCredentialFile,
   buildCertbotCommand
 } = require('./dns-providers');
+const { validateEmail, validateDomains } = require('./input-validator');
 
 /**
  * Get certbot directories - use data folder to avoid needing root
@@ -80,13 +81,19 @@ async function checkCertbotInstallation() {
 async function orderCertificateHTTP(options) {
   const { email, domains, certName } = options;
 
-  // Validate inputs
+  // SECURITY: Validate inputs to prevent command injection
   if (!email || !domains || domains.length === 0) {
     throw new Error('Email and at least one domain are required');
   }
 
+  // Validate email format
+  const validatedEmail = validateEmail(email);
+
+  // Validate all domains
+  const validatedDomains = validateDomains(domains, { allowWildcard: false });
+
   // Check for wildcard domains (not supported with HTTP-01)
-  const hasWildcard = domains.some(d => d.trim().startsWith('*'));
+  const hasWildcard = validatedDomains.some(d => d.trim().startsWith('*'));
   if (hasWildcard) {
     throw new Error('Wildcard domains require DNS-01 challenge. Use orderCertificateDNS instead.');
   }
@@ -99,7 +106,7 @@ async function orderCertificateHTTP(options) {
     'certonly',
     '--non-interactive',
     '--agree-tos',
-    `--email=${email}`,
+    `--email=${validatedEmail}`,
     '--webroot',
     `--webroot-path=${webroot}`,
     '--preferred-challenges=http',
@@ -114,19 +121,19 @@ async function orderCertificateHTTP(options) {
   }
 
   // Add domains
-  for (const domain of domains) {
+  for (const domain of validatedDomains) {
     args.push('-d', domain.trim());
   }
 
   try {
     const result = await executeCertbot(args);
-    const certPath = getCertificatePath(certName || domains[0]);
+    const certPath = getCertificatePath(certName || validatedDomains[0]);
 
     return {
       success: true,
       challengeType: 'http-01',
       certPath,
-      domains,
+      domains: validatedDomains,
       message: 'Certificate ordered successfully',
       output: result.output
     };
@@ -134,7 +141,7 @@ async function orderCertificateHTTP(options) {
     return {
       success: false,
       challengeType: 'http-01',
-      domains,
+      domains: validatedDomains,
       error: error.message,
       output: error.output || ''
     };
@@ -162,7 +169,7 @@ async function orderCertificateDNS(options) {
     certName
   } = options;
 
-  // Validate inputs
+  // SECURITY: Validate inputs to prevent command injection
   if (!email || !domains || domains.length === 0) {
     throw new Error('Email and at least one domain are required');
   }
@@ -170,6 +177,12 @@ async function orderCertificateDNS(options) {
   if (!providerId || !credentials) {
     throw new Error('DNS provider and credentials are required for DNS-01 challenge');
   }
+
+  // Validate email format
+  const validatedEmail = validateEmail(email);
+
+  // Validate all domains (wildcards allowed for DNS-01)
+  const validatedDomains = validateDomains(domains, { allowWildcard: true });
 
   const provider = getProvider(providerId);
   if (!provider) {
@@ -180,7 +193,7 @@ async function orderCertificateDNS(options) {
 
   try {
     // Create temporary credential file
-    const credName = certName || domains[0].replace(/\*/g, 'wildcard');
+    const credName = certName || validatedDomains[0].replace(/\*/g, 'wildcard');
     credentialFilePath = createCredentialFile(providerId, credentials, credName);
     console.log('[DNS-01] Created credential file:', credentialFilePath);
 
@@ -190,8 +203,8 @@ async function orderCertificateDNS(options) {
       providerId,
       credentialFilePath,
       propagationSeconds,
-      email,
-      domains,
+      validatedEmail,
+      validatedDomains,
       dirs
     );
     console.log('[DNS-01] Certbot args:', args);
@@ -202,14 +215,14 @@ async function orderCertificateDNS(options) {
     }
 
     const result = await executeCertbot(args);
-    const certPath = getCertificatePath(certName || domains[0]);
+    const certPath = getCertificatePath(certName || validatedDomains[0]);
 
     return {
       success: true,
       challengeType: 'dns-01',
       provider: providerId,
       certPath,
-      domains,
+      domains: validatedDomains,
       message: 'Certificate ordered successfully',
       output: result.output
     };
@@ -218,7 +231,7 @@ async function orderCertificateDNS(options) {
       success: false,
       challengeType: 'dns-01',
       provider: providerId,
-      domains,
+      domains: validatedDomains,
       error: error.message,
       output: error.output || ''
     };

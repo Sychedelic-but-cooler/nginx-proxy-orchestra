@@ -28,6 +28,7 @@ const {
 const {
   reloadManager
 } = require('../utils/nginx-reload-manager');
+const { validateNginxConfig } = require('../utils/input-validator');
 const {
   getWAFDb
 } = require('../waf-db');
@@ -798,6 +799,15 @@ async function handleCreateProxy(req, res) {
     return sendJSON(res, { error: 'Name is required' }, 400);
   }
 
+  // SECURITY: Validate advanced_config if provided
+  if (advanced_config) {
+    try {
+      validateNginxConfig(advanced_config);
+    } catch (error) {
+      return sendJSON(res, { error: `Invalid advanced config: ${error.message}` }, 400);
+    }
+  }
+
   if (type === 'stream') {
     if (!forward_host || !forward_port || !incoming_port) {
       return sendJSON(res, { error: 'Stream hosts require forward_host, forward_port, and incoming_port' }, 400);
@@ -956,6 +966,15 @@ async function handleUpdateProxy(req, res, parsedUrl) {
   }
 
   const { name, domain_names, forward_scheme, forward_host, forward_port, ssl_enabled, ssl_cert_id, advanced_config, module_ids, stream_protocol, incoming_port } = body;
+
+  // SECURITY: Validate advanced_config if provided
+  if (advanced_config !== undefined && advanced_config !== null) {
+    try {
+      validateNginxConfig(advanced_config);
+    } catch (error) {
+      return sendJSON(res, { error: `Invalid advanced config: ${error.message}` }, 400);
+    }
+  }
 
   try {
     // Wrap database operations in a transaction for atomicity

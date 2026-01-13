@@ -99,6 +99,33 @@ class API {
     });
   }
 
+  // Session management endpoints
+  async getSessions() {
+    return this.request('/api/sessions');
+  }
+
+  async getAllSessions() {
+    return this.request('/api/sessions/all');
+  }
+
+  async revokeSession(tokenId) {
+    return this.request(`/api/sessions/${tokenId}`, {
+      method: 'DELETE'
+    });
+  }
+
+  async revokeAllSessions() {
+    return this.request('/api/sessions/revoke-all', {
+      method: 'POST'
+    });
+  }
+
+  async generateSSEToken() {
+    return this.request('/api/user/sse-token', {
+      method: 'POST'
+    });
+  }
+
   // Dashboard endpoints
   async getDashboardStats() {
     return this.request('/api/dashboard/stats');
@@ -630,6 +657,34 @@ class API {
     // Pass the token as a query parameter instead
     const eventSource = new EventSource(`/api/waf/events/stream?token=${encodeURIComponent(token)}`);
     return eventSource;
+  }
+
+  // SSE Connection for real-time proxy events
+  createProxyEventStream() {
+    const token = this.getToken();
+    if (!token) {
+      throw new Error('No authentication token found');
+    }
+
+    // Note: EventSource doesn't support custom headers in browsers
+    // Pass the token as a query parameter instead
+    const eventSource = new EventSource(`/api/proxy/events/stream?token=${encodeURIComponent(token)}`);
+    return eventSource;
+  }
+
+  // Bulk proxy operations
+  async bulkToggleProxies(ids, enabled) {
+    return this.request('/api/proxies/bulk/toggle', {
+      method: 'POST',
+      body: { ids, enabled }
+    });
+  }
+
+  async bulkDeleteProxies(ids) {
+    return this.request('/api/proxies/bulk/delete', {
+      method: 'POST',
+      body: { ids }
+    });
   }
 }
 

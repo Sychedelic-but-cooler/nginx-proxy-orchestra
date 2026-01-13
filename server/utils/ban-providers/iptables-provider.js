@@ -10,15 +10,25 @@ const BanProvider = require('./base-provider');
 const { exec } = require('child_process');
 const { promisify } = require('util');
 const execAsync = promisify(exec);
+const { validateIP, validateIdentifier, sanitizeComment } = require('../input-validator');
 
 class IptablesProvider extends BanProvider {
   constructor(integration) {
     super(integration);
 
-    // Get config
+    // Get config and validate
     this.ipsetName = this.config.ipset_name || 'waf_blocklist';
     this.chain = this.config.chain || 'INPUT';
     this.action = this.config.action || 'DROP';
+
+    // SECURITY: Validate configuration values to prevent injection
+    try {
+      this.ipsetName = validateIdentifier(this.ipsetName);
+      this.chain = validateIdentifier(this.chain);
+      this.action = validateIdentifier(this.action);
+    } catch (error) {
+      throw new Error(`Invalid iptables configuration: ${error.message}`);
+    }
 
     console.log(`[iptables] Initialized provider`);
     console.log(`[iptables] IPSet: ${this.ipsetName}`);
@@ -125,37 +135,43 @@ class IptablesProvider extends BanProvider {
   async banIP(ip, options = {}) {
     console.log(`[iptables] Banning IP: ${ip}`);
     try {
+      // SECURITY: Validate IP address to prevent command injection
+      const validatedIP = validateIP(ip);
+      
       const { reason, duration } = options;
 
       // Ensure ipset exists
       await this.ensureIpset();
 
       // Build ipset add command
-      let command = `sudo ipset add ${this.ipsetName} ${ip}`;
+      let command = `sudo ipset add ${this.ipsetName} ${validatedIP}`;
 
       // Add timeout if duration specified
       if (duration && duration > 0) {
-        command += ` timeout ${duration}`;
+        command += ` timeout ${parseInt(duration, 10)}`;
         console.log(`[iptables] Adding IP with ${duration}s timeout`);
       } else {
         console.log(`[iptables] Adding permanent IP ban`);
       }
 
       // Add comment if reason provided (requires ipset with comment support)
+      // SECURITY: Sanitize comment to prevent command injection
       if (reason) {
-        const sanitizedReason = reason.replace(/"/g, '\\"').substring(0, 255);
-        command += ` comment "${sanitizedReason}"`;
+        const sanitizedReason = sanitizeComment(reason, 255);
+        if (sanitizedReason) {
+          command += ` comment "${sanitizedReason}"`;
+        }
       }
 
       // Add to ipset (use -exist flag to not fail if already exists)
       await this.executeCommand(command + ' -exist');
 
-      console.log(`[iptables] IP ${ip} banned successfully`);
+      console.log(`[iptables] IP ${validatedIP} banned successfully`);
 
       return {
         success: true,
-        message: `IP ${ip} banned successfully`,
-        ban_id: ip
+        message: `IP ${validatedIP} banned successfully`,
+        ban_id: validatedIP
       };
     } catch (error) {
       console.error(`[iptables] Failed to ban IP ${ip}:`, error.message);
@@ -172,13 +188,16 @@ class IptablesProvider extends BanProvider {
   async unbanIP(ip, ban_id = null) {
     console.log(`[iptables] Unbanning IP: ${ip}`);
     try {
+      // SECURITY: Validate IP address to prevent command injection
+      const validatedIP = validateIP(ip);
+      
       // Delete from ipset (won't fail if not exists)
-      await this.executeCommand(`sudo ipset del ${this.ipsetName} ${ip} -exist`);
+      await this.executeCommand(`sudo ipset del ${this.ipsetName} ${validatedIP} -exist`);
 
-      console.log(`[iptables] IP ${ip} unbanned successfully`);
+      console.log(`[iptables] IP ${validatedIP} unbanned successfully`);
       return {
         success: true,
-        message: `IP ${ip} unbanned successfully`
+        message: `IP ${validatedIP} unbanned successfully`
       };
     } catch (error) {
       console.error(`[iptables] Failed to unban IP ${ip}:`, error.message);
@@ -233,6 +252,7 @@ class IptablesProvider extends BanProvider {
 
   /**
    * Ban multiple IPs in batch using ipset restore
+   * SECURITY: Uses stdin instead of echo to avoid command injection
    */
   async batchBanIPs(bans) {
     console.log(`[iptables] Batch banning ${bans.length} IPs...`);
@@ -248,29 +268,79 @@ class IptablesProvider extends BanProvider {
       await this.ensureIpset();
 
       // Build ipset commands for batch restore
+      // SECURITY: Validate all IPs before building batch
       let commands = [];
 
       for (const ban of bans) {
-        let cmd = `add ${this.ipsetName} ${ban.ip}`;
+        try {
+          // SECURITY: Validate IP address
+          const validatedIP = validateIP(ban.ip);
+          
+          let cmd = `add ${this.ipsetName} ${validatedIP}`;
 
-        if (ban.duration && ban.duration > 0) {
-          cmd += ` timeout ${ban.duration}`;
+          if (ban.duration && ban.duration > 0) {
+            cmd += ` timeout ${parseInt(ban.duration, 10)}`;
+          }
+
+          // SECURITY: Sanitize comment
+          if (ban.reason) {
+            const sanitizedReason = sanitizeComment(ban.reason, 255);
+            if (sanitizedReason) {
+              cmd += ` comment "${sanitizedReason}"`;
+            }
+          }
+
+          cmd += ' -exist';
+          commands.push(cmd);
+        } catch (error) {
+          console.error(`[iptables] Skipping invalid IP ${ban.ip}: ${error.message}`);
+          continue;
         }
-
-        if (ban.reason) {
-          const sanitizedReason = ban.reason.replace(/"/g, '\\"').substring(0, 255);
-          cmd += ` comment "${sanitizedReason}"`;
-        }
-
-        cmd += ' -exist';
-        commands.push(cmd);
       }
 
-      // Execute batch add using ipset restore
-      const batchScript = commands.join('\n');
-      await this.executeCommand(`echo "${batchScript}" | sudo ipset restore`);
+      if (commands.length === 0) {
+        throw new Error('No valid IPs to ban');
+      }
 
-      results.banned_count = bans.length;
+      // SECURITY: Use child_process.spawn with stdin instead of echo
+      // This prevents command injection through the batch script
+      const { spawn } = require('child_process');
+      const batchScript = commands.join('\n');
+      
+      await new Promise((resolve, reject) => {
+        const ipsetProcess = spawn('sudo', ['ipset', 'restore'], {
+          stdio: ['pipe', 'pipe', 'pipe']
+        });
+
+        let stdout = '';
+        let stderr = '';
+
+        ipsetProcess.stdout.on('data', (data) => {
+          stdout += data.toString();
+        });
+
+        ipsetProcess.stderr.on('data', (data) => {
+          stderr += data.toString();
+        });
+
+        ipsetProcess.on('close', (code) => {
+          if (code === 0) {
+            resolve({ stdout, stderr });
+          } else {
+            reject(new Error(`ipset restore exited with code ${code}: ${stderr}`));
+          }
+        });
+
+        ipsetProcess.on('error', (error) => {
+          reject(error);
+        });
+
+        // Write batch script to stdin
+        ipsetProcess.stdin.write(batchScript);
+        ipsetProcess.stdin.end();
+      });
+
+      results.banned_count = commands.length;
       bans.forEach(ban => {
         results.ban_ids[ban.ip] = ban.ip;
       });
@@ -317,6 +387,7 @@ class IptablesProvider extends BanProvider {
 
   /**
    * Unban multiple IPs in batch
+   * SECURITY: Uses stdin instead of echo to avoid command injection
    */
   async batchUnbanIPs(unbans) {
     console.log(`[iptables] Batch unbanning ${unbans.length} IPs...`);
@@ -327,14 +398,61 @@ class IptablesProvider extends BanProvider {
     };
 
     try {
-      // Build ipset commands for batch restore
-      const commands = unbans.map(unban => `del ${this.ipsetName} ${unban.ip} -exist`);
+      // SECURITY: Validate all IPs and build commands
+      const commands = [];
+      
+      for (const unban of unbans) {
+        try {
+          const validatedIP = validateIP(unban.ip);
+          commands.push(`del ${this.ipsetName} ${validatedIP} -exist`);
+        } catch (error) {
+          console.error(`[iptables] Skipping invalid IP ${unban.ip}: ${error.message}`);
+          continue;
+        }
+      }
 
-      // Execute batch delete using ipset restore
+      if (commands.length === 0) {
+        throw new Error('No valid IPs to unban');
+      }
+
+      // SECURITY: Use child_process.spawn with stdin instead of echo
+      const { spawn } = require('child_process');
       const batchScript = commands.join('\n');
-      await this.executeCommand(`echo "${batchScript}" | sudo ipset restore`);
+      
+      await new Promise((resolve, reject) => {
+        const ipsetProcess = spawn('sudo', ['ipset', 'restore'], {
+          stdio: ['pipe', 'pipe', 'pipe']
+        });
 
-      results.unbanned_count = unbans.length;
+        let stdout = '';
+        let stderr = '';
+
+        ipsetProcess.stdout.on('data', (data) => {
+          stdout += data.toString();
+        });
+
+        ipsetProcess.stderr.on('data', (data) => {
+          stderr += data.toString();
+        });
+
+        ipsetProcess.on('close', (code) => {
+          if (code === 0) {
+            resolve({ stdout, stderr });
+          } else {
+            reject(new Error(`ipset restore exited with code ${code}: ${stderr}`));
+          }
+        });
+
+        ipsetProcess.on('error', (error) => {
+          reject(error);
+        });
+
+        // Write batch script to stdin
+        ipsetProcess.stdin.write(batchScript);
+        ipsetProcess.stdin.end();
+      });
+
+      results.unbanned_count = commands.length;
       results.message = `Successfully unbanned ${results.unbanned_count} IPs`;
       console.log(`[iptables] Batch unban completed successfully: ${results.message}`);
 

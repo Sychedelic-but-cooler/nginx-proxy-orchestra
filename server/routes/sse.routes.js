@@ -25,6 +25,10 @@ function handleSSERoutes(req, res, parsedUrl) {
     return handleBanEventsStream(req, res, parsedUrl);
   }
 
+  if (pathname === '/api/proxy/events/stream' && method === 'GET') {
+    return handleProxyEventsStream(req, res, parsedUrl);
+  }
+
   res.writeHead(404, { 'Content-Type': 'text/plain' });
   res.end('Not Found');
 }
@@ -99,8 +103,45 @@ function handleBanEventsStream(req, res, parsedUrl) {
   }
 
   // Add client to SSE manager
-  const clientId = sseManager.addClient(req, res, user, { eventType: 'ban' });
+  const clientId = addClient(req, res, user, { eventType: 'ban' });
   console.log(`[SSE Ban] Client ${clientId} connected (user: ${user.username})`);
+}
+
+/**
+ * Handle proxy events SSE stream
+ * Provides real-time streaming of proxy change events
+ *
+ * @param {IncomingMessage} req - HTTP request object
+ * @param {ServerResponse} res - HTTP response object
+ * @param {URL} parsedUrl - Parsed URL object
+ */
+function handleProxyEventsStream(req, res, parsedUrl) {
+  // Verify authentication - check both Authorization header and query parameter
+  // EventSource doesn't support custom headers, so we accept token via query param
+  const authHeader = req.headers.authorization;
+  let token = extractToken(authHeader);
+
+  // If no token in header, check query parameter
+  if (!token) {
+    token = parsedUrl.searchParams.get('token');
+  }
+
+  console.log('[SSE Proxy] Token received:', token ? 'Yes (length: ' + token.length + ')' : 'No');
+
+  const user = verifyToken(token);
+
+  console.log('[SSE Proxy] User verified:', user ? 'Yes (user: ' + user.username + ')' : 'No');
+
+  if (!user) {
+    console.log('[SSE Proxy] Authentication failed - sending 401');
+    res.writeHead(401, { 'Content-Type': 'text/plain' });
+    res.end('Unauthorized');
+    return;
+  }
+
+  // Add client to SSE manager
+  const clientId = addClient(req, res, user, { eventType: 'proxy' });
+  console.log(`[SSE Proxy] Client ${clientId} connected (user: ${user.username})`);
 }
 
 module.exports = handleSSERoutes;

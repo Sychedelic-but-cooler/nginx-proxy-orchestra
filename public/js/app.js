@@ -11,6 +11,7 @@ import { renderModules } from './components/module-manager.js';
 import { renderAuditLog } from './components/audit-log.js';
 import { renderAdvancedEditor } from './components/advanced-editor.js';
 import { renderSettings } from './components/settings.js';
+import { renderSessions } from './components/sessions.js';
 import { renderNotificationSettings } from './components/enhanced-notification-settings.js';
 import { renderWAFDashboard, cleanupWAFDashboard } from './components/waf-dashboard.js';
 import { renderWAFProfiles } from './components/waf-profiles.js';
@@ -260,6 +261,12 @@ router.register('/settings/security', async () => {
 router.register('/settings/notifications', async () => {
   updateNavigation('settings/notifications');
   await renderNotificationSettings(mainContent);
+});
+
+router.register('/settings/sessions', async () => {
+  updateNavigation('settings/sessions');
+  setHeader('Active Sessions');
+  await renderSessions(mainContent);
 });
 
 router.register('/settings/integrations', async () => {

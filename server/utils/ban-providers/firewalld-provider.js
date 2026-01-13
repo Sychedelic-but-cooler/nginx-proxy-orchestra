@@ -9,13 +9,21 @@ const BanProvider = require('./base-provider');
 const { exec } = require('child_process');
 const { promisify } = require('util');
 const execAsync = promisify(exec);
+const { validateIP, validateIdentifier, validateDuration } = require('../input-validator');
 
 class FirewalldProvider extends BanProvider {
   constructor(integration) {
     super(integration);
 
-    // Get zone from config (default: public)
+    // Get zone from config (default: public) and validate
     this.zone = this.config.zone || 'public';
+    
+    // SECURITY: Validate zone name to prevent command injection
+    try {
+      this.zone = validateIdentifier(this.zone);
+    } catch (error) {
+      throw new Error(`Invalid firewalld zone: ${error.message}`);
+    }
 
     console.log(`[firewalld] Initialized provider for zone: ${this.zone}`);
   }
@@ -86,10 +94,13 @@ class FirewalldProvider extends BanProvider {
   async banIP(ip, options = {}) {
     console.log(`[firewalld] Banning IP: ${ip}`);
     try {
+      // SECURITY: Validate IP address to prevent command injection
+      const validatedIP = validateIP(ip);
+      
       const { reason, duration } = options;
 
       // Create rich rule to drop traffic from IP
-      const rule = `rule family="ipv4" source address="${ip}" drop`;
+      const rule = `rule family="ipv4" source address="${validatedIP}" drop`;
 
       // Determine if this should be permanent or temporary
       const isPermanent = !duration || duration === 0 || duration === null;
@@ -112,17 +123,20 @@ class FirewalldProvider extends BanProvider {
         await this.executeCommand(`sudo firewall-cmd --zone=${this.zone} --permanent --add-rich-rule='${rule}'`);
 
       } else {
+        // SECURITY: Validate duration
+        const validatedDuration = validateDuration(duration, { min: 1, max: 604800 }); // Max 7 days
+        
         // Temporary ban: use timeout for runtime only
-        console.log(`[firewalld] Adding temporary ban with ${duration}s timeout`);
-        await this.executeCommand(`sudo firewall-cmd --zone=${this.zone} --add-rich-rule='${rule}' --timeout=${duration}`);
+        console.log(`[firewalld] Adding temporary ban with ${validatedDuration}s timeout`);
+        await this.executeCommand(`sudo firewall-cmd --zone=${this.zone} --add-rich-rule='${rule}' --timeout=${validatedDuration}`);
       }
 
-      console.log(`[firewalld] IP ${ip} banned successfully`);
+      console.log(`[firewalld] IP ${validatedIP} banned successfully`);
 
       return {
         success: true,
-        message: `IP ${ip} banned successfully`,
-        ban_id: ip  // Use IP as ban_id since we identify by IP
+        message: `IP ${validatedIP} banned successfully`,
+        ban_id: validatedIP  // Use IP as ban_id since we identify by IP
       };
     } catch (error) {
       console.error(`[firewalld] Failed to ban IP ${ip}:`, error.message);
@@ -139,29 +153,32 @@ class FirewalldProvider extends BanProvider {
   async unbanIP(ip, ban_id = null) {
     console.log(`[firewalld] Unbanning IP: ${ip}`);
     try {
-      const rule = `rule family="ipv4" source address="${ip}" drop`;
+      // SECURITY: Validate IP address to prevent command injection
+      const validatedIP = validateIP(ip);
+      
+      const rule = `rule family="ipv4" source address="${validatedIP}" drop`;
 
       // Try to remove from runtime first
       try {
         await this.executeCommand(`sudo firewall-cmd --zone=${this.zone} --remove-rich-rule='${rule}'`);
-        console.log(`[firewalld] Removed runtime rule for ${ip}`);
+        console.log(`[firewalld] Removed runtime rule for ${validatedIP}`);
       } catch (e) {
-        console.log(`[firewalld] No runtime rule found for ${ip}`);
+        console.log(`[firewalld] No runtime rule found for ${validatedIP}`);
       }
 
       // Try to remove permanent rule
       try {
         await this.executeCommand(`sudo firewall-cmd --zone=${this.zone} --permanent --remove-rich-rule='${rule}'`);
         await this.executeCommand('sudo firewall-cmd --reload');
-        console.log(`[firewalld] Removed permanent rule for ${ip}`);
+        console.log(`[firewalld] Removed permanent rule for ${validatedIP}`);
       } catch (e) {
-        console.log(`[firewalld] No permanent rule found for ${ip}`);
+        console.log(`[firewalld] No permanent rule found for ${validatedIP}`);
       }
 
-      console.log(`[firewalld] IP ${ip} unbanned successfully`);
+      console.log(`[firewalld] IP ${validatedIP} unbanned successfully`);
       return {
         success: true,
-        message: `IP ${ip} unbanned successfully`
+        message: `IP ${validatedIP} unbanned successfully`
       };
     } catch (error) {
       console.error(`[firewalld] Failed to unban IP ${ip}:`, error.message);

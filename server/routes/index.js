@@ -15,6 +15,7 @@ const handleCredentialsRoutes = require('./credentials.routes');
 const handleModulesRoutes = require('./modules.routes');
 const handleConfigRoutes = require('./config.routes');
 const handleAuthRoutes = require('./auth.routes');
+const handleSessionRoutes = require('./sessions.routes');
 const handleDNSRoutes = require('./dns.routes');
 const handleNginxRoutes = require('./nginx.routes');
 const handleSettingsRoutes = require('./settings.routes');
@@ -73,8 +74,13 @@ async function handleAPI(req, res, parsedUrl) {
     req.user = authResult.user;
 
     // Logout and password change routes (require auth)
-    if (pathname === '/api/logout' || pathname === '/api/user/password') {
+    if (pathname === '/api/logout' || pathname === '/api/user/password' || pathname === '/api/user/sse-token') {
       return await handleAuthRoutes(req, res, parsedUrl);
+    }
+
+    // Session management routes
+    if (pathname.startsWith('/api/sessions')) {
+      return await handleSessionRoutes(req, res, parsedUrl);
     }
 
     // Dashboard routes

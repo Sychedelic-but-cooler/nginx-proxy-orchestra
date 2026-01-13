@@ -9,7 +9,9 @@ const {
   generateToken,
   checkRateLimit,
   verifyPassword,
-  hashPassword
+  hashPassword,
+  revokeSession,
+  revokeAllUserSessions
 } = require('../auth');
 
 /**
@@ -33,6 +35,10 @@ async function handleAuthRoutes(req, res, parsedUrl) {
 
   if (pathname === '/api/user/password' && method === 'POST') {
     return handleChangePassword(req, res);
+  }
+
+  if (pathname === '/api/user/sse-token' && method === 'POST') {
+    return handleGenerateSSEToken(req, res);
   }
 
   sendJSON(res, { error: 'Not Found' }, 404);
@@ -69,8 +75,13 @@ async function handleLogin(req, res) {
     return sendJSON(res, { error: 'Invalid credentials' }, 401);
   }
 
-  // Generate JWT token
-  const token = generateToken(user.id, user.username);
+  // Generate JWT token with session tracking
+  const userAgent = req.headers['user-agent'] || null;
+  const token = generateToken(user.id, user.username, {
+    type: 'user',
+    userAgent,
+    ipAddress: ip
+  });
 
   logAudit(user.id, 'login', 'user', user.id, null, ip);
 
@@ -96,15 +107,15 @@ async function handleLogin(req, res) {
 
 /**
  * Handle user logout
- * Logs logout event for audit purposes
+ * Revokes the current session token
  *
  * @param {IncomingMessage} req - HTTP request object
  * @param {ServerResponse} res - HTTP response object
  */
 function handleLogout(req, res) {
-  // With JWT, logout is handled client-side by removing the token
-  // But we still log it for audit purposes
-  if (req.user) {
+  // Revoke the current session
+  if (req.user && req.user.jti) {
+    revokeSession(req.user.jti, req.user.userId);
     logAudit(req.user.userId, 'logout', 'user', req.user.userId, null, getClientIP(req));
   }
 
@@ -148,12 +159,54 @@ async function handleChangePassword(req, res) {
     const newHash = await hashPassword(newPassword);
     db.prepare('UPDATE users SET password = ? WHERE id = ?').run(newHash, req.user.userId);
 
-    logAudit(req.user.userId, 'change_password', 'user', req.user.userId, null, getClientIP(req));
-    sendJSON(res, { success: true });
+    // Revoke all other sessions except current one (force re-login on other devices)
+    const currentTokenId = req.user.jti;
+    const revokedCount = revokeAllUserSessions(req.user.userId, req.user.userId, currentTokenId);
+    
+    logAudit(req.user.userId, 'change_password', 'user', req.user.userId, 
+      `Password changed, ${revokedCount} other sessions revoked`, getClientIP(req));
+    
+    sendJSON(res, { 
+      success: true,
+      message: revokedCount > 0 
+        ? `Password changed successfully. ${revokedCount} other session(s) have been logged out.`
+        : 'Password changed successfully.'
+    });
   } catch (error) {
     console.error('Change password error:', error);
     sendJSON(res, { error: error.message || 'Failed to change password' }, 500);
   }
+}
+
+/**
+ * Generate SSE token
+ * Creates a short-lived token for Server-Sent Events connections
+ *
+ * @param {IncomingMessage} req - HTTP request object
+ * @param {ServerResponse} res - HTTP response object
+ */
+function handleGenerateSSEToken(req, res) {
+  if (!req.user) {
+    return sendJSON(res, { error: 'Unauthorized' }, 401);
+  }
+
+  const ip = getClientIP(req);
+  const userAgent = req.headers['user-agent'] || null;
+  
+  // Generate short-lived SSE token (1 hour)
+  const sseToken = generateToken(req.user.userId, req.user.username, {
+    type: 'sse',
+    userAgent,
+    ipAddress: ip
+  });
+
+  logAudit(req.user.userId, 'generate_sse_token', 'session', null, null, ip);
+
+  sendJSON(res, {
+    success: true,
+    token: sseToken,
+    expiresIn: 3600 // 1 hour in seconds
+  });
 }
 
 module.exports = handleAuthRoutes;

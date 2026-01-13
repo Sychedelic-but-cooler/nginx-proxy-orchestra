@@ -146,6 +146,33 @@ function initializeDatabase() {
     )
   `);
 
+  // Sessions table for token tracking and revocation
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS sessions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
+      token_id TEXT UNIQUE NOT NULL,
+      token_type TEXT NOT NULL DEFAULT 'user',
+      user_agent TEXT,
+      ip_address TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      expires_at DATETIME NOT NULL,
+      last_used_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      revoked_at DATETIME,
+      revoked_by INTEGER,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+      FOREIGN KEY (revoked_by) REFERENCES users(id) ON DELETE SET NULL
+    )
+  `);
+
+  // Create indexes for session queries
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id);
+    CREATE INDEX IF NOT EXISTS idx_sessions_token_id ON sessions(token_id);
+    CREATE INDEX IF NOT EXISTS idx_sessions_expires_at ON sessions(expires_at);
+    CREATE INDEX IF NOT EXISTS idx_sessions_revoked_at ON sessions(revoked_at);
+  `);
+
   // Initialize default settings if they don't exist
   const defaultBehavior = db.prepare('SELECT value FROM settings WHERE key = ?').get('default_server_behavior');
   if (!defaultBehavior) {

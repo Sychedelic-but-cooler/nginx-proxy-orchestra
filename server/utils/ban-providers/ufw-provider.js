@@ -10,6 +10,7 @@ const BanProvider = require('./base-provider');
 const { exec } = require('child_process');
 const { promisify } = require('util');
 const execAsync = promisify(exec);
+const { validateIP } = require('../input-validator');
 
 class UFWProvider extends BanProvider {
   constructor(integration) {
@@ -94,14 +95,17 @@ class UFWProvider extends BanProvider {
   async banIP(ip, options = {}) {
     console.log(`[ufw] Banning IP: ${ip}`);
     try {
+      // SECURITY: Validate IP address to prevent command injection
+      const validatedIP = validateIP(ip);
+      
       const { reason, duration } = options;
 
       // UFW doesn't support comments in CLI, but we can add via numbered insert
-      let command = `sudo ufw insert ${this.insertPosition} deny from ${ip}`;
+      let command = `sudo ufw insert ${this.insertPosition} deny from ${validatedIP}`;
 
       await this.executeCommand(command);
 
-      console.log(`[ufw] IP ${ip} banned successfully`);
+      console.log(`[ufw] IP ${validatedIP} banned successfully`);
 
       // Note: UFW doesn't support native expiry, so duration is stored in our DB only
       if (duration) {
@@ -110,8 +114,8 @@ class UFWProvider extends BanProvider {
 
       return {
         success: true,
-        message: `IP ${ip} banned successfully`,
-        ban_id: ip  // Use IP as ban_id
+        message: `IP ${validatedIP} banned successfully`,
+        ban_id: validatedIP  // Use IP as ban_id
       };
     } catch (error) {
       console.error(`[ufw] Failed to ban IP ${ip}:`, error.message);
@@ -128,14 +132,17 @@ class UFWProvider extends BanProvider {
   async unbanIP(ip, ban_id = null) {
     console.log(`[ufw] Unbanning IP: ${ip}`);
     try {
+      // SECURITY: Validate IP address to prevent command injection
+      const validatedIP = validateIP(ip);
+      
       // Delete the deny rule for this IP
-      const command = `sudo ufw delete deny from ${ip}`;
+      const command = `sudo ufw delete deny from ${validatedIP}`;
       await this.executeCommand(command);
 
-      console.log(`[ufw] IP ${ip} unbanned successfully`);
+      console.log(`[ufw] IP ${validatedIP} unbanned successfully`);
       return {
         success: true,
-        message: `IP ${ip} unbanned successfully`
+        message: `IP ${validatedIP} unbanned successfully`
       };
     } catch (error) {
       // If rule doesn't exist, ufw returns error, but we can still report success
