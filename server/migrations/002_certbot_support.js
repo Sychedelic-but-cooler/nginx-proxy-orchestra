@@ -13,18 +13,6 @@ function runCertbotMigration(db) {
   console.log('Running certbot support migration...');
 
   try {
-    // Check if migration already ran
-    const checkColumn = db.prepare(`
-      SELECT COUNT(*) as count
-      FROM pragma_table_info('ssl_certificates')
-      WHERE name = 'source'
-    `).get();
-
-    if (checkColumn.count > 0) {
-      console.log('Certbot migration already applied, skipping...');
-      return;
-    }
-
     // Begin transaction
     db.exec('BEGIN TRANSACTION');
 

@@ -231,92 +231,13 @@ function initializeDatabase() {
     console.log('\n');
   }
 
-  // Run security features migration
-  const { runSecurityMigration } = require('./migrations/001_security_features');
+  // Run all database migrations using the migration system
+  const { runMigrations } = require('./migrate');
   try {
-    runSecurityMigration(db);
+    runMigrations(db);
   } catch (error) {
-    console.error('Security migration error:', error.message);
-  }
-
-  // Run certbot support migration
-  const { runCertbotMigration } = require('./migrations/002_certbot_support');
-  try {
-    runCertbotMigration(db);
-  } catch (error) {
-    console.error('Certbot migration error:', error.message);
-  }
-
-  // Run WAF enhancements migration
-  const { runWAFEnhancementsMigration } = require('./migrations/003_waf_enhancements');
-  try {
-    runWAFEnhancementsMigration(db);
-  } catch (error) {
-    console.error('WAF enhancements migration error:', error.message);
-  }
-
-  // Run modular config migration
-  const { runModularConfigMigration } = require('./migrations/004_modular_config');
-  try {
-    runModularConfigMigration(db);
-  } catch (error) {
-    console.error('Modular config migration error:', error.message);
-  }
-
-  // Run single WAF profile migration
-  const { runSingleWAFProfileMigration } = require('./migrations/005_single_waf_profile');
-  try {
-    runSingleWAFProfileMigration(db);
-  } catch (error) {
-    console.error('Single WAF profile migration error:', error.message);
-  }
-
-  // Run profile-level WAF exclusions migration
-  const { runProfileExclusionsMigration } = require('./migrations/006_profile_exclusions');
-  try {
-    runProfileExclusionsMigration(db);
-  } catch (error) {
-    console.error('Profile exclusions migration error:', error.message);
-  }
-
-  // Run unified credentials migration
-  const { runUnifiedCredentialsMigration } = require('./migrations/007_unified_credentials');
-  try {
-    runUnifiedCredentialsMigration(db);
-  } catch (error) {
-    console.error('Unified credentials migration error:', error.message);
-  }
-
-  // Run ban system migration
-  const { runBanSystemMigration } = require('./migrations/008_ban_system');
-  try {
-    runBanSystemMigration(db);
-  } catch (error) {
-    console.error('Ban system migration error:', error.message);
-  }
-
-  // Run separate WAF database migration
-  const { runSeparateWAFDBMigration } = require('./migrations/009_separate_waf_db');
-  try {
-    runSeparateWAFDBMigration(db);
-  } catch (error) {
-    console.error('Separate WAF DB migration error:', error.message);
-  }
-
-  // Run module tags migration
-  const { runModuleTagsMigration } = require('./migrations/010_module_tags');
-  try {
-    runModuleTagsMigration(db);
-  } catch (error) {
-    console.error('Module tags migration error:', error.message);
-  }
-
-  // Run enhanced notifications migration
-  const runEnhancedNotificationsMigration = require('./migrations/011_enhanced_notifications');
-  try {
-    runEnhancedNotificationsMigration(db);
-  } catch (error) {
-    console.error('Enhanced notifications migration error:', error.message);
+    console.error('Migration system error:', error.message);
+    console.error('The application may not function correctly until migrations are resolved.');
   }
 
   // Create some default modules if none exist

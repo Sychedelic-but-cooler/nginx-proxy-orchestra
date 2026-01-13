@@ -11,15 +11,6 @@ function runModuleTagsMigration(db) {
   console.log('Running migration: Module tags...');
 
   try {
-    // Check if already applied
-    const tableInfo = db.prepare("PRAGMA table_info(modules)").all();
-    const hasTagColumn = tableInfo.some(col => col.name === 'tag');
-
-    if (hasTagColumn) {
-      console.log('Module tags migration already applied, skipping...');
-      return;
-    }
-
     db.prepare('BEGIN TRANSACTION').run();
 
     // Step 1: Add tag column

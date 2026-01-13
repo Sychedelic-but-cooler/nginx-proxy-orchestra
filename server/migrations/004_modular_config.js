@@ -13,15 +13,6 @@ function runModularConfigMigration(db) {
   console.log('Running migration: Modular config system...');
 
   try {
-    // Check if migration already applied
-    const tableInfo = db.prepare("PRAGMA table_info(modules)").all();
-    const hasLevelColumn = tableInfo.some(col => col.name === 'level');
-
-    if (hasLevelColumn) {
-      console.log('Modular config migration already applied, skipping...');
-      return;
-    }
-
     db.prepare('BEGIN TRANSACTION').run();
 
     // Step 1: Add level column to modules table

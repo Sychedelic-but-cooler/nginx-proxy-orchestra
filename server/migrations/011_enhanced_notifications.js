@@ -80,18 +80,30 @@ function runEnhancedNotificationsMigration(db) {
     // Step 5: Insert default WAF notification matrix entries
     console.log('  - Inserting default WAF matrix configurations');
     const defaultMatrixConfigs = [
-      { severity: 'critical', count: 1, window: 1 }, // Immediate for critical
-      { severity: 'critical', count: 5, window: 5 },
-      { severity: 'critical', count: 10, window: 15 },
-      { severity: 'error', count: 5, window: 5 },
-      { severity: 'error', count: 10, window: 10 },
-      { severity: 'error', count: 20, window: 30 },
-      { severity: 'warning', count: 10, window: 10 },
-      { severity: 'warning', count: 25, window: 30 },
-      { severity: 'warning', count: 50, window: 60 },
-      { severity: 'notice', count: 25, window: 30 },
-      { severity: 'notice', count: 100, window: 60 },
-      { severity: 'notice', count: 500, window: 240 }
+      // Critical severity thresholds
+      { severity: 'critical', count: 15, window: 0.25 }, // 15+ in 15s
+      { severity: 'critical', count: 30, window: 0.25 }, // 30+ in 15s
+      { severity: 'critical', count: 60, window: 1 },    // 60+ in 60s
+      { severity: 'critical', count: 100, window: 5 },   // 100+ in 5m
+      { severity: 'critical', count: 200, window: 10 },  // 200+ in 10m
+      // Error severity thresholds
+      { severity: 'error', count: 15, window: 0.25 },    // 15+ in 15s
+      { severity: 'error', count: 30, window: 0.25 },    // 30+ in 15s
+      { severity: 'error', count: 60, window: 1 },       // 60+ in 60s
+      { severity: 'error', count: 100, window: 5 },      // 100+ in 5m
+      { severity: 'error', count: 200, window: 10 },     // 200+ in 10m
+      // Warning severity thresholds
+      { severity: 'warning', count: 15, window: 0.25 },  // 15+ in 15s
+      { severity: 'warning', count: 30, window: 0.25 },  // 30+ in 15s
+      { severity: 'warning', count: 60, window: 1 },     // 60+ in 60s
+      { severity: 'warning', count: 100, window: 5 },    // 100+ in 5m
+      { severity: 'warning', count: 200, window: 10 },   // 200+ in 10m
+      // Notice severity thresholds
+      { severity: 'notice', count: 15, window: 0.25 },   // 15+ in 15s
+      { severity: 'notice', count: 30, window: 0.25 },   // 30+ in 15s
+      { severity: 'notice', count: 60, window: 1 },      // 60+ in 60s
+      { severity: 'notice', count: 100, window: 5 },     // 100+ in 5m
+      { severity: 'notice', count: 200, window: 10 }     // 200+ in 10m
     ];
 
     const insertMatrix = db.prepare(`

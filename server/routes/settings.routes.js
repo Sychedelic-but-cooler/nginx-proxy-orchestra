@@ -6,6 +6,7 @@
 const { db, logAudit, getSetting, setSetting, getAllSettings } = require('../db');
 const { parseBody, sendJSON, getClientIP } = require('./shared/utils');
 const { reloadManager } = require('../utils/nginx-reload-manager');
+const { getMigrationStatus } = require('../migrate');
 
 /**
  * Handle settings-related routes
@@ -28,6 +29,10 @@ async function handleSettingsRoutes(req, res, parsedUrl) {
 
   if (pathname === '/api/audit-log' && method === 'GET') {
     return handleGetAuditLog(req, res);
+  }
+
+  if (pathname === '/api/migrations' && method === 'GET') {
+    return handleGetMigrations(req, res);
   }
 
   sendJSON(res, { error: 'Not Found' }, 404);
@@ -139,6 +144,23 @@ function handleGetAuditLog(req, res) {
     ORDER BY al.created_at DESC
     LIMIT 100
   `).all();
+/**
+ * Get migration status
+ * Returns status of all database migrations
+ *
+ * @param {IncomingMessage} req - HTTP request object
+ * @param {ServerResponse} res - HTTP response object
+ */
+function handleGetMigrations(req, res) {
+  try {
+    const migrations = getMigrationStatus(db);
+    sendJSON(res, { migrations });
+  } catch (error) {
+    console.error('Get migrations error:', error);
+    sendJSON(res, { error: error.message }, 500);
+  }
+}
+
 
   sendJSON(res, logs);
 }
