@@ -20,7 +20,6 @@ Backend Features:
 - Service Discovery: Scan a subnet to find HTTP / HTTPS services for potential addition to proxy
 
 Frontend Features:
-- Dark Mode - Because yeah, dark mode
 - Custom Report Builder - Create scheduled PDF/CSV, support APPRISE endpoints seperately; reports with metrics and potential bottlenecks
 - gRPC Support - gRPC proxy configuration UI
 - Certificate Renewal Dry-Run - Allow testing cert ordering without actual renewal

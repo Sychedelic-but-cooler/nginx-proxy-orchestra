@@ -137,10 +137,7 @@ const server = https.createServer(httpsOptions, requestHandler);
 
 // Start server
 server.listen(HTTPS_PORT, () => {
-  console.log('');
-  console.log('═══════════════════════════════════════════════════════════');
   console.log('               Nginx Proxy Orchestra Started               ');
-  console.log('═══════════════════════════════════════════════════════════');
   console.log('');
   console.log(`     HTTPS server running at: https://localhost:${HTTPS_PORT}`);
   console.log(`     Public directory: ${PUBLIC_DIR}`);
@@ -153,9 +150,6 @@ server.listen(HTTPS_PORT, () => {
   } else {
     console.log('     Using custom TLS certificate');
   }
-  console.log('');
-  console.log('═══════════════════════════════════════════════════════════');
-  console.log('');
 
   // Load nginx module information at startup
   const { loadModuleInfo } = require('./utils/nginx-ops');
