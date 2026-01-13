@@ -30,7 +30,7 @@ This project aims to offer a simple and intuitive management framework for deplo
   - https://github.com/auth0/node-jsonwebtoken
 
 - **PM2**  
-  PM2 is the preferred process manager for this project, though it is not required.  
+  - PM2 is the preferred process manager for this project, though it is not required.  
   - https://github.com/Unitech/pm2
 
 ---
