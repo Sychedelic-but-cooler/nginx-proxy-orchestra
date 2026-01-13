@@ -1,6 +1,6 @@
 const { sendJSON, parseBody, getClientIP } = require('./shared/utils');
 const { db, logAudit, getSetting, setSetting, getAllSettings } = require('../db');
-const reloadManager = require('../utils/reload-manager');
+const { reloadManager } = require('../utils/nginx-reload-manager');
 const { getErrorPages, setErrorPage, ALLOWED_CODES, ensureDefaultErrorPages } = require('../utils/error-pages');
 // Note: 'migrate' module might not be fully available if we just use db methods
 // but let's try to import getMigrationStatus safely or replicate it if simple
