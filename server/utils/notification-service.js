@@ -9,8 +9,9 @@
 
 const { exec } = require('child_process');
 const { promisify } = require('util');
-const { getSetting, db } = require('../db');
+const { getSetting, setSetting, db } = require('../db');
 const { getWAFDb } = require('../waf-db');
+const cron = require('node-cron');
 
 const execAsync = promisify(exec);
 
@@ -20,7 +21,11 @@ class NotificationService {
     this.appriseUrls = [];
     this.isAppriseInstalled = false;
     this.appriseCheckComplete = false;
+    this.scheduledTasks = new Map();
+    this.notificationQueue = [];
+    this.isProcessingQueue = false;
     this.checkAppriseInstalled();
+    this.initializeScheduler();
   }
 
   /**
@@ -32,8 +37,8 @@ class NotificationService {
       this.isAppriseInstalled = true;
     } catch (error) {
       this.isAppriseInstalled = false;
-      console.warn('⚠️  Apprise not installed. Notifications will be disabled.');
-      console.warn('   Install with: pip3 install apprise');
+      console.warn('Apprise not installed. Notifications will be disabled.');
+      console.warn('Install with: pip3 install apprise');
     } finally {
       this.appriseCheckComplete = true;
     }
@@ -70,6 +75,16 @@ class NotificationService {
 
       this.wafThreshold = parseInt(getSetting('notification_waf_threshold') || '10');
       this.wafThresholdMinutes = parseInt(getSetting('notification_waf_threshold_minutes') || '5');
+      
+      // Enhanced notification settings
+      this.matrixEnabled = getSetting('notification_matrix_enabled') === '1';
+      this.dailyReportEnabled = getSetting('notification_daily_report_enabled') === '1';
+      this.proxyLifecycleEnabled = getSetting('notification_proxy_lifecycle_enabled') === '1';
+      this.batchingEnabled = getSetting('notification_batching_enabled') === '1';
+      this.batchInterval = parseInt(getSetting('notification_batch_interval') || '300'); // 5 minutes
+      this.rateLimit = parseInt(getSetting('notification_rate_limit') || '10');
+      this.dailyReportTime = getSetting('notification_daily_report_time') || '23:30';
+      this.timezone = getSetting('notification_timezone') || 'UTC';
 
       return true;
     } catch (error) {
@@ -261,6 +276,109 @@ Recent attacks: ${recentEvents} in the last ${this.wafThresholdMinutes} minutes.
   }
 
   /**
+   * Initialize notification scheduler for daily reports
+   */
+  initializeScheduler() {
+    if (!db) return;
+    
+    try {
+      // Start daily report scheduler
+      this.scheduleDailyReports();
+      
+      // Start notification queue processor
+      if (this.batchingEnabled) {
+        this.startQueueProcessor();
+      }
+      
+      console.log('Notification scheduler initialized');
+    } catch (error) {
+      console.error('Error initializing notification scheduler:', error);
+    }
+  }
+
+  /**
+   * Schedule daily reports based on database settings
+   */
+  scheduleDailyReports() {
+    try {
+      const schedules = db.prepare(`
+        SELECT * FROM notification_schedules 
+        WHERE enabled = 1 AND type = 'daily'
+      `).all();
+      
+      schedules.forEach(schedule => {
+        if (this.scheduledTasks.has(schedule.id)) {
+          this.scheduledTasks.get(schedule.id).stop();
+        }
+        
+        const task = cron.schedule(schedule.cron_expression, async () => {
+          await this.generateDailyReport(schedule);
+        }, {
+          scheduled: true,
+          timezone: this.timezone
+        });
+        
+        this.scheduledTasks.set(schedule.id, task);
+        console.log(`Scheduled daily report: ${schedule.name} at ${schedule.cron_expression}`);
+      });
+    } catch (error) {
+      console.error('Error scheduling daily reports:', error);
+    }
+  }
+
+  /**
+   * Start notification queue processor for batching
+   */
+  startQueueProcessor() {
+    setInterval(async () => {
+      if (this.isProcessingQueue) return;
+      await this.processNotificationQueue();
+    }, this.batchInterval * 1000);
+  }
+
+  /**
+   * Process queued notifications in batches
+   */
+  async processNotificationQueue() {
+    if (!this.batchingEnabled) return;
+    
+    this.isProcessingQueue = true;
+    
+    try {
+      const queuedNotifications = db.prepare(`
+        SELECT * FROM notification_queue 
+        WHERE status = 'pending' AND scheduled_for <= datetime('now')
+        ORDER BY scheduled_for ASC
+        LIMIT 10
+      `).all();
+      
+      for (const notification of queuedNotifications) {
+        try {
+          const eventData = JSON.parse(notification.event_data);
+          await this.send(eventData);
+          
+          db.prepare(`
+            UPDATE notification_queue 
+            SET status = 'sent', sent_at = datetime('now')
+            WHERE id = ?
+          `).run(notification.id);
+          
+        } catch (error) {
+          db.prepare(`
+            UPDATE notification_queue 
+            SET status = 'failed', attempts = attempts + 1, error_message = ?
+            WHERE id = ?
+          `).run(error.message, notification.id);
+        }
+      }
+    } catch (error) {
+      console.error('Error processing notification queue:', error);
+    } finally {
+      this.isProcessingQueue = false;
+    }
+  }
+
+  /**
    * Send high severity WAF event notification
    */
   async notifyHighSeverityEvent(event) {
@@ -446,6 +564,342 @@ This IP is no longer banned and can access your infrastructure. Firewall rules h
   }
 
   /**
+   * Check WAF events against notification matrix and send alerts
+   */
+  async checkWAFMatrix() {
+    this.loadSettings();
+    
+    if (!this.matrixEnabled) return;
+    
+    try {
+      const matrixConfigs = db.prepare(`
+        SELECT * FROM waf_notification_matrix
+        WHERE enabled = 1
+      `).all();
+      
+      for (const config of matrixConfigs) {
+        await this.checkMatrixThreshold(config);
+      }
+    } catch (error) {
+      console.error('Error checking WAF matrix:', error);
+    }
+  }
+
+  /**
+   * Check individual matrix threshold and send notification if triggered
+   */
+  async checkMatrixThreshold(config) {
+    try {
+      const wafDb = getWAFDb();
+      if (!wafDb) return;
+      
+      // Check if we're in cooldown period
+      if (config.last_triggered && config.notification_delay > 0) {
+        const cooldownEnd = new Date(config.last_triggered);
+        cooldownEnd.setMinutes(cooldownEnd.getMinutes() + config.notification_delay);
+        if (new Date() < cooldownEnd) {
+          return; // Still in cooldown
+        }
+      }
+      
+      const cutoffTime = new Date(Date.now() - config.time_window * 60 * 1000).toISOString();
+      
+      // Map severity levels to database values
+      const severityMap = {
+        'critical': ['0', '1', '2'],
+        'error': ['3'],
+        'warning': ['4'], 
+        'notice': ['5']
+      };
+      
+      const severityValues = severityMap[config.severity_level] || [];
+      const placeholders = severityValues.map(() => '?').join(',');
+      
+      const eventCount = wafDb.prepare(`
+        SELECT COUNT(*) as count FROM waf_events
+        WHERE timestamp > ? AND severity IN (${placeholders})
+      `).get(cutoffTime, ...severityValues);
+      
+      if (eventCount.count >= config.count_threshold) {
+        await this.sendMatrixNotification(config, eventCount.count, cutoffTime);
+        
+        // Update last triggered time
+        db.prepare(`
+          UPDATE waf_notification_matrix 
+          SET last_triggered = datetime('now')
+          WHERE id = ?
+        `).run(config.id);
+      }
+    } catch (error) {
+      console.error('Error checking matrix threshold:', error);
+    }
+  }
+
+  /**
+   * Send matrix-triggered notification
+   */
+  async sendMatrixNotification(config, actualCount, cutoffTime) {
+    try {
+      const template = this.getNotificationTemplate('waf_matrix');
+      const wafDb = getWAFDb();
+      
+      // Get attack summary
+      const attackSummary = wafDb.prepare(`
+        SELECT attack_type, COUNT(*) as count
+        FROM waf_events
+        WHERE timestamp > ? AND severity IN (SELECT severity FROM waf_events LIMIT 1)
+        GROUP BY attack_type
+        ORDER BY count DESC
+        LIMIT 5
+      `).all(cutoffTime);
+      
+      // Get IP summary
+      const ipSummary = wafDb.prepare(`
+        SELECT client_ip, COUNT(*) as count
+        FROM waf_events  
+        WHERE timestamp > ?
+        GROUP BY client_ip
+        ORDER BY count DESC
+        LIMIT 5
+      `).all(cutoffTime);
+      
+      const attackText = attackSummary.map(a => `• ${a.attack_type}: ${a.count} events`).join('\n');
+      const ipText = ipSummary.map(ip => `• ${ip.client_ip}: ${ip.count} events`).join('\n');
+      
+      const title = template.title_template
+        .replace('{severity}', config.severity_level.toUpperCase())
+        .replace('{count}', actualCount);
+        
+      const body = template.message_template
+        .replace('{count}', actualCount)
+        .replace('{severity}', config.severity_level)
+        .replace('{window}', config.time_window)
+        .replace('{attack_summary}', attackText || 'No attack data available')
+        .replace('{ip_summary}', ipText || 'No IP data available');
+      
+      return await this.send({
+        title,
+        body,
+        type: config.severity_level === 'critical' ? 'failure' : 'warning',
+        tag: 'waf-matrix'
+      });
+    } catch (error) {
+      console.error('Error sending matrix notification:', error);
+    }
+  }
+
+  /**
+   * Generate and send daily report
+   */
+  async generateDailyReport(schedule) {
+    try {
+      const settings = JSON.parse(schedule.settings);
+      const today = new Date();
+      const yesterday = new Date(today);
+      yesterday.setDate(yesterday.getDate() - 1);
+      
+      const dateStr = yesterday.toISOString().split('T')[0];
+      
+      let reportSections = [];
+      
+      if (settings.include_waf) {
+        const wafSummary = await this.generateWAFSummary(yesterday, today);
+        reportSections.push(wafSummary);
+      }
+      
+      if (settings.include_nginx) {
+        const nginxSummary = await this.generateNginxSummary(yesterday, today);
+        reportSections.push(nginxSummary);
+      }
+      
+      if (settings.include_bans) {
+        const banSummary = await this.generateBanSummary(yesterday, today);
+        reportSections.push(banSummary);
+      }
+      
+      const template = this.getNotificationTemplate('daily_report');
+      const title = template.title_template.replace('{date}', dateStr);
+      const body = template.message_template
+        .replace('{date}', dateStr)
+        .replace('{waf_summary}', reportSections[0] || 'No WAF data')
+        .replace('{nginx_summary}', reportSections[1] || 'No traffic data')
+        .replace('{notable_events}', reportSections[2] || 'No notable events');
+      
+      await this.send({
+        title,
+        body,
+        type: 'info',
+        tag: 'daily-report'
+      });
+      
+      // Update schedule last run time
+      db.prepare(`
+        UPDATE notification_schedules
+        SET last_run = datetime('now'), next_run = datetime('now', '+1 day')
+        WHERE id = ?
+      `).run(schedule.id);
+      
+    } catch (error) {
+      console.error('Error generating daily report:', error);
+    }
+  }
+
+  /**
+   * Generate WAF summary for daily report
+   */
+  async generateWAFSummary(startDate, endDate) {
+    try {
+      const wafDb = getWAFDb();
+      if (!wafDb) return 'WAF database unavailable';
+      
+      const startStr = startDate.toISOString();
+      const endStr = endDate.toISOString();
+      
+      const stats = wafDb.prepare(`
+        SELECT 
+          COUNT(*) as total_events,
+          SUM(blocked) as blocked_events,
+          COUNT(DISTINCT client_ip) as unique_ips,
+          COUNT(DISTINCT attack_type) as attack_types
+        FROM waf_events
+        WHERE timestamp BETWEEN ? AND ?
+      `).get(startStr, endStr);
+      
+      const topAttacks = wafDb.prepare(`
+        SELECT attack_type, COUNT(*) as count
+        FROM waf_events
+        WHERE timestamp BETWEEN ? AND ?
+        GROUP BY attack_type
+        ORDER BY count DESC
+        LIMIT 3
+      `).all(startStr, endStr);
+      
+      const attackText = topAttacks.map(a => `  • ${a.attack_type}: ${a.count}`).join('\n');
+      
+      return `Total Events: ${stats.total_events || 0}
+Blocked: ${stats.blocked_events || 0}
+Unique IPs: ${stats.unique_ips || 0}
+Top Attacks:\n${attackText || '  • No attacks detected'}`;
+    } catch (error) {
+      return 'Error generating WAF summary';
+    }
+  }
+
+  /**
+   * Generate Nginx summary for daily report
+   */
+  async generateNginxSummary(startDate, endDate) {
+    try {
+      // This would integrate with your existing nginx statistics service
+      // For now, returning a placeholder
+      return 'Total Requests: N/A\nSuccess Rate: N/A\nTop IPs: N/A';
+    } catch (error) {
+      return 'Error generating Nginx summary';
+    }
+  }
+
+  /**
+   * Generate ban summary for daily report 
+   */
+  async generateBanSummary(startDate, endDate) {
+    try {
+      const startStr = startDate.toISOString();
+      const endStr = endDate.toISOString();
+      
+      const banStats = db.prepare(`
+        SELECT COUNT(*) as new_bans
+        FROM ips_banned
+        WHERE banned_at BETWEEN ? AND ?
+      `).get(startStr, endStr);
+      
+      const clearStats = db.prepare(`
+        SELECT COUNT(*) as cleared_bans
+        FROM ips_banned
+        WHERE unbanned_at BETWEEN ? AND ? AND unbanned_at IS NOT NULL
+      `).get(startStr, endStr);
+      
+      return `New Bans: ${banStats.new_bans || 0}\nCleared Bans: ${clearStats.cleared_bans || 0}`;
+    } catch (error) {
+      return 'Error generating ban summary';
+    }
+  }
+
+  /**
+   * Send proxy lifecycle notification  
+   */
+  async notifyProxyLifecycle(action, proxyData, user) {
+    this.loadSettings();
+    
+    if (!this.proxyLifecycleEnabled) return;
+    
+    try {
+      const template = this.getNotificationTemplate(`proxy_${action}`);
+      if (!template) {
+        // Fallback to old method
+        return await this.notifyProxyChange(action, proxyData.name, user);
+      }
+      
+      const title = template.title_template;
+      const body = template.message_template
+        .replace('{proxy_name}', proxyData.name)
+        .replace('{domains}', proxyData.domain_names)
+        .replace('{status}', proxyData.enabled ? 'Enabled' : 'Disabled')
+        .replace('{user}', user);
+      
+      return await this.send({
+        title,
+        body,
+        type: action === 'deleted' ? 'warning' : 'info',
+        tag: 'proxy-lifecycle'
+      });
+    } catch (error) {
+      console.error('Error sending proxy lifecycle notification:', error);
+      // Fallback to old method
+      return await this.notifyProxyChange(action, proxyData.name, user);
+    }
+  }
+
+  /**
+   * Get notification template by type
+   */
+  getNotificationTemplate(type) {
+    try {
+      return db.prepare(`
+        SELECT * FROM notification_templates
+        WHERE type = ? AND enabled = 1
+        LIMIT 1
+      `).get(type);
+    } catch (error) {
+      console.error('Error getting notification template:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Add notification to queue for batched sending
+   */
+  queueNotification(notificationData, scheduledFor = new Date()) {
+    if (!this.batchingEnabled) {
+      return this.send(notificationData);
+    }
+    
+    try {
+      db.prepare(`
+        INSERT INTO notification_queue (notification_type, event_data, scheduled_for)
+        VALUES (?, ?, ?)
+      `).run(
+        notificationData.type || 'info',
+        JSON.stringify(notificationData),
+        scheduledFor.toISOString()
+      );
+    } catch (error) {
+      console.error('Error queuing notification:', error);
+      // Fallback to immediate send
+      return this.send(notificationData);
+    }
+  }
+
+  /**
    * Get count of recent WAF events
    */
   getRecentWAFEvents(minutes) {
@@ -535,6 +989,18 @@ async function notifyBanCleared(banDetails) {
   return await getNotificationService().notifyBanCleared(banDetails);
 }
 
+async function checkWAFMatrix() {
+  return await getNotificationService().checkWAFMatrix();
+}
+
+async function notifyProxyLifecycle(action, proxyData, user) {
+  return await getNotificationService().notifyProxyLifecycle(action, proxyData, user);
+}
+
+async function queueNotification(notificationData, scheduledFor) {
+  return await getNotificationService().queueNotification(notificationData, scheduledFor);
+}
+
 module.exports = {
   getNotificationService,
   notifyWAFBlock,
@@ -544,5 +1010,8 @@ module.exports = {
   notifyCertExpiry,
   sendTestNotification,
   notifyBanIssued,
-  notifyBanCleared
+  notifyBanCleared,
+  checkWAFMatrix,
+  notifyProxyLifecycle,
+  queueNotification
 };

@@ -252,6 +252,18 @@ async function handleCreateProxy(req, res) {
 
     logAudit(req.user.userId, 'create', 'proxy', proxyId, JSON.stringify({ name, type }), getClientIP(req));
 
+    // Send enhanced proxy lifecycle notification
+    try {
+      const { notifyProxyLifecycle } = require('../utils/notification-service');
+      await notifyProxyLifecycle('created', {
+        name,
+        domain_names: domain_names || 'N/A',
+        enabled: !!isEnabled
+      }, req.user.username || req.user.userId);
+    } catch (notificationError) {
+      console.warn('Failed to send proxy creation notification:', notificationError);
+    }
+
     // Get updated proxy for response
     const updatedProxy = db.prepare('SELECT * FROM proxy_hosts WHERE id = ?').get(proxyId);
 
@@ -429,7 +441,7 @@ async function handleUpdateProxy(req, res, parsedUrl) {
 async function handleDeleteProxy(req, res, parsedUrl) {
   const id = parseInt(parsedUrl.pathname.split('/')[3]);
 
-  const proxy = db.prepare('SELECT name, config_filename FROM proxy_hosts WHERE id = ?').get(id);
+  const proxy = db.prepare('SELECT name, config_filename, domain_names FROM proxy_hosts WHERE id = ?').get(id);
   if (!proxy) {
     return sendJSON(res, { error: 'Proxy not found' }, 404);
   }
@@ -445,6 +457,18 @@ async function handleDeleteProxy(req, res, parsedUrl) {
     const { reloadId } = await reloadManager.queueReload();
 
     logAudit(req.user.userId, 'delete', 'proxy', id, JSON.stringify({ name: proxy.name }), getClientIP(req));
+
+    // Send enhanced proxy lifecycle notification
+    try {
+      const { notifyProxyLifecycle } = require('../utils/notification-service');
+      await notifyProxyLifecycle('deleted', {
+        name: proxy.name,
+        domain_names: proxy.domain_names || 'N/A',
+        enabled: false
+      }, req.user.username || req.user.userId);
+    } catch (notificationError) {
+      console.warn('Failed to send proxy deletion notification:', notificationError);
+    }
 
     sendJSON(res, { success: true, reloadId });
   } catch (error) {

@@ -447,6 +447,37 @@ class API {
     });
   }
 
+  // Enhanced Notification Features
+  async getWAFMatrix() {
+    return this.request('/api/notifications/matrix');
+  }
+
+  async updateWAFMatrix(data) {
+    return this.request('/api/notifications/matrix', {
+      method: 'PUT',
+      body: data
+    });
+  }
+
+  async getNotificationSchedules() {
+    return this.request('/api/notifications/schedules');
+  }
+
+  async updateNotificationSchedules(data) {
+    return this.request('/api/notifications/schedules', {
+      method: 'PUT', 
+      body: data
+    });
+  }
+
+  async getNotificationTemplates() {
+    return this.request('/api/notifications/templates');
+  }
+
+  async getNotificationHistory(limit = 25, offset = 0) {
+    return this.request(`/api/notifications/history?limit=${limit}&offset=${offset}`);
+  }
+
   // Credentials Management
   async getCredentials(type = null) {
     const query = type ? `?type=${type}` : '';

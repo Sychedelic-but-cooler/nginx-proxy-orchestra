@@ -176,6 +176,10 @@ server.listen(HTTPS_PORT, () => {
     console.error('Failed to start WAF log parser:', err.message);
   });
 
+  // Start enhanced notification scheduler
+  const { initializeNotificationScheduler } = require('./utils/notification-scheduler');
+  initializeNotificationScheduler();
+
   // Start ban system services
   const wafEnabled = getSetting('waf_enabled');
   if (wafEnabled === '1') {

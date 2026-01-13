@@ -73,6 +73,10 @@ This project aims to offer a simple and intuitive management framework for deplo
 - **Custom Firewall Integrations**
   - Automatic banning of IPs detected by WAF rules
 
+- **Node-cron**
+  - Cron-inspired node.js scheduler for daily tasks
+  - https://www.npmjs.com/package/node-cron
+  
 ---
 
 ## Architecture Choices

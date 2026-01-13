@@ -311,6 +311,14 @@ function initializeDatabase() {
     console.error('Module tags migration error:', error.message);
   }
 
+  // Run enhanced notifications migration
+  const runEnhancedNotificationsMigration = require('./migrations/011_enhanced_notifications');
+  try {
+    runEnhancedNotificationsMigration(db);
+  } catch (error) {
+    console.error('Enhanced notifications migration error:', error.message);
+  }
+
   // Create some default modules if none exist
   const modulesExist = db.prepare('SELECT COUNT(*) as count FROM modules').get();
   if (modulesExist.count === 0) {

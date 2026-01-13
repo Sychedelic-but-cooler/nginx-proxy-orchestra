@@ -46,8 +46,11 @@ function trackEvent(ip, event) {
   const oneHourAgo = Date.now() - (60 * 60 * 1000);
   ipEvents.set(ip, events.filter(e => e.timestamp > oneHourAgo));
 
-  // Check if any rules are triggered
+  // Check if any detection rules are triggered for banning
   checkRules(ip);
+
+  // Trigger WAF matrix notification check (debounced)
+  triggerWAFMatrixCheck();
 }
 
 /**
@@ -291,6 +294,28 @@ function getTrackedIPs(limit = 100) {
  */
 function triggerRuleCheck(ip) {
   checkRules(ip);
+}
+
+/**
+ * Trigger WAF matrix notification check (debounced to avoid spam)
+ */
+let matrixCheckTimeout = null;
+function triggerWAFMatrixCheck() {
+  // Debounce matrix checks to every 30 seconds
+  if (matrixCheckTimeout) {
+    return;
+  }
+
+  matrixCheckTimeout = setTimeout(async () => {
+    try {
+      const { checkWAFMatrix } = require('./notification-service');
+      await checkWAFMatrix();
+    } catch (error) {
+      console.error('Error in WAF matrix check:', error);
+    } finally {
+      matrixCheckTimeout = null;
+    }
+  }, 30 * 1000); // 30 seconds
 }
 
 module.exports = {

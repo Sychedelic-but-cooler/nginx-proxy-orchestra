@@ -11,7 +11,7 @@ import { renderModules } from './components/module-manager.js';
 import { renderAuditLog } from './components/audit-log.js';
 import { renderAdvancedEditor } from './components/advanced-editor.js';
 import { renderSettings } from './components/settings.js';
-import { renderNotificationSettings } from './components/notification-settings.js';
+import { renderNotificationSettings } from './components/enhanced-notification-settings.js';
 import { renderWAFDashboard, cleanupWAFDashboard } from './components/waf-dashboard.js';
 import { renderWAFProfiles } from './components/waf-profiles.js';
 import { renderWAFEvents } from './components/waf-events.js';

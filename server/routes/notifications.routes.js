@@ -29,6 +29,30 @@ async function handleNotificationRoutes(req, res, parsedUrl) {
     return handleTestNotification(req, res);
   }
 
+  if (pathname === '/api/notifications/matrix' && method === 'GET') {
+    return handleGetWAFMatrix(req, res);
+  }
+
+  if (pathname === '/api/notifications/matrix' && method === 'PUT') {
+    return handleUpdateWAFMatrix(req, res);
+  }
+
+  if (pathname === '/api/notifications/schedules' && method === 'GET') {
+    return handleGetSchedules(req, res);
+  }
+
+  if (pathname === '/api/notifications/schedules' && method === 'PUT') {
+    return handleUpdateSchedules(req, res);
+  }
+
+  if (pathname === '/api/notifications/templates' && method === 'GET') {
+    return handleGetTemplates(req, res);
+  }
+
+  if (pathname === '/api/notifications/history' && method === 'GET') {
+    return handleGetHistory(req, res);
+  }
+
   sendJSON(res, { error: 'Not Found' }, 404);
 }
 
@@ -55,6 +79,16 @@ function handleGetNotificationSettings(req, res) {
         cert_expiry_days: parseInt(getSetting('notification_cert_expiry_days') || '7'),
         ban_issued: getSetting('notification_ban_issued') === '1',
         ban_cleared: getSetting('notification_ban_cleared') === '1'
+      },
+      enhanced: {
+        matrix_enabled: getSetting('notification_matrix_enabled') === '1',
+        daily_report_enabled: getSetting('notification_daily_report_enabled') === '1',
+        proxy_lifecycle_enabled: getSetting('notification_proxy_lifecycle_enabled') === '1',
+        batching_enabled: getSetting('notification_batching_enabled') === '1',
+        batch_interval: parseInt(getSetting('notification_batch_interval') || '300'),
+        rate_limit: parseInt(getSetting('notification_rate_limit') || '10'),
+        daily_report_time: getSetting('notification_daily_report_time') || '23:30',
+        timezone: getSetting('notification_timezone') || 'UTC'
       }
     };
 
@@ -92,6 +126,44 @@ async function handleUpdateNotificationSettings(req, res) {
       setSetting('notification_ban_cleared', body.triggers.ban_cleared ? '1' : '0');
     }
 
+    // Enhanced notification settings
+    if (body.enhanced) {
+      setSetting('notification_matrix_enabled', body.enhanced.matrix_enabled ? '1' : '0');
+      setSetting('notification_daily_report_enabled', body.enhanced.daily_report_enabled ? '1' : '0');
+      setSetting('notification_proxy_lifecycle_enabled', body.enhanced.proxy_lifecycle_enabled ? '1' : '0');
+      setSetting('notification_batching_enabled', body.enhanced.batching_enabled ? '1' : '0');
+      setSetting('notification_batch_interval', String(body.enhanced.batch_interval || 300));
+      setSetting('notification_rate_limit', String(body.enhanced.rate_limit || 10));
+      setSetting('notification_daily_report_time', body.enhanced.daily_report_time || '23:30');
+      setSetting('notification_timezone', body.enhanced.timezone || 'UTC');
+      
+      // Restart scheduler if settings changed
+      const { getNotificationService } = require('../utils/notification-service');
+      const service = getNotificationService();
+      if (service.scheduleDailyReports) {
+        service.scheduleDailyReports();
+      }
+    }
+
+    // Enhanced notification settings
+    if (body.enhanced) {
+      setSetting('notification_matrix_enabled', body.enhanced.matrix_enabled ? '1' : '0');
+      setSetting('notification_daily_report_enabled', body.enhanced.daily_report_enabled ? '1' : '0');
+      setSetting('notification_proxy_lifecycle_enabled', body.enhanced.proxy_lifecycle_enabled ? '1' : '0');
+      setSetting('notification_batching_enabled', body.enhanced.batching_enabled ? '1' : '0');
+      setSetting('notification_batch_interval', String(body.enhanced.batch_interval || 300));
+      setSetting('notification_rate_limit', String(body.enhanced.rate_limit || 10));
+      setSetting('notification_daily_report_time', body.enhanced.daily_report_time || '23:30');
+      setSetting('notification_timezone', body.enhanced.timezone || 'UTC');
+      
+      // Restart scheduler if settings changed
+      const { getNotificationService } = require('../utils/notification-service');
+      const service = getNotificationService();
+      if (service.scheduleDailyReports) {
+        service.scheduleDailyReports();
+      }
+    }
+
     logAudit(req.user.userId, 'update_notification_settings', 'settings', null,
              null, getClientIP(req));
 
@@ -125,6 +197,164 @@ async function handleTestNotification(req, res) {
     }
   } catch (error) {
     console.error('Test notification error:', error);
+    sendJSON(res, { error: error.message }, 500);
+  }
+}
+
+/**
+ * Get WAF notification matrix settings
+ */
+function handleGetWAFMatrix(req, res) {
+  try {
+    const matrix = db.prepare(`
+      SELECT * FROM waf_notification_matrix
+      ORDER BY severity_level, count_threshold
+    `).all();
+    
+    sendJSON(res, { matrix });
+  } catch (error) {
+    console.error('Get WAF matrix error:', error);
+    sendJSON(res, { error: error.message }, 500);
+  }
+}
+
+/**
+ * Update WAF notification matrix settings
+ */
+async function handleUpdateWAFMatrix(req, res) {
+  try {
+    const body = await parseBody(req);
+    
+    if (body.matrix && Array.isArray(body.matrix)) {
+      const updateStmt = db.prepare(`
+        UPDATE waf_notification_matrix
+        SET enabled = ?, count_threshold = ?, time_window = ?, notification_delay = ?
+        WHERE id = ?
+      `);
+      
+      body.matrix.forEach(config => {
+        updateStmt.run(
+          config.enabled ? 1 : 0,
+          config.count_threshold,
+          config.time_window,
+          config.notification_delay || 0,
+          config.id
+        );
+      });
+    }
+    
+    logAudit(req.user.userId, 'update_waf_matrix', 'settings', null,
+             null, getClientIP(req));
+    
+    sendJSON(res, { success: true });
+  } catch (error) {
+    console.error('Update WAF matrix error:', error);
+    sendJSON(res, { error: error.message }, 500);
+  }
+}
+
+/**
+ * Get notification schedules
+ */
+function handleGetSchedules(req, res) {
+  try {
+    const schedules = db.prepare(`
+      SELECT * FROM notification_schedules
+      ORDER BY name
+    `).all();
+    
+    sendJSON(res, { schedules });
+  } catch (error) {
+    console.error('Get schedules error:', error);
+    sendJSON(res, { error: error.message }, 500);
+  }
+}
+
+/**
+ * Update notification schedules
+ */
+async function handleUpdateSchedules(req, res) {
+  try {
+    const body = await parseBody(req);
+    
+    if (body.schedules && Array.isArray(body.schedules)) {
+      const updateStmt = db.prepare(`
+        UPDATE notification_schedules
+        SET enabled = ?, cron_expression = ?, settings = ?
+        WHERE id = ?
+      `);
+      
+      body.schedules.forEach(schedule => {
+        updateStmt.run(
+          schedule.enabled ? 1 : 0,
+          schedule.cron_expression,
+          JSON.stringify(schedule.settings),
+          schedule.id
+        );
+      });
+      
+      // Restart scheduler
+      const { getNotificationService } = require('../utils/notification-service');
+      const service = getNotificationService();
+      if (service.scheduleDailyReports) {
+        service.scheduleDailyReports();
+      }
+    }
+    
+    logAudit(req.user.userId, 'update_schedules', 'settings', null,
+             null, getClientIP(req));
+    
+    sendJSON(res, { success: true });
+  } catch (error) {
+    console.error('Update schedules error:', error);
+    sendJSON(res, { error: error.message }, 500);
+  }
+}
+
+/**
+ * Get notification templates
+ */
+function handleGetTemplates(req, res) {
+  try {
+    const templates = db.prepare(`
+      SELECT * FROM notification_templates
+      ORDER BY type, name
+    `).all();
+    
+    sendJSON(res, { templates });
+  } catch (error) {
+    console.error('Get templates error:', error);
+    sendJSON(res, { error: error.message }, 500);
+  }
+}
+
+/**
+ * Get notification history
+ */
+function handleGetHistory(req, res) {
+  try {
+    const url = new URL(req.url, `http://${req.headers.host}`);
+    const limit = parseInt(url.searchParams.get('limit')) || 50;
+    const offset = parseInt(url.searchParams.get('offset')) || 0;
+    
+    const history = db.prepare(`
+      SELECT * FROM notification_history
+      ORDER BY sent_at DESC
+      LIMIT ? OFFSET ?
+    `).all(limit, offset);
+    
+    const total = db.prepare(`
+      SELECT COUNT(*) as count FROM notification_history
+    `).get();
+    
+    sendJSON(res, { 
+      history,
+      total: total.count,
+      limit,
+      offset
+    });
+  } catch (error) {
+    console.error('Get history error:', error);
     sendJSON(res, { error: error.message }, 500);
   }
 }
