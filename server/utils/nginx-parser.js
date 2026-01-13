@@ -608,7 +608,9 @@ function extractStructuredFields(configContent, proxyType) {
     forward_host: 'N/A',
     forward_port: 0,
     ssl_enabled: 0,
-    ssl_cert_id: null
+    ssl_cert_id: null,
+    ssl_cert_path: null,
+    ssl_key_path: null
   };
 
   try {
@@ -641,6 +643,14 @@ function extractStructuredFields(configContent, proxyType) {
       const sslListenMatch = configContent.match(/listen\s+443\s+ssl/);
       fields.ssl_enabled = sslListenMatch ? 1 : 0;
       
+      // Extract SSL certificate paths if present
+      if (fields.ssl_enabled) {
+        const certMatch = configContent.match(/ssl_certificate\s+([^;]+);/);
+        const keyMatch = configContent.match(/ssl_certificate_key\s+([^;]+);/);
+        if (certMatch) fields.ssl_cert_path = certMatch[1].trim();
+        if (keyMatch) fields.ssl_key_path = keyMatch[1].trim();
+      }
+      
       // 404 proxies don't forward
       fields.forward_host = 'N/A';
       fields.forward_port = 0;
@@ -662,6 +672,14 @@ function extractStructuredFields(configContent, proxyType) {
       // Check if SSL is enabled (listen 443 ssl)
       const sslListenMatch = configContent.match(/listen\s+443\s+ssl/);
       fields.ssl_enabled = sslListenMatch ? 1 : 0;
+      
+      // Extract SSL certificate paths if present
+      if (fields.ssl_enabled) {
+        const certMatch = configContent.match(/ssl_certificate\s+([^;]+);/);
+        const keyMatch = configContent.match(/ssl_certificate_key\s+([^;]+);/);
+        if (certMatch) fields.ssl_cert_path = certMatch[1].trim();
+        if (keyMatch) fields.ssl_key_path = keyMatch[1].trim();
+      }
     }
   } catch (error) {
     console.error('Error extracting structured fields from config:', error);
@@ -671,12 +689,36 @@ function extractStructuredFields(configContent, proxyType) {
   return fields;
 }
 
+/**
+ * Find certificate ID by matching cert/key paths
+ * @param {object} db - Database instance
+ * @param {string} certPath - Certificate file path
+ * @param {string} keyPath - Key file path
+ * @returns {number|null} - Certificate ID or null if not found
+ */
+function findCertificateByPaths(db, certPath, keyPath) {
+  if (!certPath || !keyPath) return null;
+  
+  try {
+    const cert = db.prepare(`
+      SELECT id FROM ssl_certificates 
+      WHERE cert_path = ? AND key_path = ?
+    `).get(certPath, keyPath);
+    
+    return cert ? cert.id : null;
+  } catch (error) {
+    console.error('Error finding certificate by paths:', error);
+    return null;
+  }
+}
+
 module.exports = {
   parseNginxConfig,
   extractDirective,
   extractDirectives,
   extractLocations,
   extractStructuredFields,
+  findCertificateByPaths,
   generateServerBlock,
   generateStreamBlock,
   generate404Block,

@@ -60,15 +60,21 @@ function runLegacyProxyHostMigrations() {
 
     if (proxiesNeedingUpdate.length > 0) {
       console.log(`Running legacy migration: Extracting structured fields for ${proxiesNeedingUpdate.length} proxies...`);
-      const { extractStructuredFields } = require('./utils/nginx-parser');
+      const { extractStructuredFields, findCertificateByPaths } = require('./utils/nginx-parser');
       
       for (const proxy of proxiesNeedingUpdate) {
         try {
           const extractedFields = extractStructuredFields(proxy.advanced_config, proxy.type || 'reverse');
           
+          // Try to find matching certificate by paths
+          if (extractedFields.ssl_enabled && extractedFields.ssl_cert_path && extractedFields.ssl_key_path) {
+            extractedFields.ssl_cert_id = findCertificateByPaths(db, extractedFields.ssl_cert_path, extractedFields.ssl_key_path);
+          }
+          
           db.prepare(`
             UPDATE proxy_hosts
-            SET domain_names = ?, forward_scheme = ?, forward_host = ?, forward_port = ?, ssl_enabled = ?
+            SET domain_names = ?, forward_scheme = ?, forward_host = ?, forward_port = ?, 
+                ssl_enabled = ?, ssl_cert_id = ?
             WHERE id = ?
           `).run(
             extractedFields.domain_names,
@@ -76,6 +82,7 @@ function runLegacyProxyHostMigrations() {
             extractedFields.forward_host,
             extractedFields.forward_port,
             extractedFields.ssl_enabled,
+            extractedFields.ssl_cert_id,
             proxy.id
           );
         } catch (err) {

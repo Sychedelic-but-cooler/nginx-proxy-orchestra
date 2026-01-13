@@ -12,7 +12,8 @@ const {
   enableNginxConfig,
   disableNginxConfig,
   sanitizeFilename,
-  extractStructuredFields
+  extractStructuredFields,
+  findCertificateByPaths
 } = require('../utils/nginx-parser');
 const { testNginxConfig } = require('../utils/nginx-ops');
 const { reloadManager } = require('../utils/nginx-reload-manager');
@@ -202,6 +203,11 @@ async function handleSaveCustomConfig(req, res) {
     // Extract structured fields from config for better display/search
     const extractedFields = extractStructuredFields(config, type || 'reverse');
     
+    // Try to find matching certificate by paths
+    if (extractedFields.ssl_enabled && extractedFields.ssl_cert_path && extractedFields.ssl_key_path) {
+      extractedFields.ssl_cert_id = findCertificateByPaths(db, extractedFields.ssl_cert_path, extractedFields.ssl_key_path);
+    }
+    
     // Generate filename from name
     const safeFilename = sanitizeFilename(name);
     let configFilename = `${finalProxyId || 'new'}-${safeFilename}.conf`;
@@ -218,22 +224,26 @@ async function handleSaveCustomConfig(req, res) {
         UPDATE proxy_hosts
         SET name = ?, type = ?, enabled = ?, advanced_config = ?, launch_url = ?,
             config_filename = ?, config_status = 'pending', 
-            domain_names = ?, forward_scheme = ?, forward_host = ?, forward_port = ?, ssl_enabled = ?,
+            domain_names = ?, forward_scheme = ?, forward_host = ?, forward_port = ?, 
+            ssl_enabled = ?, ssl_cert_id = ?,
             updated_at = CURRENT_TIMESTAMP
         WHERE id = ?
       `).run(name, type, enabled ? 1 : 0, config, launch_url || null, configFilename,
              extractedFields.domain_names, extractedFields.forward_scheme, 
-             extractedFields.forward_host, extractedFields.forward_port, extractedFields.ssl_enabled,
+             extractedFields.forward_host, extractedFields.forward_port, 
+             extractedFields.ssl_enabled, extractedFields.ssl_cert_id,
              finalProxyId);
     } else {
       // Insert new proxy
       const result = db.prepare(`
         INSERT INTO proxy_hosts (name, type, enabled, advanced_config, launch_url, config_filename,
-                                  config_status, domain_names, forward_scheme, forward_host, forward_port, ssl_enabled)
-        VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?)
+                                  config_status, domain_names, forward_scheme, forward_host, forward_port, 
+                                  ssl_enabled, ssl_cert_id)
+        VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?)
       `).run(name, type, enabled ? 1 : 0, config, launch_url || null, configFilename,
              extractedFields.domain_names, extractedFields.forward_scheme,
-             extractedFields.forward_host, extractedFields.forward_port, extractedFields.ssl_enabled);
+             extractedFields.forward_host, extractedFields.forward_port, 
+             extractedFields.ssl_enabled, extractedFields.ssl_cert_id);
       finalProxyId = result.lastInsertRowid;
 
       // Update filename with actual ID

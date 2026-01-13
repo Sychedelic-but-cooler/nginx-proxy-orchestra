@@ -196,19 +196,48 @@ async function handleDeleteCertificate(req, res, parsedUrl) {
       for (const proxy of affectedProxies) {
         try {
           const updatedProxy = db.prepare('SELECT * FROM proxy_hosts WHERE id = ?').get(proxy.id);
-          const modules = db.prepare(`
-            SELECT m.* FROM modules m
-            JOIN proxy_modules pm ON m.id = pm.module_id
-            WHERE pm.proxy_id = ?
-          `).all(proxy.id);
-
+          
           let config;
-          if (updatedProxy.type === 'stream') {
-            config = generateStreamBlock(updatedProxy);
-          } else if (updatedProxy.type === '404') {
-            config = generate404Block(updatedProxy);
+          
+          // If proxy has advanced_config, update it to remove SSL directives
+          if (updatedProxy.advanced_config && updatedProxy.advanced_config.trim()) {
+            config = updatedProxy.advanced_config;
+            
+            // Remove SSL listen directives
+            config = config.replace(/listen\s+443\s+ssl[^;]*;?\n?/g, '');
+            config = config.replace(/listen\s+\[::\]:443\s+ssl[^;]*;?\n?/g, '');
+            config = config.replace(/listen\s+443\s+quic[^;]*;?\n?/g, '');
+            config = config.replace(/listen\s+\[::\]:443\s+quic[^;]*;?\n?/g, '');
+            
+            // Remove SSL certificate directives
+            config = config.replace(/ssl_certificate\s+[^;]+;?\n?/g, '');
+            config = config.replace(/ssl_certificate_key\s+[^;]+;?\n?/g, '');
+            
+            // Remove SSL-related directives
+            config = config.replace(/ssl_protocols[^;]+;?\n?/g, '');
+            config = config.replace(/ssl_ciphers[^;]+;?\n?/g, '');
+            config = config.replace(/ssl_prefer_server_ciphers[^;]+;?\n?/g, '');
+            
+            // Clean up extra blank lines
+            config = config.replace(/\n{3,}/g, '\n\n');
+            
+            // Update the database with modified config
+            db.prepare('UPDATE proxy_hosts SET advanced_config = ? WHERE id = ?').run(config, proxy.id);
           } else {
-            config = generateServerBlock(updatedProxy, modules, db);
+            // Generate from structured fields
+            const modules = db.prepare(`
+              SELECT m.* FROM modules m
+              JOIN proxy_modules pm ON m.id = pm.module_id
+              WHERE pm.proxy_id = ?
+            `).all(proxy.id);
+
+            if (updatedProxy.type === 'stream') {
+              config = generateStreamBlock(updatedProxy);
+            } else if (updatedProxy.type === '404') {
+              config = generate404Block(updatedProxy);
+            } else {
+              config = generateServerBlock(updatedProxy, modules, db);
+            }
           }
 
           const filename = updatedProxy.config_filename || `${sanitizeFilename(updatedProxy.name)}.conf`;
