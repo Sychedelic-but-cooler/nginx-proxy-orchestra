@@ -594,11 +594,89 @@ function disableNginxConfig(filename) {
   }
 }
 
+/**
+ * Extract structured fields from nginx config for database storage
+ * Parses the config to extract domain_names, forward info, SSL settings
+ * @param {string} configContent - The nginx configuration content
+ * @param {string} proxyType - The proxy type (reverse, stream, 404)
+ * @returns {object} - Object with extracted fields
+ */
+function extractStructuredFields(configContent, proxyType) {
+  const fields = {
+    domain_names: 'N/A',
+    forward_scheme: 'http',
+    forward_host: 'N/A',
+    forward_port: 0,
+    ssl_enabled: 0,
+    ssl_cert_id: null
+  };
+
+  try {
+    if (proxyType === 'stream') {
+      // For stream proxies, extract from stream block
+      const proxyPassMatch = configContent.match(/proxy_pass\s+([^:;]+):(\d+);/);
+      if (proxyPassMatch) {
+        fields.forward_host = proxyPassMatch[1].trim();
+        fields.forward_port = parseInt(proxyPassMatch[2]);
+      }
+      
+      const listenMatch = configContent.match(/listen\s+(\d+)/);
+      if (listenMatch) {
+        fields.incoming_port = parseInt(listenMatch[1]);
+      }
+      
+      const protocolMatch = configContent.match(/listen\s+\d+\s+(udp|tcp)?/);
+      fields.stream_protocol = protocolMatch ? protocolMatch[1] || 'tcp' : 'tcp';
+      
+      fields.domain_names = 'N/A'; // Streams don't use domains
+      fields.ssl_enabled = 0; // Streams don't use SSL in nginx terms
+    } else if (proxyType === '404') {
+      // For 404 proxies, extract domains but no forward info
+      const serverNameMatch = configContent.match(/server_name\s+([^;]+);/);
+      if (serverNameMatch) {
+        fields.domain_names = serverNameMatch[1].trim();
+      }
+      
+      // Check if SSL is enabled (listen 443 ssl)
+      const sslListenMatch = configContent.match(/listen\s+443\s+ssl/);
+      fields.ssl_enabled = sslListenMatch ? 1 : 0;
+      
+      // 404 proxies don't forward
+      fields.forward_host = 'N/A';
+      fields.forward_port = 0;
+    } else {
+      // For reverse proxies, extract all fields
+      const serverNameMatch = configContent.match(/server_name\s+([^;]+);/);
+      if (serverNameMatch) {
+        fields.domain_names = serverNameMatch[1].trim();
+      }
+      
+      // Extract proxy_pass to get forward info
+      const proxyPassMatch = configContent.match(/proxy_pass\s+(https?):\/\/([^:;\/]+):?(\d+)?[^;]*;/);
+      if (proxyPassMatch) {
+        fields.forward_scheme = proxyPassMatch[1];
+        fields.forward_host = proxyPassMatch[2];
+        fields.forward_port = proxyPassMatch[3] ? parseInt(proxyPassMatch[3]) : (proxyPassMatch[1] === 'https' ? 443 : 80);
+      }
+      
+      // Check if SSL is enabled (listen 443 ssl)
+      const sslListenMatch = configContent.match(/listen\s+443\s+ssl/);
+      fields.ssl_enabled = sslListenMatch ? 1 : 0;
+    }
+  } catch (error) {
+    console.error('Error extracting structured fields from config:', error);
+    // Return defaults on error
+  }
+
+  return fields;
+}
+
 module.exports = {
   parseNginxConfig,
   extractDirective,
   extractDirectives,
   extractLocations,
+  extractStructuredFields,
   generateServerBlock,
   generateStreamBlock,
   generate404Block,

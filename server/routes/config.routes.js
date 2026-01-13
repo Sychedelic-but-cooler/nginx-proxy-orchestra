@@ -11,7 +11,8 @@ const {
   forceDeleteNginxConfig,
   enableNginxConfig,
   disableNginxConfig,
-  sanitizeFilename
+  sanitizeFilename,
+  extractStructuredFields
 } = require('../utils/nginx-parser');
 const { testNginxConfig } = require('../utils/nginx-ops');
 const { reloadManager } = require('../utils/nginx-reload-manager');
@@ -198,6 +199,9 @@ async function handleSaveCustomConfig(req, res) {
   const isUpdate = !!finalProxyId;
 
   try {
+    // Extract structured fields from config for better display/search
+    const extractedFields = extractStructuredFields(config, type || 'reverse');
+    
     // Generate filename from name
     const safeFilename = sanitizeFilename(name);
     let configFilename = `${finalProxyId || 'new'}-${safeFilename}.conf`;
@@ -213,16 +217,23 @@ async function handleSaveCustomConfig(req, res) {
       db.prepare(`
         UPDATE proxy_hosts
         SET name = ?, type = ?, enabled = ?, advanced_config = ?, launch_url = ?,
-            config_filename = ?, config_status = 'pending', updated_at = CURRENT_TIMESTAMP
+            config_filename = ?, config_status = 'pending', 
+            domain_names = ?, forward_scheme = ?, forward_host = ?, forward_port = ?, ssl_enabled = ?,
+            updated_at = CURRENT_TIMESTAMP
         WHERE id = ?
-      `).run(name, type, enabled ? 1 : 0, config, launch_url || null, configFilename, finalProxyId);
+      `).run(name, type, enabled ? 1 : 0, config, launch_url || null, configFilename,
+             extractedFields.domain_names, extractedFields.forward_scheme, 
+             extractedFields.forward_host, extractedFields.forward_port, extractedFields.ssl_enabled,
+             finalProxyId);
     } else {
       // Insert new proxy
       const result = db.prepare(`
         INSERT INTO proxy_hosts (name, type, enabled, advanced_config, launch_url, config_filename,
-                                  config_status, domain_names, forward_host, forward_port)
-        VALUES (?, ?, ?, ?, ?, ?, 'pending', 'N/A', 'N/A', 0)
-      `).run(name, type, enabled ? 1 : 0, config, launch_url || null, configFilename);
+                                  config_status, domain_names, forward_scheme, forward_host, forward_port, ssl_enabled)
+        VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?)
+      `).run(name, type, enabled ? 1 : 0, config, launch_url || null, configFilename,
+             extractedFields.domain_names, extractedFields.forward_scheme,
+             extractedFields.forward_host, extractedFields.forward_port, extractedFields.ssl_enabled);
       finalProxyId = result.lastInsertRowid;
 
       // Update filename with actual ID

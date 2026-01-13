@@ -46,6 +46,47 @@ function runLegacyProxyHostMigrations() {
     console.log('Running legacy migration: Adding launch_url column...');
     db.exec(`ALTER TABLE proxy_hosts ADD COLUMN launch_url TEXT`);
   }
+
+  // Migration 2: Extract structured fields from advanced_config for better display
+  // This updates proxies that have 'N/A' placeholder values but valid advanced_config
+  try {
+    const proxiesNeedingUpdate = db.prepare(`
+      SELECT id, type, advanced_config 
+      FROM proxy_hosts 
+      WHERE advanced_config IS NOT NULL 
+        AND advanced_config != ''
+        AND (domain_names = 'N/A' OR forward_host = 'N/A' OR forward_port = 0)
+    `).all();
+
+    if (proxiesNeedingUpdate.length > 0) {
+      console.log(`Running legacy migration: Extracting structured fields for ${proxiesNeedingUpdate.length} proxies...`);
+      const { extractStructuredFields } = require('./utils/nginx-parser');
+      
+      for (const proxy of proxiesNeedingUpdate) {
+        try {
+          const extractedFields = extractStructuredFields(proxy.advanced_config, proxy.type || 'reverse');
+          
+          db.prepare(`
+            UPDATE proxy_hosts
+            SET domain_names = ?, forward_scheme = ?, forward_host = ?, forward_port = ?, ssl_enabled = ?
+            WHERE id = ?
+          `).run(
+            extractedFields.domain_names,
+            extractedFields.forward_scheme,
+            extractedFields.forward_host,
+            extractedFields.forward_port,
+            extractedFields.ssl_enabled,
+            proxy.id
+          );
+        } catch (err) {
+          console.error(`  Failed to extract fields for proxy ${proxy.id}:`, err.message);
+        }
+      }
+      console.log(`  Completed: Updated ${proxiesNeedingUpdate.length} proxies with extracted fields`);
+    }
+  } catch (error) {
+    console.error('Migration error (extracting structured fields):', error.message);
+  }
 }
 
 /**
