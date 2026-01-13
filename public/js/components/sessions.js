@@ -1,5 +1,5 @@
 import api from '../api.js';
-import { showLoading, hideLoading, showError, showSuccess, showModal } from '../app.js';
+import { showLoading, hideLoading, showError, showSuccess } from '../app.js';
 
 export async function renderSessions(container) {
   showLoading();
