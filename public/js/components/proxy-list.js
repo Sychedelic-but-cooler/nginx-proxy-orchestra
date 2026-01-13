@@ -88,7 +88,11 @@ export async function renderProxies(container) {
                   forwardTo = `${protocol}: ${proxy.incoming_port || '?'} → ${escapeHtml(proxy.forward_host)}:${proxy.forward_port}`;
                 } else if (proxy.type === '404') {
                   forwardTo = '<span class="badge badge-secondary">404 Response</span>';
+                } else if (proxy.forward_host === 'N/A' || !proxy.forward_host || proxy.forward_port === 0) {
+                  // Handle proxies with placeholder/invalid forward data
+                  forwardTo = '<span class="badge badge-secondary">-</span>';
                 } else {
+                  // Reverse proxy type
                   forwardTo = `${escapeHtml(proxy.forward_scheme)}://${escapeHtml(proxy.forward_host)}:${proxy.forward_port}`;
                 }
 
@@ -422,6 +426,9 @@ async function renderProxiesQuiet(container) {
                 forwardTo = `${protocol}: ${proxy.incoming_port || '?'} → ${escapeHtml(proxy.forward_host)}:${proxy.forward_port}`;
               } else if (proxy.type === '404') {
                 forwardTo = '<span class="badge badge-secondary">404 Response</span>';
+              } else if (proxy.forward_host === 'N/A' || !proxy.forward_host || proxy.forward_port === 0) {
+                // Handle proxies with placeholder/invalid forward data
+                forwardTo = '<span class="badge badge-secondary">-</span>';
               } else {
                 forwardTo = `${escapeHtml(proxy.forward_scheme)}://${escapeHtml(proxy.forward_host)}:${proxy.forward_port}`;
               }
