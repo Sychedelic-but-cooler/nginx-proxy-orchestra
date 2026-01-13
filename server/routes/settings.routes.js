@@ -1,4 +1,4 @@
-const { sendJSON, parseBody, getClientIP } = require('../shared/utils');
+const { sendJSON, parseBody, getClientIP } = require('./shared/utils');
 const { db, logAudit, getSetting, setSetting, getAllSettings } = require('../db');
 const reloadManager = require('../utils/reload-manager');
 const { getErrorPages, setErrorPage, ALLOWED_CODES, ensureDefaultErrorPages } = require('../utils/error-pages');
