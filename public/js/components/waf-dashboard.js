@@ -47,7 +47,7 @@ export async function renderWAFDashboard(container) {
         </div>
 
         <!-- Overview Cards -->
-        <div class="stats-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 20px; margin-bottom: 30px;">
+        <div class="stats-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 20px; margin-bottom: 30px;">
           <div class="stat-card">
             <div class="stat-icon" style="background: #e3f2fd;">🛡️</div>
             <div class="stat-content">
@@ -67,6 +67,15 @@ export async function renderWAFDashboard(container) {
           </div>
 
           <div class="stat-card">
+            <div class="stat-icon" style="background: #e0f2f1;">📊</div>
+            <div class="stat-content">
+              <div class="stat-label">Allowed/Logged</div>
+              <div class="stat-value" id="allowedEvents">${(stats.total_events || 0) - (stats.blocked_attacks || 0)}</div>
+              <div class="stat-change">${calculatePercentage((stats.total_events || 0) - (stats.blocked_attacks || 0), stats.total_events)}% logged only</div>
+            </div>
+          </div>
+
+          <div class="stat-card">
             <div class="stat-icon" style="background: #e8f5e9;">✅</div>
             <div class="stat-content">
               <div class="stat-label">Active Profiles</div>
@@ -81,6 +90,33 @@ export async function renderWAFDashboard(container) {
               <div class="stat-label">Top Attack Type</div>
               <div class="stat-value" style="font-size: 16px;" id="topAttackType">${getTopAttackType(stats.by_type)}</div>
               <div class="stat-change">${getTopAttackCount(stats.by_type)} occurrences</div>
+            </div>
+          </div>
+
+          <div class="stat-card">
+            <div class="stat-icon" style="background: #fce4ec;">🌐</div>
+            <div class="stat-content">
+              <div class="stat-label">Unique Attackers</div>
+              <div class="stat-value" id="uniqueIPs">${stats.top_ips?.length || 0}</div>
+              <div class="stat-change">Distinct IP addresses</div>
+            </div>
+          </div>
+
+          <div class="stat-card">
+            <div class="stat-icon" style="background: #f3e5f5;">📈</div>
+            <div class="stat-content">
+              <div class="stat-label">Attack Rate</div>
+              <div class="stat-value" style="font-size: 20px;" id="attackRate">${calculateAttackRate(stats.total_events, parseInt(currentTimeRange))}</div>
+              <div class="stat-change">per hour average</div>
+            </div>
+          </div>
+
+          <div class="stat-card">
+            <div class="stat-icon" style="background: #ede7f6;">⚡</div>
+            <div class="stat-content">
+              <div class="stat-label">Highest Severity</div>
+              <div class="stat-value" style="font-size: 18px;" id="highestSeverity">${getHighestSeverity(stats.by_severity)}</div>
+              <div class="stat-change">${getHighestSeverityCount(stats.by_severity)} ${getHighestSeverity(stats.by_severity)} events</div>
             </div>
           </div>
         </div>
@@ -380,17 +416,85 @@ function calculatePercentage(value, total) {
 }
 
 function getTopAttackType(byType) {
-  if (!byType || Object.keys(byType).length === 0) return 'None';
-
-  const sorted = Object.entries(byType).sort((a, b) => b[1] - a[1]);
-  return sorted[0][0] || 'None';
+  if (!byType || byType.length === 0) return 'None';
+  
+  // byType is an array of {attack_type, count} objects
+  return formatAttackType(byType[0]?.attack_type) || 'None';
 }
 
 function getTopAttackCount(byType) {
-  if (!byType || Object.keys(byType).length === 0) return 0;
+  if (!byType || byType.length === 0) return 0;
+  
+  // byType is an array of {attack_type, count} objects
+  return byType[0]?.count || 0;
+}
 
-  const sorted = Object.entries(byType).sort((a, b) => b[1] - a[1]);
-  return sorted[0][1] || 0;
+function formatAttackType(attackType) {
+  if (!attackType) return 'Unknown';
+  
+  const types = {
+    'sqli': 'SQL Injection',
+    'xss': 'Cross-Site Scripting',
+    'rce': 'Remote Code Execution',
+    'lfi': 'Local File Inclusion',
+    'rfi': 'Remote File Inclusion',
+    'php-injection': 'PHP Code Injection',
+    'java-injection': 'Java Code Injection',
+    'fixation': 'Session Fixation',
+    'multipart': 'Multipart Attack',
+    'generic': 'Generic Attack',
+    'protocol': 'Protocol Violation',
+    'scanner': 'Scanner Detection',
+    'disclosure': 'Information Disclosure',
+    'dos': 'Denial of Service'
+  };
+  
+  return types[attackType] || attackType.toUpperCase();
+}
+
+function calculateAttackRate(totalEvents, hours) {
+  if (!totalEvents || !hours || hours === 0) return '0';
+  const rate = totalEvents / hours;
+  if (rate < 1) return rate.toFixed(2);
+  return rate.toFixed(1);
+}
+
+function getHighestSeverity(bySeverity) {
+  if (!bySeverity || bySeverity.length === 0) return 'None';
+  
+  // Severity priority: lower number = higher severity
+  const severityOrder = {
+    '0': 'Emergency',
+    '1': 'Alert', 
+    '2': 'Critical',
+    '3': 'Error',
+    '4': 'Warning',
+    '5': 'Notice'
+  };
+
+  // Find the highest severity (lowest number) that has events
+  for (let i = 0; i <= 5; i++) {
+    const severity = bySeverity.find(s => s.severity === i.toString() || s.severity === i);
+    if (severity && severity.count > 0) {
+      return severityOrder[i.toString()] || 'Unknown';
+    }
+  }
+  
+  return 'None';
+}
+
+function getHighestSeverityCount(bySeverity) {
+  if (!bySeverity || bySeverity.length === 0) return 0;
+  
+  // Find the highest severity (lowest number) that has events
+  for (let i = 0; i <= 5; i++) {
+    const severity = bySeverity.find(s => s.severity === i.toString() || s.severity === i);
+    if (severity && severity.count > 0) {
+      return severity.count;
+    }
+  }
+  
+  return 0;
 }
 
 function renderTimelineChart(timelineData) {
@@ -466,9 +570,9 @@ function renderDistributionChart(byTypeData) {
     distributionChart.destroy();
   }
 
-  // Prepare data
-  const labels = byTypeData ? Object.keys(byTypeData) : [];
-  const data = byTypeData ? Object.values(byTypeData) : [];
+  // Prepare data - byTypeData is an array of {attack_type, count} objects
+  const labels = byTypeData ? byTypeData.map(item => formatAttackType(item.attack_type)) : [];
+  const data = byTypeData ? byTypeData.map(item => item.count) : [];
   const colors = [
     '#f44336', '#e91e63', '#9c27b0', '#673ab7', '#3f51b5',
     '#2196F3', '#03a9f4', '#00bcd4', '#009688', '#4caf50'
@@ -499,7 +603,7 @@ function renderDistributionChart(byTypeData) {
               const label = context.label || '';
               const value = context.parsed || 0;
               const total = context.dataset.data.reduce((a, b) => a + b, 0);
-              const percentage = ((value / total) * 100).toFixed(1);
+              const percentage = total > 0 ? ((value / total) * 100).toFixed(1) : 0;
               return `${label}: ${value} (${percentage}%)`;
             }
           }
@@ -723,17 +827,29 @@ async function refreshStats() {
     // Update overview cards
     document.getElementById('totalEvents').textContent = stats.total_events || 0;
     document.getElementById('blockedAttacks').textContent = stats.blocked_attacks || 0;
+    document.getElementById('allowedEvents').textContent = (stats.total_events || 0) - (stats.blocked_attacks || 0);
     document.getElementById('activeProfiles').textContent = stats.active_profiles || 0;
     document.getElementById('topAttackType').textContent = getTopAttackType(stats.by_type);
+    document.getElementById('uniqueIPs').textContent = stats.top_ips?.length || 0;
+    document.getElementById('attackRate').textContent = calculateAttackRate(stats.total_events, parseInt(currentTimeRange));
+    document.getElementById('highestSeverity').textContent = getHighestSeverity(stats.by_severity);
 
-    // Update percentage
+    // Update percentages
     const blockedCard = document.getElementById('blockedAttacks').closest('.stat-card');
-    const changeDiv = blockedCard.querySelector('.stat-change');
-    changeDiv.textContent = `${calculatePercentage(stats.blocked_attacks, stats.total_events)}% of total`;
+    const blockedChangeDiv = blockedCard.querySelector('.stat-change');
+    blockedChangeDiv.textContent = `${calculatePercentage(stats.blocked_attacks, stats.total_events)}% of total`;
+
+    const allowedCard = document.getElementById('allowedEvents').closest('.stat-card');
+    const allowedChangeDiv = allowedCard.querySelector('.stat-change');
+    allowedChangeDiv.textContent = `${calculatePercentage((stats.total_events || 0) - (stats.blocked_attacks || 0), stats.total_events)}% logged only`;
 
     const topAttackCard = document.getElementById('topAttackType').closest('.stat-card');
     const topChangeDiv = topAttackCard.querySelector('.stat-change');
     topChangeDiv.textContent = `${getTopAttackCount(stats.by_type)} occurrences`;
+
+    const severityCard = document.getElementById('highestSeverity').closest('.stat-card');
+    const severityChangeDiv = severityCard.querySelector('.stat-change');
+    severityChangeDiv.textContent = `${getHighestSeverityCount(stats.by_severity)} ${getHighestSeverity(stats.by_severity)} events`;
 
     // Update charts
     renderTimelineChart(stats.timeline);
