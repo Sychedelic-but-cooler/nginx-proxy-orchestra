@@ -17,31 +17,33 @@ const db = new Database(dbPath);
 db.pragma('foreign_keys = ON');
 
 /**
- * Run database migrations
+ * Run legacy proxy_hosts table migrations
+ * These are old-style migrations that directly modify the proxy_hosts table
+ * New migrations should use the migration system in ./migrate.js
  */
-function runMigrations() {
+function runLegacyProxyHostMigrations() {
   // Check if proxy_hosts table exists
   const tableInfo = db.pragma('table_info(proxy_hosts)');
   const columnNames = tableInfo.map(col => col.name);
 
   // Migration 1: Add config status tracking columns
   if (!columnNames.includes('config_status')) {
-    console.log('Running migration: Adding config_status column...');
+    console.log('Running legacy migration: Adding config_status column...');
     db.exec(`ALTER TABLE proxy_hosts ADD COLUMN config_status TEXT DEFAULT 'active'`);
   }
 
   if (!columnNames.includes('config_error')) {
-    console.log('Running migration: Adding config_error column...');
+    console.log('Running legacy migration: Adding config_error column...');
     db.exec(`ALTER TABLE proxy_hosts ADD COLUMN config_error TEXT`);
   }
 
   if (!columnNames.includes('config_filename')) {
-    console.log('Running migration: Adding config_filename column...');
+    console.log('Running legacy migration: Adding config_filename column...');
     db.exec(`ALTER TABLE proxy_hosts ADD COLUMN config_filename TEXT`);
   }
 
   if (!columnNames.includes('launch_url')) {
-    console.log('Running migration: Adding launch_url column...');
+    console.log('Running legacy migration: Adding launch_url column...');
     db.exec(`ALTER TABLE proxy_hosts ADD COLUMN launch_url TEXT`);
   }
 }
@@ -82,8 +84,8 @@ function initializeDatabase() {
     )
   `);
 
-  // Run migrations
-  runMigrations();
+  // Run legacy migrations for proxy_hosts table
+  runLegacyProxyHostMigrations();
 
   // SSL certificates table
   db.exec(`
