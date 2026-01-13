@@ -227,8 +227,50 @@ class API {
   }
 
   // Audit log
-  async getAuditLog() {
-    return this.request('/api/audit-log');
+  async getAuditLog(params = {}) {
+    const queryParams = new URLSearchParams();
+    
+    if (params.limit) queryParams.append('limit', params.limit);
+    if (params.offset) queryParams.append('offset', params.offset);
+    if (params.user_id) queryParams.append('user_id', params.user_id);
+    if (params.username) queryParams.append('username', params.username);
+    if (params.action) queryParams.append('action', params.action);
+    if (params.resource_type) queryParams.append('resource_type', params.resource_type);
+    if (params.ip_address) queryParams.append('ip_address', params.ip_address);
+    if (params.start_date) queryParams.append('start_date', params.start_date);
+    if (params.end_date) queryParams.append('end_date', params.end_date);
+    if (params.search) queryParams.append('search', params.search);
+    if (params.success !== undefined && params.success !== null && params.success !== '') {
+      queryParams.append('success', params.success);
+    }
+
+    const url = queryParams.toString() ? `/api/audit-log?${queryParams}` : '/api/audit-log';
+    return this.request(url);
+  }
+
+  async getAuditStats(hours = 24) {
+    return this.request(`/api/audit-log/stats?hours=${hours}`);
+  }
+
+  getAuditLogExportUrl(params = {}) {
+    const queryParams = new URLSearchParams();
+    
+    if (params.user_id) queryParams.append('user_id', params.user_id);
+    if (params.username) queryParams.append('username', params.username);
+    if (params.action) queryParams.append('action', params.action);
+    if (params.resource_type) queryParams.append('resource_type', params.resource_type);
+    if (params.ip_address) queryParams.append('ip_address', params.ip_address);
+    if (params.start_date) queryParams.append('start_date', params.start_date);
+    if (params.end_date) queryParams.append('end_date', params.end_date);
+    if (params.search) queryParams.append('search', params.search);
+    if (params.success !== undefined && params.success !== null && params.success !== '') {
+      queryParams.append('success', params.success);
+    }
+
+    const token = localStorage.getItem('token');
+    queryParams.append('token', token);
+
+    return `/api/audit-log/export?${queryParams}`;
   }
 
   // Settings

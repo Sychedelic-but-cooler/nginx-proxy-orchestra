@@ -501,12 +501,47 @@ initializeDatabase();
 
 /**
  * Log audit event
+ * @param {number|null} userId - User ID performing the action
+ * @param {string} action - Action type (create, update, delete, enable, disable, etc.)
+ * @param {string} resourceType - Type of resource (proxy, certificate, module, user, etc.)
+ * @param {number|null} resourceId - ID of the resource
+ * @param {string|null} details - JSON string with additional context
+ * @param {string|null} ipAddress - Client IP address
+ * @param {object} options - Additional options: { userAgent, sessionId, beforeState, afterState, success, errorMessage }
  */
-function logAudit(userId, action, resourceType, resourceId, details, ipAddress) {
-  const stmt = db.prepare(
-    'INSERT INTO audit_log (user_id, action, resource_type, resource_id, details, ip_address) VALUES (?, ?, ?, ?, ?, ?)'
-  );
-  stmt.run(userId, action, resourceType, resourceId, details || null, ipAddress || null);
+function logAudit(userId, action, resourceType, resourceId, details, ipAddress, options = {}) {
+  // Check if new columns exist (for backwards compatibility during migration)
+  const tableInfo = db.prepare('PRAGMA table_info(audit_log)').all();
+  const hasNewColumns = tableInfo.some(col => col.name === 'user_agent');
+
+  if (hasNewColumns) {
+    const stmt = db.prepare(`
+      INSERT INTO audit_log (
+        user_id, action, resource_type, resource_id, details, ip_address,
+        user_agent, session_id, before_state, after_state, success, error_message
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+    stmt.run(
+      userId,
+      action,
+      resourceType,
+      resourceId,
+      details || null,
+      ipAddress || null,
+      options.userAgent || null,
+      options.sessionId || null,
+      options.beforeState || null,
+      options.afterState || null,
+      options.success !== undefined ? (options.success ? 1 : 0) : 1,
+      options.errorMessage || null
+    );
+  } else {
+    // Fallback for before migration runs
+    const stmt = db.prepare(
+      'INSERT INTO audit_log (user_id, action, resource_type, resource_id, details, ip_address) VALUES (?, ?, ?, ?, ?, ?)'
+    );
+    stmt.run(userId, action, resourceType, resourceId, details || null, ipAddress || null);
+  }
 }
 
 /**
