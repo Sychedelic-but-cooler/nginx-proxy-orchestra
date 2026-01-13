@@ -336,70 +336,100 @@ export async function renderWAFEvents(container) {
 
 function setupEventListeners() {
   // Toggle filters
-  document.getElementById('toggleFilters').addEventListener('click', () => {
-    const container = document.getElementById('filtersContainer');
-    const button = document.getElementById('toggleFilters');
-    if (container.style.display === 'none') {
-      container.style.display = 'block';
-      button.textContent = '▼ Collapse';
-    } else {
-      container.style.display = 'none';
-      button.textContent = '▶ Expand';
-    }
-  });
+  const toggleFiltersBtn = document.getElementById('toggleFilters');
+  if (toggleFiltersBtn) {
+    toggleFiltersBtn.addEventListener('click', () => {
+      const container = document.getElementById('filtersContainer');
+      const button = document.getElementById('toggleFilters');
+      if (container && button) {
+        if (container.style.display === 'none') {
+          container.style.display = 'block';
+          button.textContent = '▼ Collapse';
+        } else {
+          container.style.display = 'none';
+          button.textContent = '▶ Expand';
+        }
+      }
+    });
+  }
 
   // Apply filters
-  document.getElementById('filtersForm').addEventListener('submit', async (e) => {
-    e.preventDefault();
-    currentPage = 0; // Reset to first page
-    collectFilters();
-    await loadEvents();
-  });
+  const filtersForm = document.getElementById('filtersForm');
+  if (filtersForm) {
+    filtersForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      currentPage = 0; // Reset to first page
+      collectFilters();
+      await loadEvents();
+    });
+  }
 
   // Clear filters
-  document.getElementById('clearFiltersBtn').addEventListener('click', async () => {
-    document.getElementById('filtersForm').reset();
-    currentPage = 0;
-    currentFilters = {};
-    await loadEvents();
-  });
+  const clearFiltersBtn = document.getElementById('clearFiltersBtn');
+  if (clearFiltersBtn) {
+    clearFiltersBtn.addEventListener('click', async () => {
+      const form = document.getElementById('filtersForm');
+      if (form) {
+        form.reset();
+      }
+      currentPage = 0;
+      currentFilters = {};
+      await loadEvents();
+    });
+  }
 
   // Export events
-  document.getElementById('exportEventsBtn').addEventListener('click', exportEventsToCSV);
+  const exportEventsBtn = document.getElementById('exportEventsBtn');
+  if (exportEventsBtn) {
+    exportEventsBtn.addEventListener('click', exportEventsToCSV);
+  }
 
   // Pagination
-  document.getElementById('prevPageBtn').addEventListener('click', async () => {
-    if (currentPage > 0) {
-      currentPage--;
-      await loadEvents();
-    }
-  });
+  const prevPageBtn = document.getElementById('prevPageBtn');
+  if (prevPageBtn) {
+    prevPageBtn.addEventListener('click', async () => {
+      if (currentPage > 0) {
+        currentPage--;
+        await loadEvents();
+      }
+    });
+  }
 
-  document.getElementById('nextPageBtn').addEventListener('click', async () => {
-    const maxPage = Math.ceil(totalEvents / pageSize) - 1;
-    if (currentPage < maxPage) {
-      currentPage++;
-      await loadEvents();
-    }
-  });
+  const nextPageBtn = document.getElementById('nextPageBtn');
+  if (nextPageBtn) {
+    nextPageBtn.addEventListener('click', async () => {
+      const maxPage = Math.ceil(totalEvents / pageSize) - 1;
+      if (currentPage < maxPage) {
+        currentPage++;
+        await loadEvents();
+      }
+    });
+  }
 }
 
 function collectFilters() {
   currentFilters = {};
 
-  const startDate = document.getElementById('filterStartDate').value;
-  const endDate = document.getElementById('filterEndDate').value;
-  const severity = document.getElementById('filterSeverity').value;
-  const attackType = document.getElementById('filterAttackType').value;
-  const clientIP = document.getElementById('filterClientIP').value.trim();
-  const blocked = document.getElementById('filterBlocked').value;
+  const startDateEl = document.getElementById('filterStartDate');
+  const endDateEl = document.getElementById('filterEndDate');
+  const severityEl = document.getElementById('filterSeverity');
+  const attackTypeEl = document.getElementById('filterAttackType');
+  const clientIPEl = document.getElementById('filterClientIP');
+  const blockedEl = document.getElementById('filterBlocked');
+
+  const startDate = startDateEl?.value;
+  const endDate = endDateEl?.value;
+  const severity = severityEl?.value;
+  const attackType = attackTypeEl?.value;
+  const clientIP = clientIPEl?.value.trim();
+  const blocked = blockedEl?.value;
 
   if (startDate) currentFilters.start_date = startDate;
   if (endDate) currentFilters.end_date = endDate;
   if (severity) currentFilters.severity = severity;
   if (attackType) currentFilters.attack_type = attackType;
   if (clientIP) currentFilters.client_ip = clientIP;
-  if (blocked) currentFilters.blocked = blocked === 'true';
+  if (blocked) currentFilters.blocked = blocked;
 }
 
 async function loadEvents() {
@@ -418,7 +448,10 @@ async function loadEvents() {
     totalEvents = response.total || 0;
 
     // Update count
-    document.getElementById('eventsCount').textContent = `${totalEvents} total events`;
+    const eventsCountEl = document.getElementById('eventsCount');
+    if (eventsCountEl) {
+      eventsCountEl.textContent = `${totalEvents} total events`;
+    }
 
     // Render events
     if (events.length === 0) {
@@ -537,11 +570,22 @@ function updatePagination() {
   const start = currentPage * pageSize + 1;
   const end = Math.min((currentPage + 1) * pageSize, totalEvents);
 
-  document.getElementById('paginationInfo').textContent =
-    `Showing ${start}-${end} of ${totalEvents} events (Page ${currentPage + 1} of ${maxPage})`;
+  const paginationInfoEl = document.getElementById('paginationInfo');
+  if (paginationInfoEl) {
+    paginationInfoEl.textContent =
+      `Showing ${start}-${end} of ${totalEvents} events (Page ${currentPage + 1} of ${maxPage})`;
+  }
 
-  document.getElementById('prevPageBtn').disabled = currentPage === 0;
-  document.getElementById('nextPageBtn').disabled = currentPage >= maxPage - 1 || totalEvents === 0;
+  const prevBtn = document.getElementById('prevPageBtn');
+  const nextBtn = document.getElementById('nextPageBtn');
+  
+  if (prevBtn) {
+    prevBtn.disabled = currentPage === 0;
+  }
+  
+  if (nextBtn) {
+    nextBtn.disabled = currentPage >= maxPage - 1 || totalEvents === 0;
+  }
 }
 
 
