@@ -47,7 +47,7 @@ export async function renderSessions(container) {
       </div>
     `;
 
-    setupSessionHandlers();
+    setupSessionHandlers(container);
 
   } catch (error) {
     showError(error.message);
@@ -211,7 +211,7 @@ function formatRelativeTime(date) {
   return 'Just now';
 }
 
-function setupSessionHandlers() {
+function setupSessionHandlers(container) {
   // Revoke single session
   document.querySelectorAll('.revoke-session-btn').forEach(btn => {
     btn.addEventListener('click', async (e) => {
@@ -227,7 +227,6 @@ function setupSessionHandlers() {
         showSuccess('Session revoked successfully');
         
         // Refresh the sessions list
-        const container = document.getElementById('content');
         await renderSessions(container);
       } catch (error) {
         showError(error.message);
@@ -251,7 +250,6 @@ function setupSessionHandlers() {
         showSuccess(result.message || `Revoked ${result.revokedCount} session(s)`);
         
         // Refresh the sessions list
-        const container = document.getElementById('content');
         await renderSessions(container);
       } catch (error) {
         showError(error.message);
