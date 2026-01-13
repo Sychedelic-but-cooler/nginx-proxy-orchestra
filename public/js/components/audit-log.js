@@ -559,12 +559,65 @@ async function loadLogs() {
   }
 }
 
+/**
+ * Parse IP address to extract IPv4 if available
+ * Handles formats like:
+ * - "192.168.1.1"
+ * - "::ffff:192.168.1.1" (IPv4-mapped IPv6)
+ * - "2001:db8::1"
+ * - null/undefined
+ */
+function parseIPAddress(ipAddress) {
+  if (!ipAddress) {
+    return {
+      display: '-',
+      full: 'Unknown',
+      ipv4: null,
+      ipv6: null,
+      hasIPv6: false
+    };
+  }
+
+  // Check for IPv4-mapped IPv6 format (::ffff:x.x.x.x)
+  const ipv4MappedMatch = ipAddress.match(/::ffff:(\d+\.\d+\.\d+\.\d+)/i);
+  if (ipv4MappedMatch) {
+    return {
+      display: ipv4MappedMatch[1], // Show the IPv4 address
+      full: ipAddress,
+      ipv4: ipv4MappedMatch[1],
+      ipv6: ipAddress,
+      hasIPv6: true
+    };
+  }
+
+  // Check if it's a pure IPv4 address
+  const ipv4Match = ipAddress.match(/^(\d+\.\d+\.\d+\.\d+)$/);
+  if (ipv4Match) {
+    return {
+      display: ipv4Match[1],
+      full: ipAddress,
+      ipv4: ipv4Match[1],
+      ipv6: null,
+      hasIPv6: false
+    };
+  }
+
+  // Must be pure IPv6
+  return {
+    display: ipAddress.length > 20 ? ipAddress.substring(0, 20) + '...' : ipAddress,
+    full: ipAddress,
+    ipv4: null,
+    ipv6: ipAddress,
+    hasIPv6: true
+  };
+}
+
 function renderLogRow(log) {
   const timestamp = new Date(log.created_at).toLocaleString();
   const username = log.username || 'System';
   const action = log.action;
   const resourceType = log.resource_type;
-  const ipAddress = log.ip_address || '-';
+  const parsedIP = parseIPAddress(log.ip_address);
   const success = log.success !== undefined ? log.success : 1;
 
   // Format description
@@ -577,7 +630,7 @@ function renderLogRow(log) {
       <td>${renderActionBadge(action)}</td>
       <td>${formatResourceTypeLabel(resourceType)}</td>
       <td class="truncate" title="${description}">${description}</td>
-      <td style="font-family: monospace; font-size: 12px;">${ipAddress}</td>
+      <td style="font-family: monospace; font-size: 12px;" title="${parsedIP.full}">${parsedIP.display}</td>
       <td>${renderStatusBadge(success)}</td>
       <td>
         <button id="details-${log.id}" class="btn-details">Details</button>
@@ -683,6 +736,7 @@ function showDetailsModal(log) {
   const username = log.username || 'System';
   const success = log.success !== undefined ? log.success : 1;
   const isSuccess = success === 1 || success === true;
+  const parsedIP = parseIPAddress(log.ip_address);
 
   const modal = document.createElement('div');
   modal.className = 'modal-overlay';
@@ -742,8 +796,14 @@ function showDetailsModal(log) {
           <div class="detail-grid">
             <div class="detail-row">
               <span class="detail-label">IP Address:</span>
-              <span class="detail-value" style="font-family: monospace;">${log.ip_address || 'Unknown'}</span>
+              <span class="detail-value" style="font-family: monospace;">${parsedIP.display}</span>
             </div>
+            ${parsedIP.hasIPv6 ? `
+              <div class="detail-row">
+                <span class="detail-label">IPv6 Address:</span>
+                <span class="detail-value" style="font-family: monospace; font-size: 11px; color: var(--text-secondary);">${parsedIP.ipv6}</span>
+              </div>
+            ` : ''}
             ${log.user_agent ? `
               <div class="detail-row">
                 <span class="detail-label">User Agent:</span>
@@ -774,6 +834,12 @@ function showDetailsModal(log) {
             ${renderStateComparison(beforeState, afterState)}
           </div>
         ` : ''}
+
+        <!-- Raw Audit Log -->
+        <div class="detail-section">
+          <h3 class="detail-section-title">Raw Audit Log</h3>
+          <div class="code-block">${JSON.stringify(log, null, 2)}</div>
+        </div>
       </div>
       <div class="modal-footer">
         <button class="btn btn-secondary" id="closeDetailsModalBtn">Close</button>
