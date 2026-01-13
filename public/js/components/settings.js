@@ -19,9 +19,16 @@ export async function renderSettings(container, tab = 'general') {
       `;
 
       setupGeneralSettingsHandlers(settings, certificates);
-      
-      // Load error pages UI
-      await loadErrorPagesSection(settings);
+
+    } else if (tab === 'error-pages') {
+      container.innerHTML = `
+        <div class="info-banner" style="background: #e3f2fd; border-left: 4px solid #2196F3; padding: 12px 16px; margin-bottom: 20px; border-radius: 4px;">
+          <strong>ℹ️ Custom Error Pages:</strong> Customize HTML error pages that are served when common HTTP errors occur.
+        </div>
+        <div class="card" id="errorPagesCard"></div>
+      `;
+
+      await loadErrorPagesSection();
 
     } else if (tab === 'security') {
       const [securitySettings, securityRules] = await Promise.all([
@@ -112,8 +119,6 @@ function renderGeneralSettings(settings, certificates) {
         <button type="submit" class="btn btn-primary">Save Settings</button>
       </form>
     </div>
-
-    <div class="card" id="errorPagesCard" style="margin-top: 20px;"></div>
   `;
 }
 
@@ -228,7 +233,7 @@ function renderSecuritySettings(securitySettings, securityRules) {
   `;
 }
 
-async function loadErrorPagesSection(settings) {
+async function loadErrorPagesSection() {
   const card = document.getElementById('errorPagesCard');
   if (!card) return;
 
@@ -240,7 +245,7 @@ async function loadErrorPagesSection(settings) {
 
     card.innerHTML = `
       <h2>Custom Error Pages</h2>
-      <p class="form-help">Upload custom HTML for common error responses. These are served globally (default catch-all) and can be wired into proxy templates.</p>
+      <p class="form-help">Customize the HTML for common error responses (404, 502, 503). These pages are served globally and can be integrated into your nginx proxy templates.</p>
       <div class="error-pages-grid">
         ${allowed.map(code => renderErrorPagePanel(code, pages[code])).join('')}
       </div>
@@ -266,7 +271,7 @@ async function loadErrorPagesSection(settings) {
       });
     });
   } catch (error) {
-    card.innerHTML = `<div class="error">Failed to load error pages</div>`;
+    card.innerHTML = `<div class="error">Failed to load error pages: ${error.message || 'Unknown error'}</div>`;
   }
 }
 

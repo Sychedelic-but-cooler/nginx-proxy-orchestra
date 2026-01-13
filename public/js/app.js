@@ -258,6 +258,12 @@ router.register('/settings/security', async () => {
   await renderSettings(mainContent, 'security');
 });
 
+router.register('/settings/error-pages', async () => {
+  updateNavigation('settings/error-pages');
+  setHeader('Custom Error Pages');
+  await renderSettings(mainContent, 'error-pages');
+});
+
 router.register('/settings/notifications', async () => {
   updateNavigation('settings/notifications');
   await renderNotificationSettings(mainContent);
