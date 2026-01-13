@@ -25,7 +25,7 @@ export async function renderNotificationSettings(container) {
 
     container.innerHTML = `
       <div class="info-banner" style="background: #e3f2fd; border-left: 4px solid #2196F3; padding: 12px 16px; margin-bottom: 20px; border-radius: 4px;">
-        <strong>🔔 Enhanced Notification Settings</strong><br>
+        <strong>Enhanced Notification Settings</strong><br>
         Configure advanced notification controls including WAF matrix alerts, daily reports, and modular notification types.
       </div>
 
@@ -74,7 +74,7 @@ export async function renderNotificationSettings(container) {
       <!-- Enhanced Features -->
       <div class="card" style="margin-top: 20px;">
         <div class="card-header">
-          <h3 class="card-title">🚀 Enhanced Features</h3>
+          <h3 class="card-title">+Enhanced Features</h3>
           <small style="color: var(--text-secondary);">Advanced notification controls and scheduling</small>
         </div>
         <div style="padding: 20px;">
@@ -88,7 +88,7 @@ export async function renderNotificationSettings(container) {
                   <label for="matrixEnabled" style="font-weight: 600;">WAF Notification Matrix</label>
                 </div>
                 <small style="display: block; margin-top: 4px; color: var(--text-secondary);">
-                  Smart WAF alerts based on severity × frequency combinations
+                  Smart WAF alerts based on severity frequency combinations
                 </small>
                 <button type="button" id="configureMatrixBtn" class="btn btn-sm btn-outline" style="margin-top: 8px;">
                   Configure Matrix
@@ -160,7 +160,7 @@ export async function renderNotificationSettings(container) {
       <!-- WAF Matrix Configuration -->
       <div class="card" style="margin-top: 20px; display: none;" id="wafMatrixCard">
         <div class="card-header">
-          <h3 class="card-title">🛡️ WAF Notification Matrix</h3>
+          <h3 class="card-title"> WAF Notification Matrix</h3>
           <small style="color: var(--text-secondary);">Configure notifications based on event severity and frequency</small>
         </div>
         <div style="padding: 20px;">
@@ -171,7 +171,7 @@ export async function renderNotificationSettings(container) {
       <!-- Legacy Notification Triggers -->
       <div class="card" style="margin-top: 20px;">
         <div class="card-header">
-          <h3 class="card-title">🔧 Basic Notification Triggers</h3>
+          <h3 class="card-title">Basic Notification Triggers</h3>
           <small style="color: var(--text-secondary);">Traditional notification settings</small>
         </div>
         <div style="padding: 20px;">
@@ -179,7 +179,7 @@ export async function renderNotificationSettings(container) {
           <!-- WAF Basic -->
           <div class="notification-section" style="border: 1px solid var(--border-color); border-radius: 8px; padding: 16px; margin-bottom: 16px;">
             <h4 style="margin: 0 0 12px 0; font-size: 16px; display: flex; align-items: center; gap: 8px;">
-              🛡️ WAF Events
+              WAF Events
               <span style="background: #ffa726; color: white; font-size: 10px; padding: 2px 6px; border-radius: 4px;">LEGACY</span>
             </h4>
             
@@ -206,7 +206,7 @@ export async function renderNotificationSettings(container) {
 
           <!-- System Events -->
           <div class="notification-section" style="border: 1px solid var(--border-color); border-radius: 8px; padding: 16px; margin-bottom: 16px;">
-            <h4 style="margin: 0 0 12px 0; font-size: 16px;">⚙️ System Events</h4>
+            <h4 style="margin: 0 0 12px 0; font-size: 16px;">System Events</h4>
             
             <div class="form-group">
               <div class="checkbox-group">
@@ -225,7 +225,7 @@ export async function renderNotificationSettings(container) {
 
           <!-- Certificate Events -->
           <div class="notification-section" style="border: 1px solid var(--border-color); border-radius: 8px; padding: 16px;">
-            <h4 style="margin: 0 0 12px 0; font-size: 16px;">🔒 Certificate Events</h4>
+            <h4 style="margin: 0 0 12px 0; font-size: 16px;">Certificate Events</h4>
             
             <div class="form-group">
               <div class="checkbox-group">
@@ -245,10 +245,10 @@ export async function renderNotificationSettings(container) {
       <div class="card" style="margin-top: 20px;">
         <div style="padding: 20px; display: flex; gap: 12px; justify-content: flex-start;">
           <button type="button" id="saveAllSettings" class="btn btn-primary">
-            💾 Save All Settings
+            Save All Settings
           </button>
           <button type="button" id="saveMatrixOnly" class="btn btn-secondary" style="display: none;">
-            🛡️ Save Matrix Only
+            Save Matrix Only
           </button>
         </div>
       </div>
@@ -256,7 +256,7 @@ export async function renderNotificationSettings(container) {
       <!-- Notification History -->
       <div class="card" style="margin-top: 20px;">
         <div class="card-header">
-          <h3 class="card-title">📋 Recent Notifications</h3>
+          <h3 class="card-title">Recent Notifications</h3>
           <small style="color: var(--text-secondary);">Last 25 notifications sent</small>
         </div>
         <div id="notificationHistoryContainer">
@@ -277,9 +277,9 @@ export async function renderNotificationSettings(container) {
       <div class="card">
         <div style="padding: 20px; text-align: center;">
           <p style="color: var(--danger-color); margin-bottom: 16px;">
-            ❌ Failed to load notification settings: ${error.message}
+            Failed to load notification settings: ${error.message}
           </p>
-          <button onclick="location.reload()" class="btn btn-secondary">🔄 Retry</button>
+          <button onclick="location.reload()" class="btn btn-secondary">Retry</button>
         </div>
       </div>
     `;
@@ -394,11 +394,11 @@ function setupEventListeners() {
       const result = await api.testNotification();
       
       if (result.success) {
-        button.textContent = '✅ Sent!';
+        button.textContent = 'Sent!';
         button.style.background = 'var(--success-color)';
         showToast('Test notification sent successfully!', 'success');
       } else {
-        button.textContent = '❌ Failed';
+        button.textContent = 'Failed';
         button.style.background = 'var(--danger-color)';
         showToast(`Failed to send: ${result.error || 'Unknown error'}`, 'error');
       }
@@ -410,7 +410,7 @@ function setupEventListeners() {
       }, 3000);
 
     } catch (error) {
-      button.textContent = '❌ Error';
+      button.textContent = 'Error';
       button.style.background = 'var(--danger-color)';
       showToast(`Error: ${error.message}`, 'error');
 
@@ -464,7 +464,7 @@ async function saveAllSettings() {
   const originalText = button.textContent;
 
   button.disabled = true;
-  button.textContent = '💾 Saving...';
+  button.textContent = 'Saving...';
 
   try {
     // Collect basic settings
@@ -512,7 +512,7 @@ async function saveAllSettings() {
       await saveWAFMatrix(false); // Don't show toast for matrix save
     }
 
-    button.textContent = '✅ Saved!';
+    button.textContent = 'Saved!';
     button.style.background = 'var(--success-color)';
     showToast('All notification settings saved successfully', 'success');
 
@@ -524,7 +524,7 @@ async function saveAllSettings() {
 
   } catch (error) {
     console.error('Error saving settings:', error);
-    button.textContent = '❌ Failed';
+    button.textContent = 'Failed';
     button.style.background = 'var(--danger-color)';
     showToast(`Failed to save: ${error.message}`, 'error');
 
@@ -614,7 +614,7 @@ async function loadNotificationHistory() {
     } else {
       container.innerHTML = `
         <div style="padding: 20px; text-align: center; color: var(--text-secondary);">
-          <p>📭 No notifications sent yet</p>
+          <p>No notifications sent yet</p>
           <small>Send a test notification to see it appear here</small>
         </div>
       `;
@@ -624,7 +624,7 @@ async function loadNotificationHistory() {
     console.error('Error loading notification history:', error);
     container.innerHTML = `
       <div style="padding: 20px; text-align: center; color: var(--text-secondary);">
-        <p>📋 Notification history coming soon</p>
+        <p>Notification history coming soon</p>
         <small>History tracking will be available after system updates</small>
       </div>
     `;
