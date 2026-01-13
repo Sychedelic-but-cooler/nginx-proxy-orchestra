@@ -284,6 +284,11 @@ function generateServerBlock(proxyHost, modules = [], db = null) {
   config += `    }\n`;
   config += `\n`;
 
+  // Custom error pages (global)
+  const { renderErrorPageDirectives } = require('./default-error-pages');
+  config += renderErrorPageDirectives('    ');
+  config += `\n`;
+
   // Location block
   config += `    location / {\n`;
   config += `        proxy_pass ${upstreamUrl};\n`;

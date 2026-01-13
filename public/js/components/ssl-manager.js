@@ -697,6 +697,14 @@ www.example.com
 
             <div class="form-group">
               <label>
+                <input type="checkbox" id="dryRun">
+                Test mode (dry-run using staging server)
+              </label>
+              <small style="display: block; margin-top: 4px;">Validates configuration without issuing a real certificate</small>
+            </div>
+
+            <div class="form-group">
+              <label>
                 <input type="checkbox" id="autoRenew" checked>
                 Enable automatic renewal (recommended)
               </label>
@@ -753,6 +761,7 @@ www.example.com
     const domainsText = orderDomains.value;
     const challengeTypeValue = challengeType.value;
     const autoRenew = document.getElementById('autoRenew').checked;
+    const dryRun = document.getElementById('dryRun').checked;
 
     const domains = domainsText.split('\n').map(d => d.trim()).filter(d => d);
 
@@ -765,7 +774,8 @@ www.example.com
       email,
       domains,
       challengeType: challengeTypeValue,
-      autoRenew
+      autoRenew,
+      dryRun
     };
 
     if (challengeTypeValue === 'dns-01') {
@@ -783,7 +793,11 @@ www.example.com
       const result = await api.orderCertificate(orderData);
       hideLoading();
       closeModal();
-      showSuccess(`Certificate ordered successfully for ${domains[0]}!`);
+      if (dryRun) {
+        showSuccess(`Certificate test successful for ${domains[0]}! Ready to order for real.`);
+      } else {
+        showSuccess(`Certificate ordered successfully for ${domains[0]}!`);
+      }
       await renderCertificates(container);
     } catch (error) {
       hideLoading();

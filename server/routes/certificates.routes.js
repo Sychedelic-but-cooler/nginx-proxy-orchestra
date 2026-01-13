@@ -311,7 +311,8 @@ async function handleOrderCertificate(req, res) {
       dnsCredentialId,
       propagationSeconds,
       autoRenew,
-      certName
+      certName,
+      dryRun
     } = body;
 
     // Validate inputs
@@ -339,7 +340,8 @@ async function handleOrderCertificate(req, res) {
       result = await orderCertificateHTTP({
         email,
         domains,
-        certName
+        certName,
+        dryRun
       });
     } else {
       // DNS-01 challenge - need credentials
@@ -368,7 +370,8 @@ async function handleOrderCertificate(req, res) {
         providerId: credentialRecord.provider,
         credentials,
         propagationSeconds: propagationSeconds || 10,
-        certName
+        certName,
+        dryRun
       });
 
       certbotConfig.dnsCredentialId = dnsCredentialId;
@@ -382,6 +385,18 @@ async function handleOrderCertificate(req, res) {
         details: result.error,
         output: result.output
       }, 500);
+    }
+
+    // If dry-run, don't save to database or files
+    if (dryRun) {
+      logAudit(req.user.userId, 'test_certificate', 'ssl_certificate', null, JSON.stringify({ domains, challengeType }), getClientIP(req));
+      
+      return sendJSON(res, {
+        success: true,
+        dryRun: true,
+        message: 'Certificate test successful - configuration validated',
+        output: result.output
+      });
     }
 
     // Read certificate files

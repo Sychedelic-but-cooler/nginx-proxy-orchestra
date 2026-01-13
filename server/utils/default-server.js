@@ -23,14 +23,17 @@ function generateDefaultServerConfig() {
 
   let httpAction, httpsAction;
 
+  const { renderErrorPageDirectives } = require('./default-error-pages');
+  const errorDirectives = renderErrorPageDirectives('    ');
+
   if (behavior === 'drop') {
     // Return 444 to close connection without response
     httpAction = '    return 444;';
     httpsAction = '    return 444;';
   } else if (behavior === '404') {
-    // Return 404 Not Found
-    httpAction = '    return 404;';
-    httpsAction = '    return 404;';
+    // Return 404 Not Found with custom page
+    httpAction = `${errorDirectives}    return 404;`;
+    httpsAction = `${errorDirectives}    return 404;`;
   } else if (behavior === 'custom' && customUrl) {
     // Redirect to custom URL
     httpAction = `    return 301 ${customUrl};`;

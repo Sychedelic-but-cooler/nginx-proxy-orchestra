@@ -356,9 +356,11 @@ function deleteCredentialFile(filePath) {
  * @param {Number} propagationSeconds - DNS propagation delay (10-120)
  * @param {String} email - Contact email for Let's Encrypt
  * @param {Array} domains - Array of domains to certify
+ * @param {Object} certbotDirs - Certbot directory paths
+ * @param {Boolean} dryRun - Test mode using staging server (optional)
  * @returns {Array} Array of certbot command arguments
  */
-function buildCertbotCommand(providerId, credentialPath, propagationSeconds, email, domains, certbotDirs) {
+function buildCertbotCommand(providerId, credentialPath, propagationSeconds, email, domains, certbotDirs, dryRun = false) {
   const provider = getProvider(providerId);
   if (!provider) {
     throw new Error(`Unknown provider: ${providerId}`);
@@ -383,6 +385,11 @@ function buildCertbotCommand(providerId, credentialPath, propagationSeconds, ema
       `--work-dir=${certbotDirs.workDir}`,
       `--logs-dir=${certbotDirs.logsDir}`
     );
+  }
+
+  // Add dry-run/staging flags if requested
+  if (dryRun) {
+    args.push('--dry-run', '--staging');
   }
 
   // Add provider-specific arguments

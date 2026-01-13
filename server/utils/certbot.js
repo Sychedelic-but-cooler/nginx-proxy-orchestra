@@ -76,10 +76,11 @@ async function checkCertbotInstallation() {
  * @param {String} options.email - Contact email
  * @param {Array} options.domains - Array of domain names
  * @param {String} options.certName - Certificate name (optional)
+ * @param {Boolean} options.dryRun - Test mode using staging server (optional)
  * @returns {Promise<Object>} Result object
  */
 async function orderCertificateHTTP(options) {
-  const { email, domains, certName } = options;
+  const { email, domains, certName, dryRun } = options;
 
   // SECURITY: Validate inputs to prevent command injection
   if (!email || !domains || domains.length === 0) {
@@ -114,6 +115,11 @@ async function orderCertificateHTTP(options) {
     `--work-dir=${dirs.workDir}`,
     `--logs-dir=${dirs.logsDir}`
   ];
+
+  // Add dry-run/staging flags if requested
+  if (dryRun) {
+    args.push('--dry-run', '--staging');
+  }
 
   // Add certificate name if provided
   if (certName) {
@@ -157,6 +163,7 @@ async function orderCertificateHTTP(options) {
  * @param {Object} options.credentials - Decrypted DNS credentials
  * @param {Number} options.propagationSeconds - DNS propagation delay (10-120)
  * @param {String} options.certName - Certificate name (optional)
+ * @param {Boolean} options.dryRun - Test mode using staging server (optional)
  * @returns {Promise<Object>} Result object
  */
 async function orderCertificateDNS(options) {
@@ -166,7 +173,8 @@ async function orderCertificateDNS(options) {
     providerId,
     credentials,
     propagationSeconds = 10,
-    certName
+    certName,
+    dryRun
   } = options;
 
   // SECURITY: Validate inputs to prevent command injection
@@ -205,7 +213,8 @@ async function orderCertificateDNS(options) {
       propagationSeconds,
       validatedEmail,
       validatedDomains,
-      dirs
+      dirs,
+      dryRun
     );
     console.log('[DNS-01] Certbot args:', args);
 
