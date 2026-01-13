@@ -21,9 +21,6 @@ export async function renderAuditLog(container) {
   container.innerHTML = '<div class="loading-text">Loading audit log...</div>';
 
   try {
-    // Fetch initial data for filters
-    await loadFilterOptions();
-
     container.innerHTML = `
       <div class="audit-log">
         <!-- Header with actions -->
@@ -330,6 +327,9 @@ export async function renderAuditLog(container) {
     // Setup event listeners
     setupEventListeners();
 
+    // Load filter options
+    await loadFilterOptions();
+
     // Load initial logs
     await loadLogs();
 
@@ -375,28 +375,34 @@ async function loadFilterOptions() {
 
     // Populate filter dropdowns
     const userSelect = document.getElementById('filterUser');
-    users.forEach(user => {
-      const option = document.createElement('option');
-      option.value = user;
-      option.textContent = user;
-      userSelect.appendChild(option);
-    });
+    if (userSelect) {
+      users.forEach(user => {
+        const option = document.createElement('option');
+        option.value = user;
+        option.textContent = user;
+        userSelect.appendChild(option);
+      });
+    }
 
     const actionSelect = document.getElementById('filterAction');
-    actions.forEach(action => {
-      const option = document.createElement('option');
-      option.value = action;
-      option.textContent = formatActionLabel(action);
-      actionSelect.appendChild(option);
-    });
+    if (actionSelect) {
+      actions.forEach(action => {
+        const option = document.createElement('option');
+        option.value = action;
+        option.textContent = formatActionLabel(action);
+        actionSelect.appendChild(option);
+      });
+    }
 
     const resourceTypeSelect = document.getElementById('filterResourceType');
-    resourceTypes.forEach(type => {
-      const option = document.createElement('option');
-      option.value = type;
-      option.textContent = formatResourceTypeLabel(type);
-      resourceTypeSelect.appendChild(option);
-    });
+    if (resourceTypeSelect) {
+      resourceTypes.forEach(type => {
+        const option = document.createElement('option');
+        option.value = type;
+        option.textContent = formatResourceTypeLabel(type);
+        resourceTypeSelect.appendChild(option);
+      });
+    }
 
   } catch (error) {
     console.error('Error loading filter options:', error);
