@@ -3,7 +3,7 @@
  * Manages notification settings and testing
  */
 
-const { getSetting, setSetting, logAudit } = require('../db');
+const { db, getSetting, setSetting, logAudit } = require('../db');
 const { parseBody, sendJSON, getClientIP } = require('./shared/utils');
 
 /**
