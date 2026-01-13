@@ -24,7 +24,7 @@ class NotificationScheduler {
     }
 
     this.isRunning = true;
-    console.log('🔔 Starting enhanced notification scheduler...');
+    console.log('Starting enhanced notification scheduler...');
 
     try {
       // Start WAF matrix checking (every 2 minutes)
@@ -33,9 +33,9 @@ class NotificationScheduler {
       // Start queue processing (every 5 minutes)
       this.startQueueProcessing();
       
-      console.log('✅ Notification scheduler started successfully');
+      console.log('Notification scheduler started successfully');
     } catch (error) {
-      console.error('❌ Failed to start notification scheduler:', error);
+      console.error('Failed to start notification scheduler:', error);
       this.isRunning = false;
     }
   }
@@ -46,7 +46,7 @@ class NotificationScheduler {
   stop() {
     if (!this.isRunning) return;
 
-    console.log('🔔 Stopping notification scheduler...');
+    console.log('Stopping notification scheduler...');
 
     // Clear all intervals
     this.intervals.forEach((interval, name) => {
@@ -56,14 +56,14 @@ class NotificationScheduler {
 
     this.intervals.clear();
     this.isRunning = false;
-    console.log('✅ Notification scheduler stopped');
+    console.log('Notification scheduler stopped');
   }
 
   /**
    * Restart the scheduler (useful for configuration changes)
    */
   restart() {
-    console.log('🔄 Restarting notification scheduler...');
+    console.log('Restarting notification scheduler...');
     this.stop();
     setTimeout(() => this.start(), 1000);
   }
@@ -168,12 +168,12 @@ function initializeNotificationScheduler() {
     
     // Graceful shutdown
     process.on('SIGINT', () => {
-      console.log('\n🔔 Shutting down notification scheduler...');
+      console.log('\nShutting down notification scheduler...');
       scheduler.stop();
     });
 
     process.on('SIGTERM', () => {
-      console.log('\n🔔 Shutting down notification scheduler...');
+      console.log('\nShutting down notification scheduler...');
       scheduler.stop();
     });
     
