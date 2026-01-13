@@ -47,7 +47,7 @@ export async function renderWAFDashboard(container) {
         </div>
 
         <!-- Overview Cards -->
-        <div class="stats-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 20px; margin-bottom: 30px;">
+        <div class="stats-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 20px; margin-bottom: 30px;">
           <div class="stat-card">
             <div class="stat-icon" style="background: #e3f2fd;">🛡️</div>
             <div class="stat-content">
@@ -63,15 +63,6 @@ export async function renderWAFDashboard(container) {
               <div class="stat-label">Blocked Attacks</div>
               <div class="stat-value" id="blockedAttacks">${stats.blocked_attacks || 0}</div>
               <div class="stat-change">${calculatePercentage(stats.blocked_attacks, stats.total_events)}% of total</div>
-            </div>
-          </div>
-
-          <div class="stat-card">
-            <div class="stat-icon" style="background: #e0f2f1;">📊</div>
-            <div class="stat-content">
-              <div class="stat-label">Allowed/Logged</div>
-              <div class="stat-value" id="allowedEvents">${(stats.total_events || 0) - (stats.blocked_attacks || 0)}</div>
-              <div class="stat-change">${calculatePercentage((stats.total_events || 0) - (stats.blocked_attacks || 0), stats.total_events)}% logged only</div>
             </div>
           </div>
 
@@ -108,15 +99,6 @@ export async function renderWAFDashboard(container) {
               <div class="stat-label">Attack Rate</div>
               <div class="stat-value" style="font-size: 20px;" id="attackRate">${calculateAttackRate(stats.total_events, parseInt(currentTimeRange))}</div>
               <div class="stat-change">per hour average</div>
-            </div>
-          </div>
-
-          <div class="stat-card">
-            <div class="stat-icon" style="background: #ede7f6;">⚡</div>
-            <div class="stat-content">
-              <div class="stat-label">Highest Severity</div>
-              <div class="stat-value" style="font-size: 18px;" id="highestSeverity">${getHighestSeverity(stats.by_severity)}</div>
-              <div class="stat-change">${getHighestSeverityCount(stats.by_severity)} ${getHighestSeverity(stats.by_severity)} events</div>
             </div>
           </div>
         </div>
@@ -459,44 +441,6 @@ function calculateAttackRate(totalEvents, hours) {
   return rate.toFixed(1);
 }
 
-function getHighestSeverity(bySeverity) {
-  if (!bySeverity || bySeverity.length === 0) return 'None';
-  
-  // Severity priority: lower number = higher severity
-  const severityOrder = {
-    '0': 'Emergency',
-    '1': 'Alert', 
-    '2': 'Critical',
-    '3': 'Error',
-    '4': 'Warning',
-    '5': 'Notice'
-  };
-
-  // Find the highest severity (lowest number) that has events
-  for (let i = 0; i <= 5; i++) {
-    const severity = bySeverity.find(s => s.severity === i.toString() || s.severity === i);
-    if (severity && severity.count > 0) {
-      return severityOrder[i.toString()] || 'Unknown';
-    }
-  }
-  
-  return 'None';
-}
-
-function getHighestSeverityCount(bySeverity) {
-  if (!bySeverity || bySeverity.length === 0) return 0;
-  
-  // Find the highest severity (lowest number) that has events
-  for (let i = 0; i <= 5; i++) {
-    const severity = bySeverity.find(s => s.severity === i.toString() || s.severity === i);
-    if (severity && severity.count > 0) {
-      return severity.count;
-    }
-  }
-  
-  return 0;
-}
-
 function renderTimelineChart(timelineData) {
   const ctx = document.getElementById('timelineChart');
   if (!ctx) return;
@@ -827,29 +771,19 @@ async function refreshStats() {
     // Update overview cards
     document.getElementById('totalEvents').textContent = stats.total_events || 0;
     document.getElementById('blockedAttacks').textContent = stats.blocked_attacks || 0;
-    document.getElementById('allowedEvents').textContent = (stats.total_events || 0) - (stats.blocked_attacks || 0);
     document.getElementById('activeProfiles').textContent = stats.active_profiles || 0;
     document.getElementById('topAttackType').textContent = getTopAttackType(stats.by_type);
     document.getElementById('uniqueIPs').textContent = stats.top_ips?.length || 0;
     document.getElementById('attackRate').textContent = calculateAttackRate(stats.total_events, parseInt(currentTimeRange));
-    document.getElementById('highestSeverity').textContent = getHighestSeverity(stats.by_severity);
 
     // Update percentages
     const blockedCard = document.getElementById('blockedAttacks').closest('.stat-card');
     const blockedChangeDiv = blockedCard.querySelector('.stat-change');
     blockedChangeDiv.textContent = `${calculatePercentage(stats.blocked_attacks, stats.total_events)}% of total`;
 
-    const allowedCard = document.getElementById('allowedEvents').closest('.stat-card');
-    const allowedChangeDiv = allowedCard.querySelector('.stat-change');
-    allowedChangeDiv.textContent = `${calculatePercentage((stats.total_events || 0) - (stats.blocked_attacks || 0), stats.total_events)}% logged only`;
-
     const topAttackCard = document.getElementById('topAttackType').closest('.stat-card');
     const topChangeDiv = topAttackCard.querySelector('.stat-change');
     topChangeDiv.textContent = `${getTopAttackCount(stats.by_type)} occurrences`;
-
-    const severityCard = document.getElementById('highestSeverity').closest('.stat-card');
-    const severityChangeDiv = severityCard.querySelector('.stat-change');
-    severityChangeDiv.textContent = `${getHighestSeverityCount(stats.by_severity)} ${getHighestSeverity(stats.by_severity)} events`;
 
     // Update charts
     renderTimelineChart(stats.timeline);
