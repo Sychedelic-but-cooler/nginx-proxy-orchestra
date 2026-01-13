@@ -17,7 +17,6 @@ This is my list of late-night ideas; possibly not even workable ideas. Below I'v
 - **LOW**: Response Time and Bandwidth Tracking - Performance metrics per proxy
 
 ### Frontend Features
-- **HIGH**: Custom Error Pages - Upload custom 404, 502, 503 pages for the default server to return
 - **LOW**: gRPC Support - gRPC proxy configuration UI
 
 ---
@@ -32,6 +31,7 @@ This is my list of late-night ideas; possibly not even workable ideas. Below I'v
 - Build out rich Audit Log system — 2026-01-13
 - Bulk Operations - Enable/disable/update multiple proxies at once — 2026-01-13
 - Certificate Renewal Dry-Run - Allow testing cert ordering without actual renewal — 2026-01-13
+- Custom Error Pages - Upload custom 404, 502, 503 pages for the default server and proxies — 2026-01-13
 
 ---
 

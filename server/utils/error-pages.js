@@ -85,6 +85,7 @@ module.exports = {
   ensureErrorPagesDir,
   ensureDefaultErrorPages,
   getErrorPages,
+  getErrorPagePath,
   setErrorPage,
   deleteErrorPage
 };
