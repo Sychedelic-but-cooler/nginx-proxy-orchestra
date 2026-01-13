@@ -558,14 +558,6 @@ export function cleanupProxyList() {
   selectedProxies.clear();
 }
 
-  } catch (error) {
-    showError(error.message);
-    container.innerHTML = '<div class="empty-state"><h2>Failed to load proxies</h2></div>';
-  } finally {
-    hideLoading();
-  }
-}
-
 async function handleToggleProxy(id, container) {
   showLoading();
   try {
