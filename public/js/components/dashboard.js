@@ -194,11 +194,11 @@ async function loadHistoricalData() {
       const time = new Date(metric.timestamp).toLocaleTimeString();
       
       timeLabels.push(time);
-      cpuData.push(metric.cpu_usage);
-      networkRxData.push((metric.network_rx_rate / 1024).toFixed(2)); // Convert to KB/s
-      networkTxData.push((metric.network_tx_rate / 1024).toFixed(2));
-      diskReadsData.push(metric.disk_reads_per_sec.toFixed(2));
-      diskWritesData.push(metric.disk_writes_per_sec.toFixed(2));
+      cpuData.push(metric.cpu_usage || 0);
+      networkRxData.push(((metric.network_rx_rate || 0) / 1024).toFixed(2)); // Convert to KB/s
+      networkTxData.push(((metric.network_tx_rate || 0) / 1024).toFixed(2));
+      diskReadsData.push((metric.disk_reads_per_sec || 0).toFixed(2));
+      diskWritesData.push((metric.disk_writes_per_sec || 0).toFixed(2));
     });
     
     // Keep only last 60 data points

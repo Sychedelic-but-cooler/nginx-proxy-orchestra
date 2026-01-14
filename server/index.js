@@ -41,7 +41,8 @@ const MIME_TYPES = {
   '.svg': 'image/svg+xml',
   '.ico': 'image/x-icon',
   '.woff': 'font/woff',
-  '.woff2': 'font/woff2'
+  '.woff2': 'font/woff2',
+  '.md': 'text/plain'
 };
 
 // Serve static files
@@ -89,6 +90,22 @@ function requestHandler(req, res) {
   // API routes
   if (pathname.startsWith('/api/')) {
     return handleAPI(req, res, parsedUrl);
+  }
+
+  // Special route for README.md (serve from project root)
+  if (pathname === '/README.md') {
+    const readmePath = path.join(__dirname, '..', 'README.md');
+    return fs.readFile(readmePath, 'utf8', (err, data) => {
+      if (err) {
+        res.writeHead(404, { 'Content-Type': 'text/plain' });
+        res.end('404 Not Found');
+        return;
+      }
+      res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+      res.setHeader('X-Content-Type-Options', 'nosniff');
+      res.writeHead(200);
+      res.end(data);
+    });
   }
 
   // Static file routes
