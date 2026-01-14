@@ -208,25 +208,33 @@ function validateEmail(email) {
 }
 
 /**
- * Validate multiple domains (comma or space separated)
+ * Validate multiple domains (comma/space/newline separated string or array)
  * 
- * @param {string} domains - Domains to validate (comma or space separated)
+ * @param {string|Array} domains - Domains to validate (string or array)
  * @param {Object} options - Validation options (passed to validateDomain)
  * @returns {string[]} - Array of validated domains
  * @throws {Error} - If any domain is invalid
  */
 function validateDomains(domains, options = {}) {
-  if (typeof domains !== 'string') {
-    throw new Error('Domains must be a string');
+  let domainArray;
+
+  if (Array.isArray(domains)) {
+    // Already an array - filter out empty strings
+    domainArray = domains.filter(d => d && typeof d === 'string' && d.trim());
+  } else if (typeof domains === 'string') {
+    // String - split by comma, space, or newline
+    const trimmed = domains.trim();
+    if (!trimmed) {
+      return [];
+    }
+    domainArray = trimmed.split(/[,\s\n]+/).filter(d => d.trim());
+  } else {
+    throw new Error('Domains must be a string or array');
   }
 
-  const trimmed = domains.trim();
-  if (!trimmed) {
+  if (domainArray.length === 0) {
     return [];
   }
-
-  // Split by comma or space
-  const domainArray = trimmed.split(/[,\s]+/).filter(d => d.trim());
   
   // Validate each domain
   return domainArray.map(domain => validateDomain(domain, options));

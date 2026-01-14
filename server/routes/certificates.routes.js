@@ -353,8 +353,8 @@ async function handleOrderCertificate(req, res) {
 
       // Get DNS credentials
       const credentialRecord = db.prepare(
-        'SELECT * FROM dns_credentials WHERE id = ?'
-      ).get(dnsCredentialId);
+        'SELECT * FROM credentials WHERE id = ? AND credential_type = ?'
+      ).get(dnsCredentialId, 'dns');
 
       if (!credentialRecord) {
         return sendJSON(res, { error: 'DNS credential not found' }, 404);

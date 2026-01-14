@@ -2877,8 +2877,8 @@ async function handleCreateDNSCredential(req, res) {
 
     // Check for duplicate name
     const existing = db.prepare(
-      'SELECT id FROM dns_credentials WHERE name = ?'
-    ).get(name);
+      'SELECT id FROM credentials WHERE name = ? AND credential_type = ?'
+    ).get(name, 'dns');
 
     if (existing) {
       return sendJSON(res, { error: 'Credential with this name already exists' }, 400);
@@ -2889,8 +2889,8 @@ async function handleCreateDNSCredential(req, res) {
 
     // Insert into database
     const result = db.prepare(`
-      INSERT INTO dns_credentials (name, provider, credentials_encrypted, created_by)
-      VALUES (?, ?, ?, ?)
+      INSERT INTO credentials (name, credential_type, provider, credentials_encrypted, created_by)
+      VALUES (?, 'dns', ?, ?, ?)
     `).run(name, provider, encrypted, req.user.id);
 
     logAudit(req.user.id, 'create', 'dns_credential', result.lastInsertRowid, null, getClientIP(req));
@@ -2916,7 +2916,7 @@ async function handleUpdateDNSCredential(req, res, parsedUrl) {
     const { name, credentials } = body;
 
     // Check if credential exists
-    const existing = db.prepare('SELECT * FROM dns_credentials WHERE id = ?').get(id);
+    const existing = db.prepare('SELECT * FROM credentials WHERE id = ? AND credential_type = ?').get(id, 'dns');
     if (!existing) {
       return sendJSON(res, { error: 'DNS credential not found' }, 404);
     }
@@ -2935,8 +2935,8 @@ async function handleUpdateDNSCredential(req, res, parsedUrl) {
     if (name) {
       // Check for duplicate name
       const duplicate = db.prepare(
-        'SELECT id FROM dns_credentials WHERE name = ? AND id != ?'
-      ).get(name, id);
+        'SELECT id FROM credentials WHERE name = ? AND id != ? AND credential_type = ?'
+      ).get(name, id, 'dns');
 
       if (duplicate) {
         return sendJSON(res, { error: 'Credential with this name already exists' }, 400);
@@ -2970,7 +2970,7 @@ async function handleUpdateDNSCredential(req, res, parsedUrl) {
     params.push(id);
 
     db.prepare(`
-      UPDATE dns_credentials
+      UPDATE credentials
       SET ${updates.join(', ')}
       WHERE id = ?
     `).run(...params);
@@ -2992,7 +2992,7 @@ function handleDeleteDNSCredential(req, res, parsedUrl) {
     const id = parseInt(parsedUrl.pathname.split('/').pop());
 
     // Check if credential exists
-    const existing = db.prepare('SELECT * FROM dns_credentials WHERE id = ?').get(id);
+    const existing = db.prepare('SELECT * FROM credentials WHERE id = ? AND credential_type = ?').get(id, 'dns');
     if (!existing) {
       return sendJSON(res, { error: 'DNS credential not found' }, 404);
     }
@@ -3011,7 +3011,7 @@ function handleDeleteDNSCredential(req, res, parsedUrl) {
     }
 
     // Delete credential
-    db.prepare('DELETE FROM dns_credentials WHERE id = ?').run(id);
+    db.prepare('DELETE FROM credentials WHERE id = ?').run(id);
 
     logAudit(req.user.id, 'delete', 'dns_credential', id, null, getClientIP(req));
 
@@ -3079,8 +3079,8 @@ async function handleOrderCertificate(req, res) {
 
       // Get DNS credentials
       const credentialRecord = db.prepare(
-        'SELECT * FROM dns_credentials WHERE id = ?'
-      ).get(dnsCredentialId);
+        'SELECT * FROM credentials WHERE id = ? AND credential_type = ?'
+      ).get(dnsCredentialId, 'dns');
 
       if (!credentialRecord) {
         return sendJSON(res, { error: 'DNS credential not found' }, 404);
