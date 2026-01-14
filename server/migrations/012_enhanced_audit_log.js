@@ -91,12 +91,6 @@ function runEnhancedAuditLogMigration(db) {
       ON audit_log(resource_type, resource_id)
     `).run();
 
-    // Step 3: Update migration status
-    db.prepare(`
-      INSERT OR REPLACE INTO migrations (version, name, applied_at)
-      VALUES (12, 'enhanced_audit_log', CURRENT_TIMESTAMP)
-    `).run();
-
     db.prepare('COMMIT').run();
     console.log('✓ Enhanced audit log migration completed successfully');
   } catch (error) {
