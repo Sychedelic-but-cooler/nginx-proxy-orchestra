@@ -142,7 +142,7 @@ export async function renderWAFEvents(container) {
         }
 
         .events-table th {
-          background: #f8f9fa;
+          background: var(--bg-color);
           padding: 12px 16px;
           text-align: left;
           font-size: 12px;
@@ -159,7 +159,7 @@ export async function renderWAFEvents(container) {
         }
 
         .events-table tr:hover td {
-          background: #f8f9fa;
+          background: var(--bg-color);
         }
 
         .severity-badge {
@@ -296,7 +296,7 @@ export async function renderWAFEvents(container) {
         }
 
         .code-block {
-          background: #f8f9fa;
+          background: var(--bg-color);
           border: 1px solid var(--border-color);
           border-radius: 6px;
           padding: 12px;

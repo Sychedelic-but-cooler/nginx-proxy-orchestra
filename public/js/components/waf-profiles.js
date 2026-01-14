@@ -133,7 +133,7 @@ export async function renderWAFProfiles(container) {
           justify-content: space-between;
           align-items: center;
           padding: 8px 12px;
-          background: #f8f9fa;
+          background: var(--bg-color);
           border-radius: 6px;
           font-size: 13px;
         }
@@ -305,7 +305,7 @@ export async function renderWAFProfiles(container) {
         }
 
         .checkbox-label:hover {
-          background: #f8f9fa;
+          background: var(--bg-color);
         }
 
         .checkbox-label input[type="checkbox"] {
@@ -875,7 +875,7 @@ async function showProfileExclusionsModal(profileId, profileName) {
               <div style="overflow-x: auto;">
                 <table class="data-table" style="width: 100%; border-collapse: collapse;">
                   <thead>
-                    <tr style="background: #f8f9fa; border-bottom: 2px solid var(--border-color);">
+                    <tr style="background: var(--bg-color); border-bottom: 2px solid var(--border-color);">
                       <th style="padding: 12px; text-align: left; font-weight: 600;">Rule ID</th>
                       <th style="padding: 12px; text-align: left; font-weight: 600;">Scope</th>
                       <th style="padding: 12px; text-align: left; font-weight: 600;">Pattern/Parameter</th>

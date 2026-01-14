@@ -49,7 +49,7 @@ export async function renderWAFDashboard(container) {
         <!-- Overview Cards -->
         <div class="stats-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 20px; margin-bottom: 30px;">
           <div class="stat-card">
-            <div class="stat-icon" style="background: #e3f2fd;">🛡️</div>
+            <div class="stat-icon stat-icon-blue">🛡️</div>
             <div class="stat-content">
               <div class="stat-label">Total Events</div>
               <div class="stat-value" id="totalEvents">${stats.total_events || 0}</div>
@@ -58,7 +58,7 @@ export async function renderWAFDashboard(container) {
           </div>
 
           <div class="stat-card">
-            <div class="stat-icon" style="background: #ffebee;">🚫</div>
+            <div class="stat-icon stat-icon-red">🚫</div>
             <div class="stat-content">
               <div class="stat-label">Blocked Attacks</div>
               <div class="stat-value" id="blockedAttacks">${stats.blocked_attacks || 0}</div>
@@ -67,7 +67,7 @@ export async function renderWAFDashboard(container) {
           </div>
 
           <div class="stat-card">
-            <div class="stat-icon" style="background: #e8f5e9;">✅</div>
+            <div class="stat-icon stat-icon-green">✅</div>
             <div class="stat-content">
               <div class="stat-label">Active Profiles</div>
               <div class="stat-value" id="activeProfiles">${stats.active_profiles || 0}</div>
@@ -76,7 +76,7 @@ export async function renderWAFDashboard(container) {
           </div>
 
           <div class="stat-card">
-            <div class="stat-icon" style="background: #fff3e0;">⚠️</div>
+            <div class="stat-icon stat-icon-orange">⚠️</div>
             <div class="stat-content">
               <div class="stat-label">Top Attack Type</div>
               <div class="stat-value" style="font-size: 16px;" id="topAttackType">${getTopAttackType(stats.by_type)}</div>
@@ -85,7 +85,7 @@ export async function renderWAFDashboard(container) {
           </div>
 
           <div class="stat-card">
-            <div class="stat-icon" style="background: #fce4ec;">🌐</div>
+            <div class="stat-icon stat-icon-pink">🌐</div>
             <div class="stat-content">
               <div class="stat-label">Unique Attackers</div>
               <div class="stat-value" id="uniqueIPs">${stats.top_ips?.length || 0}</div>
@@ -94,7 +94,7 @@ export async function renderWAFDashboard(container) {
           </div>
 
           <div class="stat-card">
-            <div class="stat-icon" style="background: #f3e5f5;">📈</div>
+            <div class="stat-icon stat-icon-purple">📈</div>
             <div class="stat-content">
               <div class="stat-label">Attack Rate</div>
               <div class="stat-value" style="font-size: 20px;" id="attackRate">${calculateAttackRate(stats.total_events, parseInt(currentTimeRange))}</div>
@@ -159,11 +159,12 @@ export async function renderWAFDashboard(container) {
           align-items: center;
           gap: 6px;
           padding: 4px 12px;
-          background: #e8f5e9;
+          background: var(--card-bg);
+          border: 1px solid rgba(34, 197, 94, 0.3);
           border-radius: 16px;
           font-size: 12px;
           font-weight: 600;
-          color: #2e7d32;
+          color: #22c55e;
         }
 
         .live-dot {
@@ -180,7 +181,7 @@ export async function renderWAFDashboard(container) {
         }
 
         .stat-card {
-          background: white;
+          background: var(--card-bg);
           border: 1px solid var(--border-color);
           border-radius: 8px;
           padding: 20px;
@@ -234,11 +235,11 @@ export async function renderWAFDashboard(container) {
         }
 
         .event-row:hover {
-          background: #f8f9fa;
+          background: var(--bg-color);
         }
 
         .event-row.header {
-          background: #f8f9fa;
+          background: var(--bg-color);
           font-weight: 600;
           color: var(--text-secondary);
           font-size: 12px;
@@ -312,7 +313,7 @@ export async function renderWAFDashboard(container) {
         }
 
         .ip-row:hover {
-          background: #f8f9fa;
+          background: var(--bg-color);
         }
 
         .ip-info {
@@ -883,9 +884,10 @@ function startRealtimeUpdates() {
       // Update live indicator
       const indicator = document.getElementById('liveIndicator');
       if (indicator) {
-        indicator.style.background = '#ffebee';
-        indicator.style.color = '#c62828';
-        indicator.querySelector('.live-dot').style.background = '#f44336';
+        indicator.style.background = 'var(--card-bg)';
+        indicator.style.color = 'var(--danger-color)';
+        indicator.style.borderColor = 'rgba(239, 68, 68, 0.3)';
+        indicator.querySelector('.live-dot').style.background = 'var(--danger-color)';
         indicator.querySelector('span:last-child').textContent = 'DISCONNECTED';
       }
 
@@ -904,9 +906,10 @@ function startRealtimeUpdates() {
       // Update live indicator
       const indicator = document.getElementById('liveIndicator');
       if (indicator) {
-        indicator.style.background = '#e8f5e9';
-        indicator.style.color = '#2e7d32';
-        indicator.querySelector('.live-dot').style.background = '#4caf50';
+        indicator.style.background = 'var(--card-bg)';
+        indicator.style.color = '#22c55e';
+        indicator.style.borderColor = 'rgba(34, 197, 94, 0.3)';
+        indicator.querySelector('.live-dot').style.background = '#4ade80';
         indicator.querySelector('span:last-child').textContent = 'LIVE';
       }
     };
