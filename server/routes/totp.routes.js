@@ -3,7 +3,7 @@ const { authenticator } = require('otplib');
 const QRCode = require('qrcode');
 const { db, logAudit } = require('../db');
 const { verifyPassword } = require('../auth');
-const { sendJSON } = require('./shared/utils');
+const { sendJSON, getClientIP } = require('./shared/utils');
 
 // Configure TOTP with 30-second time step and 6-digit codes
 authenticator.options = {
@@ -110,7 +110,7 @@ async function handleSetupTOTP(req, res) {
       WHERE id = ?
     `).run(encryptedSecret, userId);
     
-    logAudit('totp_setup_initiated', userId, { username }, req);
+    logAudit(userId, 'totp_setup_initiated', 'user', userId, null, getClientIP(req));
     
     sendJSON(res, {
       success: true,
@@ -155,7 +155,7 @@ async function handleVerifyTOTP(req, res) {
     const isValid = authenticator.verify({ token: code, secret });
     
     if (!isValid) {
-      logAudit('totp_verification_failed', userId, { reason: 'Invalid code' }, req);
+      logAudit(userId, 'totp_verification_failed', 'user', userId, 'Invalid TOTP code', getClientIP(req), { success: false });
       return sendJSON(res, { success: false, message: 'Invalid verification code. Please try again.' }, 400);
     }
     
@@ -170,7 +170,7 @@ async function handleVerifyTOTP(req, res) {
       WHERE id = ?
     `).run(encryptedRecoveryKey, userId);
     
-    logAudit('totp_enabled', userId, { username: req.user.username }, req);
+    logAudit(userId, 'totp_enabled', 'user', userId, null, getClientIP(req));
     
     sendJSON(res, {
       success: true,
@@ -203,7 +203,7 @@ async function handleDisableTOTP(req, res) {
     
     const isPasswordValid = await verifyPassword(password, user.password);
     if (!isPasswordValid) {
-      logAudit('totp_disable_failed', userId, { reason: 'Invalid password' }, req);
+      logAudit(userId, 'totp_disable_failed', 'user', userId, 'Invalid password', getClientIP(req), { success: false });
       return sendJSON(res, { success: false, message: 'Invalid password' }, 401);
     }
     
@@ -218,7 +218,7 @@ async function handleDisableTOTP(req, res) {
       WHERE id = ?
     `).run(userId);
     
-    logAudit('totp_disabled', userId, { username: req.user.username }, req);
+    logAudit(userId, 'totp_disabled', 'user', userId, null, getClientIP(req));
     
     sendJSON(res, {
       success: true,
@@ -272,7 +272,7 @@ async function handleRegenerateRecoveryKey(req, res) {
     
     const isPasswordValid = await verifyPassword(password, user.password);
     if (!isPasswordValid) {
-      logAudit('recovery_key_regeneration_failed', userId, { reason: 'Invalid password' }, req);
+      logAudit(userId, 'recovery_key_regeneration_failed', 'user', userId, 'Invalid password', getClientIP(req), { success: false });
       return sendJSON(res, { success: false, message: 'Invalid password' }, 401);
     }
     
@@ -286,7 +286,7 @@ async function handleRegenerateRecoveryKey(req, res) {
     
     db.prepare('UPDATE users SET recovery_key = ? WHERE id = ?').run(encryptedRecoveryKey, userId);
     
-    logAudit('recovery_key_regenerated', userId, { username: req.user.username }, req);
+    logAudit(userId, 'recovery_key_regenerated', 'user', userId, null, getClientIP(req));
     
     sendJSON(res, {
       success: true,
