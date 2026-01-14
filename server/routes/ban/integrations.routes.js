@@ -6,6 +6,7 @@
 const { db, logAudit } = require('../../db');
 const { parseBody, sendJSON, getClientIP } = require('../shared/utils');
 const { getProviderInfo } = require('../../utils/ban-providers');
+const { verifyTOTPIfEnabled } = require('../middleware/totp.middleware');
 
 /**
  * Handle ban integrations routes
@@ -173,8 +174,14 @@ async function handleUpdateBanIntegration(req, res, parsedUrl) {
  * @param {ServerResponse} res - HTTP response object
  * @param {URL} parsedUrl - Parsed URL object with integration ID
  */
-function handleDeleteBanIntegration(req, res, parsedUrl) {
+async function handleDeleteBanIntegration(req, res, parsedUrl) {
   try {
+    // Verify TOTP if 2FA is enabled (critical security operation)
+    const totpVerified = await verifyTOTPIfEnabled(req, res);
+    if (!totpVerified) {
+      return; // Response already sent
+    }
+
     const id = parsedUrl.pathname.split('/')[4];
 
     const existing = db.prepare('SELECT * FROM ban_integrations WHERE id = ?').get(id);
@@ -184,7 +191,7 @@ function handleDeleteBanIntegration(req, res, parsedUrl) {
 
     db.prepare('DELETE FROM ban_integrations WHERE id = ?').run(id);
 
-    logAudit(req.user.userId, 'delete_ban_integration', 'ban_integration', id, null, getClientIP(req));
+    logAudit(req.user.userId, 'delete_ban_integration', 'ban_integration', id, '2FA verified', getClientIP(req));
 
     sendJSON(res, { success: true, message: 'Integration deleted successfully' });
   } catch (error) {

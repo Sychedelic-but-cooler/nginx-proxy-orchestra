@@ -5,6 +5,7 @@
 
 const { db, logAudit } = require('../../db');
 const { parseBody, sendJSON, getClientIP } = require('../shared/utils');
+const { verifyTOTPIfEnabled } = require('../middleware/totp.middleware');
 
 /**
  * Handle detection rules routes
@@ -185,8 +186,14 @@ async function handleUpdateDetectionRule(req, res, parsedUrl) {
  * @param {ServerResponse} res - HTTP response object
  * @param {URL} parsedUrl - Parsed URL object with rule ID
  */
-function handleDeleteDetectionRule(req, res, parsedUrl) {
+async function handleDeleteDetectionRule(req, res, parsedUrl) {
   try {
+    // Verify TOTP if 2FA is enabled (critical security operation)
+    const totpVerified = await verifyTOTPIfEnabled(req, res);
+    if (!totpVerified) {
+      return; // Response already sent
+    }
+
     const id = parsedUrl.pathname.split('/')[4];
 
     const existing = db.prepare('SELECT * FROM ips_detection_rules WHERE id = ?').get(id);
@@ -196,7 +203,7 @@ function handleDeleteDetectionRule(req, res, parsedUrl) {
 
     db.prepare('DELETE FROM ips_detection_rules WHERE id = ?').run(id);
 
-    logAudit(req.user.userId, 'delete_detection_rule', 'detection_rule', id, null, getClientIP(req));
+    logAudit(req.user.userId, 'delete_detection_rule', 'detection_rule', id, '2FA verified', getClientIP(req));
 
     sendJSON(res, { success: true, message: 'Detection rule deleted successfully' });
   } catch (error) {
@@ -213,7 +220,7 @@ function handleDeleteDetectionRule(req, res, parsedUrl) {
  * @param {ServerResponse} res - HTTP response object
  * @param {URL} parsedUrl - Parsed URL object with rule ID
  */
-function handleToggleDetectionRule(req, res, parsedUrl) {
+async function handleToggleDetectionRule(req, res, parsedUrl) {
   try {
     const id = parsedUrl.pathname.split('/')[4];
 
@@ -224,6 +231,14 @@ function handleToggleDetectionRule(req, res, parsedUrl) {
 
     const newEnabled = existing.enabled ? 0 : 1;
 
+    // Only require TOTP when DISABLING a rule (security-critical)
+    if (newEnabled === 0) {
+      const totpVerified = await verifyTOTPIfEnabled(req, res);
+      if (!totpVerified) {
+        return; // Response already sent
+      }
+    }
+
     db.prepare('UPDATE ips_detection_rules SET enabled = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?')
       .run(newEnabled, id);
 
@@ -232,7 +247,7 @@ function handleToggleDetectionRule(req, res, parsedUrl) {
       newEnabled ? 'enable_detection_rule' : 'disable_detection_rule',
       'detection_rule',
       id,
-      null,
+      newEnabled === 0 ? '2FA verified' : null,
       getClientIP(req)
     );
 

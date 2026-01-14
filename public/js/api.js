@@ -56,12 +56,16 @@ class API {
       const data = await response.json();
 
       if (!response.ok) {
-        // If 401 Unauthorized, clear token and redirect to login
-        if (response.status === 401) {
+        // If 401 Unauthorized (but not 2FA required), clear token and redirect to login
+        if (response.status === 401 && !data.requires2FA) {
           this.clearToken();
           window.location.href = '/login.html';
         }
-        throw new Error(data.error || `HTTP ${response.status}`);
+        // Create error with response data attached for 2FA handling
+        const error = new Error(data.error || data.message || `HTTP ${response.status}`);
+        error.response = data; // Attach full response for 2FA detection
+        error.status = response.status;
+        throw error;
       }
 
       return data;
@@ -97,6 +101,64 @@ class API {
       method: 'POST',
       body: { currentPassword, newPassword }
     });
+  }
+
+  // TOTP / 2FA endpoints
+  async getTOTPStatus() {
+    return this.request('/api/user/totp/status');
+  }
+
+  async setupTOTP() {
+    return this.request('/api/user/totp/setup', {
+      method: 'POST'
+    });
+  }
+
+  async verifyTOTP(code) {
+    return this.request('/api/user/totp/verify', {
+      method: 'POST',
+      body: { code }
+    });
+  }
+
+  async disableTOTP(password) {
+    return this.request('/api/user/totp/disable', {
+      method: 'POST',
+      body: { password }
+    });
+  }
+
+  async regenerateRecoveryKey(password) {
+    return this.request('/api/user/totp/regenerate-recovery', {
+      method: 'POST',
+      body: { password }
+    });
+  }
+
+  async loginWithTOTP(tempToken, code) {
+    const response = await this.request('/api/login/totp', {
+      method: 'POST',
+      body: { tempToken, code }
+    });
+    
+    if (response.token) {
+      this.setToken(response.token);
+    }
+    
+    return response;
+  }
+
+  async loginWithRecovery(username, recoveryKey) {
+    const response = await this.request('/api/login/recovery', {
+      method: 'POST',
+      body: { username, recoveryKey }
+    });
+    
+    if (response.token) {
+      this.setToken(response.token);
+    }
+    
+    return response;
   }
 
   // Session management endpoints

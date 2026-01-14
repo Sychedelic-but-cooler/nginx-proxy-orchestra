@@ -21,6 +21,7 @@ const handleNginxRoutes = require('./nginx.routes');
 const handleSettingsRoutes = require('./settings.routes');
 const handleCertificateRoutes = require('./certificates.routes');
 const handleProxyRoutes = require('./proxies.routes');
+const handleTOTPRoutes = require('./totp.routes');
 
 // Security module
 const handleSecurityRulesRoutes = require('./security/rules.routes');
@@ -58,6 +59,11 @@ async function handleAPI(req, res, parsedUrl) {
       return await handleAuthRoutes(req, res, parsedUrl);
     }
 
+    // TOTP login and recovery routes (no auth required)
+    if ((pathname === '/api/login/totp' || pathname === '/api/login/recovery') && method === 'POST') {
+      return await handleAuthRoutes(req, res, parsedUrl);
+    }
+
     // SSE routes handle their own authentication (token via query param)
     if (pathname.endsWith('/stream') && method === 'GET') {
       return handleSSERoutes(req, res, parsedUrl);
@@ -76,6 +82,11 @@ async function handleAPI(req, res, parsedUrl) {
     // Logout and password change routes (require auth)
     if (pathname === '/api/logout' || pathname === '/api/user/password' || pathname === '/api/user/sse-token') {
       return await handleAuthRoutes(req, res, parsedUrl);
+    }
+
+    // TOTP 2FA management routes (require auth)
+    if (pathname.startsWith('/api/user/totp')) {
+      return await handleTOTPRoutes(req, res, parsedUrl);
     }
 
     // Session management routes
