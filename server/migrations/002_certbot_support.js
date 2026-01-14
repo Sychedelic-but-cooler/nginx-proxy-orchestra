@@ -16,49 +16,44 @@ function runCertbotMigration(db) {
     // Begin transaction
     db.exec('BEGIN TRANSACTION');
 
-    // Add columns to ssl_certificates table
+    // Check which columns already exist
+    const tableInfo = db.pragma('table_info(ssl_certificates)');
+    const existingColumns = tableInfo.map(col => col.name);
+
+    // Add columns to ssl_certificates table only if they don't exist
     console.log('Adding columns to ssl_certificates table...');
 
-    db.exec(`
-      -- Source: 'uploaded' or 'certbot'
-      ALTER TABLE ssl_certificates ADD COLUMN source TEXT DEFAULT 'uploaded';
-    `);
+    if (!existingColumns.includes('source')) {
+      db.exec(`ALTER TABLE ssl_certificates ADD COLUMN source TEXT DEFAULT 'uploaded';`);
+    }
 
-    db.exec(`
-      -- Auto-renewal enabled flag (0 or 1)
-      ALTER TABLE ssl_certificates ADD COLUMN auto_renew INTEGER DEFAULT 0;
-    `);
+    if (!existingColumns.includes('auto_renew')) {
+      db.exec(`ALTER TABLE ssl_certificates ADD COLUMN auto_renew INTEGER DEFAULT 0;`);
+    }
 
-    db.exec(`
-      -- Challenge type: 'http-01' or 'dns-01'
-      ALTER TABLE ssl_certificates ADD COLUMN challenge_type TEXT;
-    `);
+    if (!existingColumns.includes('challenge_type')) {
+      db.exec(`ALTER TABLE ssl_certificates ADD COLUMN challenge_type TEXT;`);
+    }
 
-    db.exec(`
-      -- Foreign key to dns_credentials table (for DNS-01 challenges)
-      ALTER TABLE ssl_certificates ADD COLUMN dns_credential_id INTEGER;
-    `);
+    if (!existingColumns.includes('dns_credential_id')) {
+      db.exec(`ALTER TABLE ssl_certificates ADD COLUMN dns_credential_id INTEGER;`);
+    }
 
-    db.exec(`
-      -- JSON string storing certbot-specific configuration
-      -- Example: {"email": "admin@example.com", "domains": ["example.com"], "propagation_seconds": 10}
-      ALTER TABLE ssl_certificates ADD COLUMN certbot_config TEXT;
-    `);
+    if (!existingColumns.includes('certbot_config')) {
+      db.exec(`ALTER TABLE ssl_certificates ADD COLUMN certbot_config TEXT;`);
+    }
 
-    db.exec(`
-      -- Timestamp of last renewal attempt
-      ALTER TABLE ssl_certificates ADD COLUMN last_renewal_attempt DATETIME;
-    `);
+    if (!existingColumns.includes('last_renewal_attempt')) {
+      db.exec(`ALTER TABLE ssl_certificates ADD COLUMN last_renewal_attempt DATETIME;`);
+    }
 
-    db.exec(`
-      -- Status of last renewal: 'success', 'failed', 'pending'
-      ALTER TABLE ssl_certificates ADD COLUMN last_renewal_status TEXT;
-    `);
+    if (!existingColumns.includes('last_renewal_status')) {
+      db.exec(`ALTER TABLE ssl_certificates ADD COLUMN last_renewal_status TEXT;`);
+    }
 
-    db.exec(`
-      -- Error message if renewal failed
-      ALTER TABLE ssl_certificates ADD COLUMN renewal_error TEXT;
-    `);
+    if (!existingColumns.includes('renewal_error')) {
+      db.exec(`ALTER TABLE ssl_certificates ADD COLUMN renewal_error TEXT;`);
+    }
 
     // Create dns_credentials table
     console.log('Creating dns_credentials table...');
@@ -106,4 +101,4 @@ function runCertbotMigration(db) {
   }
 }
 
-module.exports = { runCertbotMigration };
+module.exports = { up: runCertbotMigration };
