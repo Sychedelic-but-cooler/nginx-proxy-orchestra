@@ -339,6 +339,391 @@ body.dark-mode .paranoia-dot.active {
   background: #f87171 !important;
 }
 
+/* Dark mode for hover effects */
+body.dark-mode .tab:hover {
+  background: var(--card-bg);
+}
+
+body.dark-mode .btn-danger:hover:not(:disabled) {
+  background: rgba(239, 68, 68, 0.9);
+}
+
+body.dark-mode .module-snippet:hover {
+  border-color: var(--primary-color);
+  box-shadow: 0 2px 8px rgba(59, 130, 246, 0.3);
+}
+
+body.dark-mode .recipe-card:hover {
+  border-color: var(--primary-color);
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.2);
+}
+
+body.dark-mode .module-checkbox-item:hover {
+  background: var(--bg-color);
+}
+
+body.dark-mode .session-card:hover {
+  border-color: var(--primary-color);
+  box-shadow: 0 2px 8px rgba(59, 130, 246, 0.2);
+}
+
+body.dark-mode .module-category-header:hover {
+  background: linear-gradient(to bottom, var(--card-bg), var(--bg-color));
+}
+
+body.dark-mode .wizard-btn-secondary:hover:not(:disabled) {
+  background: var(--card-bg);
+  border-color: var(--primary-color);
+}
+
+body.dark-mode .copy-preview-btn:hover {
+  background: var(--card-bg);
+  border-color: var(--primary-color);
+}
+
+/* Dark mode for banners and notifications */
+body.dark-mode .github-attribution {
+  background: var(--card-bg);
+  border-color: var(--border-color);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
+}
+
+body.dark-mode .github-attribution a {
+  color: var(--text-primary);
+}
+
+body.dark-mode .github-attribution a:hover {
+  color: var(--primary-color);
+}
+
+body.dark-mode .notification {
+  background: var(--card-bg);
+  color: var(--text-primary);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  border: 1px solid var(--border-color);
+}
+
+body.dark-mode .notification.success {
+  background: rgba(34, 197, 94, 0.2);
+  border-color: rgba(34, 197, 94, 0.4);
+  color: #86efac;
+}
+
+body.dark-mode .test-result.success {
+  background-color: rgba(34, 197, 94, 0.15);
+  border-color: rgba(34, 197, 94, 0.4);
+  color: #86efac;
+}
+
+body.dark-mode .test-result.error {
+  background-color: rgba(239, 68, 68, 0.15);
+  border-color: rgba(239, 68, 68, 0.4);
+  color: #fca5a5;
+}
+
+body.dark-mode .test-result pre {
+  background-color: var(--bg-color);
+  color: var(--text-primary);
+}
+
+/* Dark mode for wizard components */
+body.dark-mode .wizard-container {
+  background: var(--card-bg);
+}
+
+body.dark-mode .wizard-progress {
+  background: var(--bg-color);
+  border-bottom-color: var(--border-color);
+}
+
+body.dark-mode .step-circle {
+  background: var(--card-bg);
+  border-color: var(--border-color);
+  color: var(--text-secondary);
+}
+
+body.dark-mode .step-line {
+  background: var(--border-color);
+}
+
+body.dark-mode .step-label {
+  color: var(--text-secondary);
+}
+
+body.dark-mode .wizard-step-indicator.active .step-label {
+  color: var(--primary-color);
+}
+
+body.dark-mode .wizard-body {
+  background: var(--card-bg);
+}
+
+body.dark-mode .wizard-step-title {
+  color: var(--text-primary);
+}
+
+body.dark-mode .wizard-step-description {
+  color: var(--text-secondary);
+}
+
+body.dark-mode .recipe-card {
+  background: var(--card-bg);
+  border-color: var(--border-color);
+}
+
+body.dark-mode .recipe-card.selected {
+  border-color: var(--primary-color);
+  background: rgba(59, 130, 246, 0.1);
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
+}
+
+body.dark-mode .recipe-card.selected::after {
+  background: var(--primary-color);
+}
+
+body.dark-mode .recipe-name {
+  color: var(--text-primary);
+}
+
+body.dark-mode .recipe-description {
+  color: var(--text-secondary);
+}
+
+body.dark-mode .wizard-toggle-section {
+  background: var(--bg-color);
+  border-color: var(--border-color);
+}
+
+body.dark-mode .wizard-toggle-label {
+  color: var(--text-primary);
+}
+
+body.dark-mode .module-category {
+  background: var(--card-bg);
+  border-color: var(--border-color);
+}
+
+body.dark-mode .module-category-header {
+  background: linear-gradient(to bottom, var(--bg-color), var(--card-bg));
+}
+
+body.dark-mode .module-category-title {
+  color: var(--text-primary);
+}
+
+body.dark-mode .module-category-icon {
+  color: var(--text-secondary);
+}
+
+body.dark-mode .module-category-count {
+  background: var(--border-color);
+  color: var(--text-secondary);
+}
+
+body.dark-mode .module-category-content {
+  border-top-color: var(--border-color);
+}
+
+body.dark-mode .module-name {
+  color: var(--text-primary);
+}
+
+body.dark-mode .module-description {
+  color: var(--text-secondary);
+}
+
+body.dark-mode .module-auto-enabled {
+  color: var(--primary-color);
+}
+
+body.dark-mode .preview-highlight-tag.ssl {
+  background: rgba(34, 197, 94, 0.2);
+  color: #86efac;
+}
+
+body.dark-mode .preview-highlight-tag.modules {
+  background: rgba(245, 158, 11, 0.2);
+  color: #fde047;
+}
+
+body.dark-mode .preview-highlight-tag.waf {
+  background: rgba(236, 72, 153, 0.2);
+  color: #f9a8d4;
+}
+
+body.dark-mode .wizard-footer {
+  background: var(--bg-color);
+  border-top-color: var(--border-color);
+}
+
+body.dark-mode .wizard-btn-secondary {
+  background: var(--card-bg);
+  border-color: var(--border-color);
+  color: var(--text-primary);
+}
+
+body.dark-mode .confirm-dialog {
+  background: var(--card-bg);
+}
+
+body.dark-mode .confirm-dialog-header {
+  border-bottom-color: var(--border-color);
+}
+
+body.dark-mode .confirm-dialog-title {
+  color: var(--text-primary);
+}
+
+body.dark-mode .confirm-dialog-message {
+  color: var(--text-secondary);
+}
+
+body.dark-mode .confirm-dialog-footer {
+  border-top-color: var(--border-color);
+}
+
+/* Dark mode for session components */
+body.dark-mode .session-card {
+  background: var(--card-bg);
+  border-color: var(--border-color);
+}
+
+body.dark-mode .session-current {
+  border-color: rgba(34, 197, 94, 0.6);
+  background: linear-gradient(to right, var(--card-bg) 0%, rgba(34, 197, 94, 0.1) 100%);
+}
+
+body.dark-mode .session-icon {
+  background: var(--bg-color);
+  color: var(--text-secondary);
+}
+
+body.dark-mode .session-badge-current {
+  background: rgba(34, 197, 94, 0.3);
+  color: #86efac;
+}
+
+body.dark-mode .session-badge-user {
+  background: rgba(59, 130, 246, 0.3);
+  color: #93c5fd;
+}
+
+body.dark-mode .session-badge-sse {
+  background: rgba(245, 158, 11, 0.3);
+  color: #fde047;
+}
+
+/* Dark mode for error pages */
+body.dark-mode .error-page-panel {
+  background: var(--card-bg);
+  border-color: var(--border-color);
+}
+
+body.dark-mode .error-page-panel .badge {
+  background: var(--primary-color);
+}
+
+body.dark-mode .error-page-panel textarea {
+  background: var(--bg-color);
+  border-color: var(--border-color);
+  color: var(--text-primary);
+}
+
+body.dark-mode .error-page-panel textarea:focus {
+  border-color: var(--primary-color);
+}
+
+/* Dark mode for proxy editor config section */
+body.dark-mode .proxy-editor-config-section {
+  background: var(--bg-color);
+  border-color: var(--border-color);
+}
+
+body.dark-mode .proxy-editor-config-section .section-header {
+  border-bottom-color: var(--border-color);
+}
+
+body.dark-mode .proxy-editor-config-section .section-header h4 {
+  color: var(--text-primary);
+}
+
+body.dark-mode .help-text-inline {
+  color: var(--text-secondary);
+}
+
+body.dark-mode .optional-label {
+  color: var(--text-secondary);
+}
+
+body.dark-mode .field-help {
+  color: var(--text-secondary);
+}
+
+body.dark-mode .proxy-editor-sidebar {
+  border-left-color: var(--border-color);
+}
+
+body.dark-mode .cert-dropdown {
+  background: var(--bg-color);
+  border-color: var(--border-color);
+  color: var(--text-primary);
+}
+
+body.dark-mode .cert-dropdown:hover {
+  border-color: var(--primary-color);
+}
+
+body.dark-mode .cert-dropdown:focus {
+  border-color: var(--primary-color);
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2);
+}
+
+body.dark-mode .module-tag-section {
+  border-color: var(--border-color);
+}
+
+body.dark-mode .module-tag-header {
+  background: linear-gradient(to bottom, var(--bg-color), var(--card-bg));
+  border-bottom-color: var(--border-color);
+}
+
+body.dark-mode .module-tag-header:hover {
+  background: linear-gradient(to bottom, var(--card-bg), var(--bg-color));
+}
+
+body.dark-mode .collapse-icon {
+  color: var(--text-secondary);
+}
+
+body.dark-mode .copy-btn {
+  background: var(--bg-color);
+  color: var(--text-primary);
+  border-color: var(--border-color);
+}
+
+body.dark-mode .copy-btn:hover {
+  background: var(--primary-color);
+  color: white;
+  border-color: var(--primary-color);
+}
+
+body.dark-mode .badge-secondary {
+  background: var(--border-color);
+  color: var(--text-primary);
+}
+
+body.dark-mode .modal-footer {
+  background: var(--bg-color);
+}
+
+body.dark-mode .attribution-divider {
+  background: var(--border-color);
+}
+
+body.dark-mode .developer-link strong {
+  color: var(--primary-color);
+}
+
 body {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
   font-size: 14px;
