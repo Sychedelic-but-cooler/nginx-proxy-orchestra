@@ -125,6 +125,9 @@ function initializeDatabase() {
       forward_port INTEGER NOT NULL,
       ssl_enabled INTEGER DEFAULT 0,
       ssl_cert_id INTEGER,
+      -- advanced_config has dual purpose:
+      -- 1. Text editor mode (UI): Stores full nginx config with server blocks
+      -- 2. Structured API mode: Stores optional custom directives (inserted in location block)
       advanced_config TEXT,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,

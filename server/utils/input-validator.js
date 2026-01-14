@@ -286,157 +286,17 @@ function validateIdentifier(identifier, options = {}) {
 }
 
 /**
- * Validate port number
- * 
- * @param {number|string} port - Port number to validate
- * @param {Object} options - Validation options
- * @param {boolean} options.allowPrivileged - Allow ports below 1024 (default: true)
- * @returns {number} - Validated port number
- * @throws {Error} - If port is invalid
- */
-function validatePort(port, options = {}) {
-  const { allowPrivileged = true } = options;
-
-  let portNum;
-
-  if (typeof port === 'string') {
-    portNum = parseInt(port, 10);
-  } else if (typeof port === 'number') {
-    portNum = port;
-  } else {
-    throw new Error('Port must be a number or string');
-  }
-
-  if (isNaN(portNum)) {
-    throw new Error('Port must be a valid number');
-  }
-
-  const minPort = allowPrivileged ? 1 : 1024;
-
-  if (portNum < minPort || portNum > 65535) {
-    throw new Error(`Port must be between ${minPort} and 65535`);
-  }
-
-  return portNum;
-}
-
-/**
- * Validate duration in seconds
- * 
- * @param {number|string} duration - Duration in seconds
- * @param {Object} options - Validation options
- * @param {number} options.min - Minimum duration in seconds (default: 0)
- * @param {number} options.max - Maximum duration in seconds (default: 31536000 = 1 year)
- * @returns {number} - Validated duration
- * @throws {Error} - If duration is invalid
- */
-function validateDuration(duration, options = {}) {
-  const { min = 0, max = 31536000 } = options; // Max 1 year by default
-
-  let durationNum;
-
-  if (typeof duration === 'string') {
-    durationNum = parseInt(duration, 10);
-  } else if (typeof duration === 'number') {
-    durationNum = duration;
-  } else {
-    throw new Error('Duration must be a number or string');
-  }
-
-  if (isNaN(durationNum)) {
-    throw new Error('Duration must be a valid number');
-  }
-
-  if (durationNum < min || durationNum > max) {
-    throw new Error(`Duration must be between ${min} and ${max} seconds`);
-  }
-
-  return durationNum;
-}
-
-/**
- * Validate multiple IPs in a batch
- * 
- * @param {Array<string>} ips - Array of IP addresses to validate
- * @param {Object} options - Validation options (passed to validateIP)
- * @returns {Array<string>} - Array of validated IPs
- * @throws {Error} - If any IP is invalid
- */
-function validateIPs(ips, options = {}) {
-  if (!Array.isArray(ips)) {
-    throw new Error('IPs must be an array');
-  }
-
-  if (ips.length === 0) {
-    throw new Error('IP array cannot be empty');
-  }
-
-  const validated = [];
-  const errors = [];
-
-  for (let i = 0; i < ips.length; i++) {
-    try {
-      validated.push(validateIP(ips[i], options));
-    } catch (error) {
-      errors.push(`IP[${i}]: ${error.message}`);
-    }
-  }
-
-  if (errors.length > 0) {
-    throw new Error(`IP validation failed:\n${errors.join('\n')}`);
-  }
-
-  return validated;
-}
-
-/**
- * Validate multiple domains in a batch
- * 
- * @param {Array<string>} domains - Array of domains to validate
- * @param {Object} options - Validation options (passed to validateDomain)
- * @returns {Array<string>} - Array of validated domains
- * @throws {Error} - If any domain is invalid
- */
-function validateDomains(domains, options = {}) {
-  if (!Array.isArray(domains)) {
-    throw new Error('Domains must be an array');
-  }
-
-  if (domains.length === 0) {
-    throw new Error('Domain array cannot be empty');
-  }
-
-  const validated = [];
-  const errors = [];
-
-  for (let i = 0; i < domains.length; i++) {
-    try {
-      validated.push(validateDomain(domains[i], options));
-    } catch (error) {
-      errors.push(`Domain[${i}]: ${error.message}`);
-    }
-  }
-
-  if (errors.length > 0) {
-    throw new Error(`Domain validation failed:\n${errors.join('\n')}`);
-  }
-
-  return validated;
-}
-
-/**
- * Validate nginx configuration snippet
- * Basic validation to prevent obvious security issues
- * Note: Final validation is done by nginx -t before applying
+ * Validate nginx configuration
  * 
  * @param {string} config - Nginx configuration snippet
  * @param {Object} options - Validation options
  * @param {number} options.maxLength - Maximum length in characters (default: 50000)
+ * @param {boolean} options.allowServerBlocks - Allow server blocks in config (default: false)
  * @returns {string} - Validated config
  * @throws {Error} - If config contains dangerous patterns
  */
 function validateNginxConfig(config, options = {}) {
-  const { maxLength = 50000 } = options;
+  const { maxLength = 50000, allowServerBlocks = false } = options;
 
   if (typeof config !== 'string') {
     throw new Error('Nginx config must be a string');
@@ -475,7 +335,8 @@ function validateNginxConfig(config, options = {}) {
   // SECURITY: Check for server blocks in advanced_config
   // Server blocks should not be in advanced_config as they will be nested incorrectly
   // Advanced config is inserted into location or server blocks, not at top level
-  if (/^\s*server\s*\{/m.test(trimmed)) {
+  // However, for full custom configs (text editor mode), server blocks are allowed
+  if (!allowServerBlocks && /^\s*server\s*\{/m.test(trimmed)) {
     throw new Error('Nginx config contains server blocks. Use the proxy wizard instead of advanced config for complete server definitions.');
   }
 

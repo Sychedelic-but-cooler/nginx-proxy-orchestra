@@ -1,6 +1,11 @@
 /**
  * Config routes
- * Manages advanced configuration editor for custom nginx configs
+ * Handles the text editor for managing full nginx configurations.
+ * 
+ * Note: This is the primary UI flow where users edit complete nginx configs.
+ * The config is stored in the 'advanced_config' database field and written
+ * directly to nginx .conf files. This differs from the structured API in
+ * proxies.routes.js which generates configs from individual fields.
  */
 
 const { db, logAudit } = require('../db');
@@ -190,8 +195,9 @@ async function handleSaveCustomConfig(req, res) {
   }
 
   // SECURITY: Validate nginx configuration
+  // Allow server blocks since this is a full custom config (text editor mode)
   try {
-    validateNginxConfig(config);
+    validateNginxConfig(config, { allowServerBlocks: true });
   } catch (error) {
     return sendJSON(res, { error: `Invalid nginx config: ${error.message}` }, 400);
   }

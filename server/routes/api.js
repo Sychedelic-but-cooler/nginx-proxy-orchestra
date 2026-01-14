@@ -1681,7 +1681,7 @@ async function handleUpdateSettings(req, res) {
 }
 
 // ============================================================================
-// Custom Config Handlers (Advanced Editor)
+// Custom Config Handlers (Text Editor)
 // ============================================================================
 
 function handleGetRawConfig(req, res, parsedUrl) {
