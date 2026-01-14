@@ -42,10 +42,8 @@ export async function renderProxies(container) {
                 </th>
                 <th>Name</th>
                 <th>Type</th>
-                <th>Domain(s)</th>
                 <th>Forward To</th>
                 <th>TLS</th>
-                <th>Rate Limit</th>
                 <th>Status</th>
                 <th>Actions</th>
               </tr>
@@ -96,11 +94,6 @@ export async function renderProxies(container) {
                   forwardTo = `${escapeHtml(proxy.forward_scheme)}://${escapeHtml(proxy.forward_host)}:${proxy.forward_port}`;
                 }
 
-                // Domain display
-                const domainDisplay = (proxy.domain_names === 'N/A' || !proxy.domain_names)
-                  ? '<span class="badge badge-secondary">-</span>'
-                  : escapeHtml(proxy.domain_names);
-
                 return `
                 <tr ${proxy.config_status === 'error' ? 'style="background-color: rgba(220, 53, 69, 0.05);"' : ''}>
                   <td>
@@ -121,18 +114,12 @@ export async function renderProxies(container) {
                     ${proxy.config_error ? `<br><small style="color: var(--danger-color);" title="${escapeHtml(proxy.config_error)}">⚠️ ${escapeHtml(proxy.config_error)}</small>` : ''}
                   </td>
                   <td><span class="badge badge-info">${escapeHtml(proxy.type)}</span></td>
-                  <td>${domainDisplay}</td>
                   <td>${forwardTo}</td>
                   <td>
                     ${proxy.type === 'stream' ? '<span class="badge badge-secondary">N/A</span>' :
                       (proxy.ssl_enabled ?
                         `<span class="badge badge-success">✓ ${escapeHtml(proxy.ssl_cert_name || 'Enabled')}</span>` :
                         '<span class="badge badge-danger">✗</span>')}
-                  </td>
-                  <td>
-                    ${proxy.type === 'reverse' && rateLimit ?
-                      `<span class="badge badge-warning" title="Rate: ${rateLimit.rate}, Burst: ${rateLimit.burst}">⏱️ ${rateLimit.rate}</span>` :
-                      '<span class="badge badge-secondary">-</span>'}
                   </td>
                   <td>
                     <span class="badge ${statusClass}" title="${proxy.config_error || ''}">
@@ -386,10 +373,8 @@ async function renderProxiesQuiet(container) {
               </th>
               <th>Name</th>
               <th>Type</th>
-              <th>Domain(s)</th>
               <th>Forward To</th>
               <th>TLS</th>
-              <th>Rate Limit</th>
               <th>Status</th>
               <th>Actions</th>
             </tr>
@@ -433,10 +418,6 @@ async function renderProxiesQuiet(container) {
                 forwardTo = `${escapeHtml(proxy.forward_scheme)}://${escapeHtml(proxy.forward_host)}:${proxy.forward_port}`;
               }
 
-              const domainDisplay = (proxy.domain_names === 'N/A' || !proxy.domain_names)
-                ? '<span class="badge badge-secondary">-</span>'
-                : escapeHtml(proxy.domain_names);
-
               return `
               <tr ${proxy.config_status === 'error' ? 'style="background-color: rgba(220, 53, 69, 0.05);"' : ''}>
                 <td>
@@ -457,18 +438,12 @@ async function renderProxiesQuiet(container) {
                   ${proxy.config_error ? `<br><small style="color: var(--danger-color);" title="${escapeHtml(proxy.config_error)}">⚠️ ${escapeHtml(proxy.config_error)}</small>` : ''}
                 </td>
                 <td><span class="badge badge-info">${escapeHtml(proxy.type)}</span></td>
-                <td>${domainDisplay}</td>
                 <td>${forwardTo}</td>
                 <td>
                   ${proxy.type === 'stream' ? '<span class="badge badge-secondary">N/A</span>' :
                     (proxy.ssl_enabled ?
                       `<span class="badge badge-success">✓ ${escapeHtml(proxy.ssl_cert_name || 'Enabled')}</span>` :
                       '<span class="badge badge-danger">✗</span>')}
-                </td>
-                <td>
-                  ${proxy.type === 'reverse' && rateLimit ?
-                    `<span class="badge badge-warning" title="Rate: ${rateLimit.rate}, Burst: ${rateLimit.burst}">⏱️ ${rateLimit.rate}</span>` :
-                    '<span class="badge badge-secondary">-</span>'}
                 </td>
                 <td>
                   <span class="badge ${statusClass}" title="${proxy.config_error || ''}">
