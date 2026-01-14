@@ -241,6 +241,130 @@ function safeReload() {
   };
 }
 
+/**
+ * Get nginx stub_status metrics
+ * Fetches real-time connection and request statistics from nginx stub_status module
+ * Returns { success: boolean, data?: object, error?: string }
+ */
+function getStubStatus() {
+  try {
+    const http = require('http');
+    const https = require('https');
+    
+    // Try to fetch stub_status from localhost
+    // Default endpoint: http://127.0.0.1/nginx_status
+    const stubStatusUrl = process.env.STUB_STATUS_URL || 'http://127.0.0.1/nginx_status';
+    
+    return new Promise((resolve, reject) => {
+      const protocol = stubStatusUrl.startsWith('https') ? https : http;
+      const timeout = 5000;
+      
+      const req = protocol.get(stubStatusUrl, { timeout }, (res) => {
+        let data = '';
+        
+        res.on('data', (chunk) => {
+          data += chunk;
+        });
+        
+        res.on('end', () => {
+          if (res.statusCode !== 200) {
+            return resolve({
+              success: false,
+              error: `stub_status returned HTTP ${res.statusCode}`,
+              configured: false
+            });
+          }
+          
+          // Parse stub_status output
+          // Example format:
+          // Active connections: 291
+          // server accepts handled requests
+          //  16630948 16630948 31070465
+          // Reading: 6 Writing: 179 Waiting: 106
+          
+          const parsed = parseStubStatusOutput(data);
+          
+          if (!parsed) {
+            return resolve({
+              success: false,
+              error: 'Failed to parse stub_status output',
+              rawOutput: data
+            });
+          }
+          
+          resolve({
+            success: true,
+            configured: true,
+            data: parsed,
+            timestamp: Date.now()
+          });
+        });
+      });
+      
+      req.on('error', (error) => {
+        // Connection refused or network error means stub_status is not configured
+        resolve({
+          success: false,
+          configured: false,
+          error: error.message,
+          hint: 'stub_status module may not be configured in nginx. See documentation for setup instructions.'
+        });
+      });
+      
+      req.on('timeout', () => {
+        req.destroy();
+        resolve({
+          success: false,
+          error: 'Request to stub_status endpoint timed out',
+          configured: false
+        });
+      });
+    });
+  } catch (error) {
+    return Promise.resolve({
+      success: false,
+      error: error.message
+    });
+  }
+}
+
+/**
+ * Parse stub_status output into structured data
+ */
+function parseStubStatusOutput(output) {
+  try {
+    const lines = output.trim().split('\n');
+    
+    // Line 1: Active connections: 291
+    const activeMatch = lines[0].match(/Active connections:\s+(\d+)/);
+    if (!activeMatch) return null;
+    
+    // Line 3: 16630948 16630948 31070465 (accepts handled requests)
+    const numbersLine = lines[2].trim().split(/\s+/);
+    if (numbersLine.length < 3) return null;
+    
+    // Line 4: Reading: 6 Writing: 179 Waiting: 106
+    const statesMatch = lines[3].match(/Reading:\s+(\d+)\s+Writing:\s+(\d+)\s+Waiting:\s+(\d+)/);
+    if (!statesMatch) return null;
+    
+    return {
+      active: parseInt(activeMatch[1]),
+      accepts: parseInt(numbersLine[0]),
+      handled: parseInt(numbersLine[1]),
+      requests: parseInt(numbersLine[2]),
+      reading: parseInt(statesMatch[1]),
+      writing: parseInt(statesMatch[2]),
+      waiting: parseInt(statesMatch[3]),
+      // Calculate derived metrics
+      requestsPerConnection: numbersLine[1] > 0 ? (parseInt(numbersLine[2]) / parseInt(numbersLine[1])).toFixed(2) : '0.00',
+      handledPercentage: numbersLine[0] > 0 ? ((parseInt(numbersLine[1]) / parseInt(numbersLine[0])) * 100).toFixed(2) : '100.00'
+    };
+  } catch (error) {
+    console.error('Error parsing stub_status output:', error);
+    return null;
+  }
+}
+
 module.exports = {
   testNginxConfig,
   reloadNginx,
@@ -249,5 +373,6 @@ module.exports = {
   getNginxStatus,
   safeReload,
   loadModuleInfo,
-  refreshModuleCache
+  refreshModuleCache,
+  getStubStatus
 };

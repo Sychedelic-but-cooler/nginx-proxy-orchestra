@@ -5,7 +5,7 @@
 
 const { db, logAudit } = require('../db');
 const { sendJSON, getClientIP } = require('./shared/utils');
-const { testNginxConfig, getNginxStatus } = require('../utils/nginx-ops');
+const { testNginxConfig, getNginxStatus, getStubStatus } = require('../utils/nginx-ops');
 const { reloadManager } = require('../utils/nginx-reload-manager');
 const { getCachedNginxStats, getCacheAge } = require('../utils/stats-cache-service');
 
@@ -42,6 +42,10 @@ async function handleNginxRoutes(req, res, parsedUrl) {
 
   if (pathname === '/api/nginx/statistics' && method === 'GET') {
     return handleGetNginxStatistics(req, res, parsedUrl);
+  }
+
+  if (pathname === '/api/nginx/stub-status' && method === 'GET') {
+    return handleGetStubStatus(req, res);
   }
 
   sendJSON(res, { error: 'Not Found' }, 404);
@@ -254,6 +258,26 @@ async function handleGetNginxStatistics(req, res, parsedUrl) {
   } catch (error) {
     console.error('Get nginx statistics error:', error);
     sendJSON(res, { error: error.message || 'Failed to get nginx statistics' }, 500);
+  }
+}
+
+/**
+ * Get stub_status metrics
+ * Returns real-time nginx performance metrics from stub_status module
+ *
+ * @param {IncomingMessage} req - HTTP request object
+ * @param {ServerResponse} res - HTTP response object
+ */
+async function handleGetStubStatus(req, res) {
+  try {
+    const result = await getStubStatus();
+    sendJSON(res, result);
+  } catch (error) {
+    console.error('Get stub_status error:', error);
+    sendJSON(res, { 
+      success: false,
+      error: error.message || 'Failed to fetch stub_status metrics' 
+    }, 500);
   }
 }
 

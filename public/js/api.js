@@ -288,6 +288,10 @@ class API {
     return this.request('/api/nginx/status');
   }
 
+  async getStubStatus() {
+    return this.request('/api/nginx/stub-status');
+  }
+
   // Audit log
   async getAuditLog(params = {}) {
     const queryParams = new URLSearchParams();

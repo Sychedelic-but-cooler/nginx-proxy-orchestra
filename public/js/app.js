@@ -5,6 +5,7 @@ import { renderDashboard } from './components/dashboard.js';
 import { renderSecurityDashboard } from './components/security-dashboard.js';
 import { renderNginxSecurity } from './components/nginx-security.js';
 import { renderNginxStatistics } from './components/nginx-statistics.js';
+import { renderNginxPerformance, cleanupPerformanceMonitor } from './components/nginx-performance.js';
 import { renderProxies } from './components/proxy-list.js';
 import { renderCertificates } from './components/ssl-manager.js';
 import { renderModules } from './components/module-manager.js';
@@ -176,6 +177,12 @@ router.register('/security/statistics', async () => {
   updateNavigation('security/statistics');
   setHeader('Traffic & Performance');
   await renderNginxStatistics(mainContent);
+});
+
+router.register('/nginx/performance', async () => {
+  updateNavigation('nginx/performance');
+  setHeader('Nginx Performance Monitor');
+  await renderNginxPerformance(mainContent);
 });
 
 router.register('/security/waf', async () => {
