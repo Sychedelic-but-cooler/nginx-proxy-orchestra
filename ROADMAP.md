@@ -1,6 +1,6 @@
 # ROADMAP
 
-This is my list of late-night ideas; possibly not even workable ideas. Below I've grouped, prioritized (HIGH / LOW), and sorted each category with HIGH items first.
+This is my list of late-night ideas; possibly not even workable ideas.
 
 ---
 
@@ -12,7 +12,7 @@ This is my list of late-night ideas; possibly not even workable ideas. Below I'v
 - **LOW**: WAF Automated Rule Tuning - ML-assisted exclusion rule suggestions
 
 ### Backend Features
-- **HIGH**: Prometheus Exporter - Export metrics for external dashboards
+- **HIGH**: Prometheus Exporter - Export metrics for external dashboards, graph make brain happy!
 - **HIGH**: Automatic Health Check - Monitor management server health to avoid UI lockups
 - **LOW**: Response Time and Bandwidth Tracking - Performance metrics per proxy
 
@@ -60,13 +60,3 @@ This is my list of late-night ideas; possibly not even workable ideas. Below I'v
 - **LOW**: Response Time and Bandwidth Tracking - Performance metrics per proxy
 - **LOW**: OCSP Stapling Configuration - Improve TLS performance
 
----
-
-## Notes
-- Priorities are suggested based on typical admin needs: security, reliability, backups, and developer experience often provide the most value.
-- I marked items that overlap (e.g., OCSP Stapling appears in multiple sections) as LOW in miscellaneous to avoid duplication.
-
-If you'd like, I can:
-- Adjust priorities (you can tell me which items you care about most)
-- Create issues/tickets for HIGH-priority items
-- Start implementing one of the HIGH items now (I can begin with a small one like `Custom Error Pages` or `Request/Response Header Manipulation`).
