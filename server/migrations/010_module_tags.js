@@ -15,9 +15,16 @@ function runModuleTagsMigration(db) {
 
     // Step 1: Add tag column
     console.log('  - Adding tag column to modules table');
-    db.prepare(`
-      ALTER TABLE modules ADD COLUMN tag TEXT DEFAULT 'General'
-    `).run();
+    
+    // Check if column already exists
+    const tableInfo = db.prepare('PRAGMA table_info(modules)').all();
+    const columnNames = tableInfo.map(col => col.name);
+    
+    if (!columnNames.includes('tag')) {
+      db.prepare(`
+        ALTER TABLE modules ADD COLUMN tag TEXT DEFAULT 'General'
+      `).run();
+    }
 
     // Step 2: Categorize existing modules by logical groupings
     console.log('  - Categorizing existing modules');

@@ -17,9 +17,16 @@ function runModularConfigMigration(db) {
 
     // Step 1: Add level column to modules table
     console.log('  - Adding level column to modules table');
-    db.prepare(`
-      ALTER TABLE modules ADD COLUMN level TEXT DEFAULT 'location'
-    `).run();
+    
+    // Check if column already exists
+    const tableInfo = db.prepare('PRAGMA table_info(modules)').all();
+    const columnNames = tableInfo.map(col => col.name);
+    
+    if (!columnNames.includes('level')) {
+      db.prepare(`
+        ALTER TABLE modules ADD COLUMN level TEXT DEFAULT 'location'
+      `).run();
+    }
 
     // Step 2: Update existing modules with correct level
     console.log('  - Updating existing modules with level classification');

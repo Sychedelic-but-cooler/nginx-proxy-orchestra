@@ -2,6 +2,7 @@
 /**
  * Clean up failed migration records
  * This allows migrations to be re-run after fixing issues
+ * Cleans up ALL failed migrations, not just specific ones
  */
 
 const Database = require('better-sqlite3');
@@ -13,21 +14,22 @@ const dbPath = path.join(dataDir, 'database.sqlite');
 console.log('Opening database:', dbPath);
 const db = new Database(dbPath);
 
-// Delete failed migration record for 002_certbot_support
+// Delete all failed migration records
 const result = db.prepare(`
   DELETE FROM migrations_history 
-  WHERE migration_name = '002_certbot_support' AND success = 0
+  WHERE success = 0
 `).run();
 
-console.log(`Deleted ${result.changes} failed migration record(s) for 002_certbot_support`);
+console.log(`Deleted ${result.changes} failed migration record(s)`);
 
-// Also delete the duplicate entry if it exists
+// Also delete duplicate successful entries (keep only the first one for each migration)
 const duplicate = db.prepare(`
   DELETE FROM migrations_history 
-  WHERE migration_name = '002_certbot_support' AND success = 1
+  WHERE success = 1
   AND id NOT IN (
     SELECT MIN(id) FROM migrations_history 
-    WHERE migration_name = '002_certbot_support' AND success = 1
+    WHERE success = 1
+    GROUP BY migration_name
   )
 `).run();
 

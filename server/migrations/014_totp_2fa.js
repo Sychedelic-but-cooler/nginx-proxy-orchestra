@@ -11,15 +11,34 @@
  */
 
 function up(db) {
-  // Add TOTP fields to users table
-  db.exec(`
-    ALTER TABLE users ADD COLUMN totp_secret TEXT;
-    ALTER TABLE users ADD COLUMN totp_enabled INTEGER DEFAULT 0;
-    ALTER TABLE users ADD COLUMN totp_verified INTEGER DEFAULT 0;
-    ALTER TABLE users ADD COLUMN recovery_key TEXT;
-    ALTER TABLE users ADD COLUMN failed_login_attempts INTEGER DEFAULT 0;
-    ALTER TABLE users ADD COLUMN last_failed_login DATETIME;
-  `);
+  // Check which columns already exist
+  const tableInfo = db.prepare('PRAGMA table_info(users)').all();
+  const existingColumns = tableInfo.map(col => col.name);
+
+  // Add TOTP fields to users table only if they don't exist
+  if (!existingColumns.includes('totp_secret')) {
+    db.exec(`ALTER TABLE users ADD COLUMN totp_secret TEXT;`);
+  }
+  
+  if (!existingColumns.includes('totp_enabled')) {
+    db.exec(`ALTER TABLE users ADD COLUMN totp_enabled INTEGER DEFAULT 0;`);
+  }
+  
+  if (!existingColumns.includes('totp_verified')) {
+    db.exec(`ALTER TABLE users ADD COLUMN totp_verified INTEGER DEFAULT 0;`);
+  }
+  
+  if (!existingColumns.includes('recovery_key')) {
+    db.exec(`ALTER TABLE users ADD COLUMN recovery_key TEXT;`);
+  }
+  
+  if (!existingColumns.includes('failed_login_attempts')) {
+    db.exec(`ALTER TABLE users ADD COLUMN failed_login_attempts INTEGER DEFAULT 0;`);
+  }
+  
+  if (!existingColumns.includes('last_failed_login')) {
+    db.exec(`ALTER TABLE users ADD COLUMN last_failed_login DATETIME;`);
+  }
 }
 
 function down(db) {
