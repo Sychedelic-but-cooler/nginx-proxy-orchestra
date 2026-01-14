@@ -1532,7 +1532,7 @@ function createStep5AdvancedOptions(state) {
       <div class="wizard-form-group full-width">
         <label>Custom Nginx Directives</label>
         <textarea id="wizardCustomDirectives" rows="6" placeholder="# Add custom nginx directives here...">${escapeHtml(state.advanced.custom_directives)}</textarea>
-        <small>Advanced: Add custom nginx configuration directives (inserted in location block)</small>
+        <small>Advanced: Add custom nginx directives only (e.g., proxy_buffer_size, client_max_body_size). Do NOT include server blocks here.</small>
       </div>
     </div>
   `;
@@ -2092,12 +2092,22 @@ async function generateConfigPreview(state) {
       }
 
       // Insert server-level modules in HTTPS server block only (after listen 443 and server_name)
+      // Use include directives instead of inline content
       if (serverModules.length > 0) {
-        const serverModuleContent = serverModules.map(m => `    ${m.content}`).join('\n');
+        const serverModuleIncludes = serverModules.map(m => {
+          // Sanitize module name for filename (lowercase, replace non-alphanumeric with hyphens)
+          const sanitizedName = m.name.toLowerCase()
+            .replace(/[^a-z0-9]+/g, '-')
+            .replace(/^-+|-+$/g, '')
+            .substring(0, 100);
+          // Use absolute path from environment or default location
+          const modulePath = `/nginx-proxy-orchestra/data/modules/${sanitizedName}.conf`;
+          return `    # Module: ${m.name}\n    include ${modulePath};`;
+        }).join('\n');
 
         // Target HTTPS server block specifically (listen 443)
         config = config.replace(/(listen\s+443\s+ssl[^;]*;[\s\S]*?server_name[^;]+;)/,
-          `$1\n\n    # Server-level modules\n${serverModuleContent}`);
+          `$1\n\n${serverModuleIncludes}\n`);
       }
 
       // Check if Real IP module is selected - need to remove default proxy headers to avoid duplicates
@@ -2126,9 +2136,19 @@ async function generateConfigPreview(state) {
       }
 
       // Insert location-level modules in HTTPS server block only
-      if (locationModules.length > 0 || redirectModules.length > 0) {
-        const allLocationModules = [...locationModules, ...redirectModules];
-        const locationModuleContent = allLocationModules.map(m => `        ${m.content}`).join('\n');
+      // Use include directives instead of inline content
+      // Note: redirect modules are NOT inserted here - they generate separate server blocks
+      if (locationModules.length > 0) {
+        const locationModuleIncludes = locationModules.map(m => {
+          // Sanitize module name for filename (lowercase, replace non-alphanumeric with hyphens)
+          const sanitizedName = m.name.toLowerCase()
+            .replace(/[^a-z0-9]+/g, '-')
+            .replace(/^-+|-+$/g, '')
+            .substring(0, 100);
+          // Use absolute path from environment or default location
+          const modulePath = `/nginx-proxy-orchestra/data/modules/${sanitizedName}.conf`;
+          return `        # Module: ${m.name}\n        include ${modulePath};`;
+        }).join('\n');
 
         // Find the HTTPS server block by searching for "listen 443 ssl"
         // Then find the location / block within it
@@ -2161,9 +2181,9 @@ async function generateConfigPreview(state) {
             const closeBraces = (line.match(/\}/g) || []).length;
             braceDepth += openBraces - closeBraces;
 
-            // Found location / block - insert modules after the opening brace
+            // Found location / block - insert module includes after the opening brace
             if (line.match(/location\s+\/\s*\{/) && !foundLocationSlash) {
-              lines[i] = line + '\n        # Location-level modules\n' + locationModuleContent;
+              lines[i] = line + '\n' + locationModuleIncludes;
               foundLocationSlash = true;
               break;
             }

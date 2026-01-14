@@ -472,6 +472,13 @@ function validateNginxConfig(config, options = {}) {
     }
   }
 
+  // SECURITY: Check for server blocks in advanced_config
+  // Server blocks should not be in advanced_config as they will be nested incorrectly
+  // Advanced config is inserted into location or server blocks, not at top level
+  if (/^\s*server\s*\{/m.test(trimmed)) {
+    throw new Error('Nginx config contains server blocks. Use the proxy wizard instead of advanced config for complete server definitions.');
+  }
+
   // Check for reasonable nginx directive structure
   // Should contain typical nginx keywords or be comments
   const hasNginxDirectives = /^\s*(#|location|proxy_|set|return|rewrite|if|add_header|include)/m.test(trimmed);
