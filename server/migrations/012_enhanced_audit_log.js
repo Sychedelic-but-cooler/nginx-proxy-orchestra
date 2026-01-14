@@ -107,7 +107,5 @@ function runEnhancedAuditLogMigration(db) {
 }
 
 module.exports = {
-  version: 12,
-  name: 'enhanced_audit_log',
-  run: runEnhancedAuditLogMigration
+  runEnhancedAuditLogMigration
 };
