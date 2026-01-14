@@ -21,6 +21,7 @@ import { renderWAFEvents } from './components/waf-events.js';
 import { renderBannedIPs, cleanupBannedIPs } from './components/banned-ips.js';
 import { renderDetectionRules } from './components/detection-rules.js';
 import { renderBanIntegrations } from './components/ban-integrations.js';
+import { renderAbout } from './components/about.js';
 
 // Check authentication on app load
 if (!api.getToken()) {
@@ -246,10 +247,31 @@ router.register('/security', async () => {
   router.navigate('/security/tuning');
 });
 
-router.register('/proxies', async () => {
-  updateNavigation('proxies');
-  setHeader('Proxy Hosts', '<button id="addProxyBtn" class="btn btn-primary">+ Add Proxy</button>');
+// Manage Sites routes
+router.register('/sites/list', async () => {
+  updateNavigation('sites/list');
+  setHeader('Site List', '<button id="addProxyBtn" class="btn btn-primary">+ Add Site</button>');
   await renderProxies(mainContent);
+});
+
+router.register('/sites/health', async () => {
+  updateNavigation('sites/health');
+  setHeader('Site Health');
+  mainContent.innerHTML = `
+    <div class="empty-state">
+      <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M22 12h-4l-3 9L9 3l-3 9H2"></path>
+      </svg>
+      <h2>Site Health Dashboard</h2>
+      <p>Monitor the health and status of your sites</p>
+      <p style="color: var(--text-muted); margin-top: 10px;">Coming soon...</p>
+    </div>
+  `;
+});
+
+// Legacy route redirect for backward compatibility
+router.register('/proxies', async () => {
+  router.navigate('/sites/list');
 });
 
 router.register('/certificates', async () => {
@@ -321,6 +343,12 @@ router.register('/advanced', async () => {
   updateNavigation('advanced');
   setHeader('Advanced Config Editor');
   await renderAdvancedEditor(mainContent);
+});
+
+router.register('/about', async () => {
+  updateNavigation('about');
+  setHeader('About');
+  await renderAbout(mainContent);
 });
 
 router.register('/404', () => {

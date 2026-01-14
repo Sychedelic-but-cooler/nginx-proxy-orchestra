@@ -85,9 +85,23 @@
           </div>
         </div>
 
-        <a href="#/proxies" class="nav-item" data-route="proxies">
-          <span>Proxy Hosts</span>
-        </a>
+        <!-- Manage Sites Group (Collapsible) -->
+        <div class="nav-group">
+          <div class="nav-group-header" data-group="manage-sites">
+            <span>Manage Sites</span>
+            <svg class="nav-group-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="6 9 12 15 18 9"></polyline>
+            </svg>
+          </div>
+          <div class="nav-group-items" data-group-items="manage-sites">
+            <a href="#/sites/list" class="nav-item nav-subitem" data-route="sites/list">
+              <span>Site List</span>
+            </a>
+            <a href="#/sites/health" class="nav-item nav-subitem" data-route="sites/health">
+              <span>Site Health</span>
+            </a>
+          </div>
+        </div>
         <a href="#/certificates" class="nav-item" data-route="certificates">
           <span>TLS Certificates</span>
         </a>
@@ -127,6 +141,9 @@
       </nav>
 
       <div class="sidebar-footer">
+        <a href="#/about" class="nav-item" data-route="about" style="margin-bottom: 8px;">
+          <span>About</span>
+        </a>
         <div class="sidebar-version">v1.0.0</div>
       </div>
     </aside>
