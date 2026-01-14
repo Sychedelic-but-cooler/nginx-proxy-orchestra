@@ -72,6 +72,31 @@ function validateIP(ip, options = {}) {
 }
 
 /**
+ * Validate multiple IP addresses (comma or space separated)
+ * 
+ * @param {string} ips - IP addresses to validate (comma or space separated)
+ * @param {Object} options - Validation options (passed to validateIP)
+ * @returns {string[]} - Array of validated IP addresses
+ * @throws {Error} - If any IP is invalid
+ */
+function validateIPs(ips, options = {}) {
+  if (typeof ips !== 'string') {
+    throw new Error('IPs must be a string');
+  }
+
+  const trimmed = ips.trim();
+  if (!trimmed) {
+    return [];
+  }
+
+  // Split by comma or space
+  const ipArray = trimmed.split(/[,\s]+/).filter(ip => ip.trim());
+  
+  // Validate each IP
+  return ipArray.map(ip => validateIP(ip, options));
+}
+
+/**
  * Validate domain name
  * Validates according to RFC 1123 with additional security checks
  * 
@@ -180,6 +205,83 @@ function validateEmail(email) {
   }
 
   return trimmedEmail;
+}
+
+/**
+ * Validate multiple domains (comma or space separated)
+ * 
+ * @param {string} domains - Domains to validate (comma or space separated)
+ * @param {Object} options - Validation options (passed to validateDomain)
+ * @returns {string[]} - Array of validated domains
+ * @throws {Error} - If any domain is invalid
+ */
+function validateDomains(domains, options = {}) {
+  if (typeof domains !== 'string') {
+    throw new Error('Domains must be a string');
+  }
+
+  const trimmed = domains.trim();
+  if (!trimmed) {
+    return [];
+  }
+
+  // Split by comma or space
+  const domainArray = trimmed.split(/[,\s]+/).filter(d => d.trim());
+  
+  // Validate each domain
+  return domainArray.map(domain => validateDomain(domain, options));
+}
+
+/**
+ * Validate port number
+ * 
+ * @param {number|string} port - Port number to validate
+ * @param {Object} options - Validation options
+ * @param {number} options.min - Minimum port (default: 1)
+ * @param {number} options.max - Maximum port (default: 65535)
+ * @returns {number} - Validated port number
+ * @throws {Error} - If port is invalid
+ */
+function validatePort(port, options = {}) {
+  const { min = 1, max = 65535 } = options;
+
+  const portNum = typeof port === 'string' ? parseInt(port, 10) : port;
+
+  if (isNaN(portNum) || !Number.isInteger(portNum)) {
+    throw new Error('Port must be an integer');
+  }
+
+  if (portNum < min || portNum > max) {
+    throw new Error(`Port must be between ${min} and ${max}`);
+  }
+
+  return portNum;
+}
+
+/**
+ * Validate duration in seconds
+ * 
+ * @param {number|string} duration - Duration in seconds
+ * @param {Object} options - Validation options
+ * @param {number} options.min - Minimum duration in seconds (default: 1)
+ * @param {number} options.max - Maximum duration in seconds (default: 31536000 = 1 year)
+ * @returns {number} - Validated duration in seconds
+ * @throws {Error} - If duration is invalid
+ */
+function validateDuration(duration, options = {}) {
+  const { min = 1, max = 31536000 } = options;
+
+  const durationNum = typeof duration === 'string' ? parseInt(duration, 10) : duration;
+
+  if (isNaN(durationNum) || !Number.isInteger(durationNum)) {
+    throw new Error('Duration must be an integer');
+  }
+
+  if (durationNum < min || durationNum > max) {
+    throw new Error(`Duration must be between ${min} and ${max} seconds`);
+  }
+
+  return durationNum;
 }
 
 /**
@@ -362,9 +464,9 @@ module.exports = {
   validateDomain,
   validateDomains,
   validateEmail,
-  validateIdentifier,
   validatePort,
   validateDuration,
+  validateIdentifier,
   validateNginxConfig,
   sanitizeShellArg,
   sanitizeComment
