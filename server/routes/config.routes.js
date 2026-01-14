@@ -209,6 +209,11 @@ async function handleSaveCustomConfig(req, res) {
     // Extract structured fields from config for better display/search
     const extractedFields = extractStructuredFields(config, type || 'reverse');
     
+    // IMPORTANT: For text editor mode (full custom config), we MUST set domain_names to 'N/A'
+    // This signals to proxy-config-regenerator.js to skip regeneration and use advanced_config directly
+    // Otherwise, generateServerBlock() will wrap the full config inside a location block
+    extractedFields.domain_names = 'N/A';
+    
     // Try to find matching certificate by paths
     if (extractedFields.ssl_enabled && extractedFields.ssl_cert_path && extractedFields.ssl_key_path) {
       extractedFields.ssl_cert_id = findCertificateByPaths(db, extractedFields.ssl_cert_path, extractedFields.ssl_key_path);

@@ -1814,7 +1814,7 @@ async function handleSaveCustomConfig(req, res) {
       db.prepare(`
         UPDATE proxy_hosts
         SET name = ?, type = ?, enabled = ?, advanced_config = ?, launch_url = ?,
-            config_filename = ?, config_status = 'pending', updated_at = CURRENT_TIMESTAMP
+            config_filename = ?, config_status = 'pending', domain_names = 'N/A', updated_at = CURRENT_TIMESTAMP
         WHERE id = ?
       `).run(name, type, enabled ? 1 : 0, config, launch_url || null, configFilename, finalProxyId);
     } else {
