@@ -473,8 +473,6 @@ async function showChangePasswordModal() {
     }
   });
 }
-  });
-}
 
 /**
  * Show 2FA management modal
