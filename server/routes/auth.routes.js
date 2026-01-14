@@ -297,102 +297,115 @@ function handleGenerateSSEToken(req, res) {
  * @param {ServerResponse} res - HTTP response object
  */
 async function handleTOTPLogin(req, res) {
-  const ip = getClientIP(req);
-  const body = await parseBody(req);
-  const { tempToken, code } = body;
-
-  if (!tempToken || !code) {
-    return sendJSON(res, { error: 'Temp token and TOTP code required' }, 400);
-  }
-
-  if (!/^\d{6}$/.test(code)) {
-    return sendJSON(res, { error: 'Invalid code format. Must be 6 digits.' }, 400);
-  }
-
-  // Get temp session from database
-  const tempSession = db.prepare(`
-    SELECT user_id, expires_at 
-    FROM sessions 
-    WHERE token_id = ? AND token_type = 'temp_totp' AND revoked_at IS NULL
-  `).get(tempToken);
-
-  if (!tempSession) {
-    return sendJSON(res, { error: 'Invalid or expired temp token' }, 401);
-  }
-
-  // Check if temp token is expired
-  const expiresAt = new Date(tempSession.expires_at).getTime();
-  if (Date.now() > expiresAt) {
-    // Revoke expired temp token
-    db.prepare('UPDATE sessions SET revoked_at = CURRENT_TIMESTAMP WHERE token_id = ?').run(tempToken);
-    return sendJSON(res, { error: 'Temp token expired. Please log in again.' }, 401);
-  }
-
-  // Get user's TOTP secret
-  const user = db.prepare(`
-    SELECT id, username, role, totp_secret, failed_login_attempts 
-    FROM users 
-    WHERE id = ?
-  `).get(tempSession.user_id);
-
-  if (!user || !user.totp_secret) {
-    return sendJSON(res, { error: 'User not found or 2FA not configured' }, 401);
-  }
-
-  // Verify TOTP code
-  const secret = decrypt(user.totp_secret);
-  const isValid = authenticator.verify({ token: code, secret });
-
-  if (!isValid) {
-    // Increment failed login attempts
-    const currentAttempts = user.failed_login_attempts || 0;
-    db.prepare(`
-      UPDATE users 
-      SET failed_login_attempts = ?, last_failed_login = CURRENT_TIMESTAMP 
-      WHERE id = ?
-    `).run(currentAttempts + 1, user.id);
-    
-    logAudit(user.id, 'totp_login_failed', 'user', user.id, 'Invalid TOTP code', ip);
-    
-    return sendJSON(res, { 
-      error: 'Invalid 2FA code',
-      failedAttempts: currentAttempts + 1
-    }, 401);
-  }
-
-  // TOTP verified - revoke temp token and issue real JWT
-  db.prepare('UPDATE sessions SET revoked_at = CURRENT_TIMESTAMP WHERE token_id = ?').run(tempToken);
-  
-  // Reset failed login attempts
-  db.prepare('UPDATE users SET failed_login_attempts = 0 WHERE id = ?').run(user.id);
-
-  // Generate JWT token with session tracking
-  const userAgent = req.headers['user-agent'] || null;
-  const token = generateToken(user.id, user.username, {
-    type: 'user',
-    userAgent,
-    ipAddress: ip
-  });
-
-  logAudit(user.id, 'login', 'user', user.id, '2FA verified', ip);
-
-  // Auto-whitelist admin IPs for safety
   try {
-    const { autoWhitelistAdmin } = require('../utils/ip-utils');
-    autoWhitelistAdmin(ip, user.id);
-  } catch (error) {
-    console.error('Failed to auto-whitelist admin IP:', error.message);
-  }
+    const ip = getClientIP(req);
+    const body = await parseBody(req);
+    const { tempToken, code } = body;
 
-  sendJSON(res, {
-    success: true,
-    token,
-    user: {
-      id: user.id,
-      username: user.username,
-      role: user.role
+    if (!tempToken || !code) {
+      return sendJSON(res, { error: 'Temp token and TOTP code required' }, 400);
     }
-  });
+
+    if (!/^\d{6}$/.test(code)) {
+      return sendJSON(res, { error: 'Invalid code format. Must be 6 digits.' }, 400);
+    }
+
+    // Get temp session from database
+    const tempSession = db.prepare(`
+      SELECT user_id, expires_at 
+      FROM sessions 
+      WHERE token_id = ? AND token_type = 'temp_totp' AND revoked_at IS NULL
+    `).get(tempToken);
+
+    if (!tempSession) {
+      return sendJSON(res, { error: 'Invalid or expired temp token' }, 401);
+    }
+
+    // Check if temp token is expired
+    const expiresAt = new Date(tempSession.expires_at).getTime();
+    if (Date.now() > expiresAt) {
+      // Revoke expired temp token
+      db.prepare('UPDATE sessions SET revoked_at = CURRENT_TIMESTAMP WHERE token_id = ?').run(tempToken);
+      return sendJSON(res, { error: 'Temp token expired. Please log in again.' }, 401);
+    }
+
+    // Get user's TOTP secret
+    const user = db.prepare(`
+      SELECT id, username, role, totp_secret, failed_login_attempts 
+      FROM users 
+      WHERE id = ?
+    `).get(tempSession.user_id);
+
+    if (!user || !user.totp_secret) {
+      return sendJSON(res, { error: 'User not found or 2FA not configured' }, 401);
+    }
+
+    // Verify TOTP code
+    let secret;
+    try {
+      secret = decrypt(user.totp_secret);
+    } catch (decryptError) {
+      console.error('TOTP decryption failed for user', user.id, ':', decryptError.message);
+      logAudit(user.id, 'totp_login_failed', 'user', user.id, 'Failed to decrypt TOTP secret', ip);
+      return sendJSON(res, { error: '2FA authentication failed. Please contact support.' }, 500);
+    }
+
+    const isValid = authenticator.verify({ token: code, secret });
+
+    if (!isValid) {
+      // Increment failed login attempts
+      const currentAttempts = user.failed_login_attempts || 0;
+      db.prepare(`
+        UPDATE users 
+        SET failed_login_attempts = ?, last_failed_login = CURRENT_TIMESTAMP 
+        WHERE id = ?
+      `).run(currentAttempts + 1, user.id);
+      
+      logAudit(user.id, 'totp_login_failed', 'user', user.id, 'Invalid TOTP code', ip);
+      
+      return sendJSON(res, { 
+        error: 'Invalid 2FA code',
+        failedAttempts: currentAttempts + 1
+      }, 401);
+    }
+
+    // TOTP verified - revoke temp token and issue real JWT
+    db.prepare('UPDATE sessions SET revoked_at = CURRENT_TIMESTAMP WHERE token_id = ?').run(tempToken);
+    
+    // Reset failed login attempts
+    db.prepare('UPDATE users SET failed_login_attempts = 0 WHERE id = ?').run(user.id);
+
+    // Generate JWT token with session tracking
+    const userAgent = req.headers['user-agent'] || null;
+    const token = generateToken(user.id, user.username, {
+      type: 'user',
+      userAgent,
+      ipAddress: ip
+    });
+
+    logAudit(user.id, 'login', 'user', user.id, '2FA verified', ip);
+
+    // Auto-whitelist admin IPs for safety
+    try {
+      const { autoWhitelistAdmin } = require('../utils/ip-utils');
+      autoWhitelistAdmin(ip, user.id);
+    } catch (error) {
+      console.error('Failed to auto-whitelist admin IP:', error.message);
+    }
+
+    sendJSON(res, {
+      success: true,
+      token,
+      user: {
+        id: user.id,
+        username: user.username,
+        role: user.role
+      }
+    });
+  } catch (error) {
+    console.error('TOTP login error:', error);
+    return sendJSON(res, { error: 'Authentication failed. Please try again.' }, 500);
+  }
 }
 
 /**

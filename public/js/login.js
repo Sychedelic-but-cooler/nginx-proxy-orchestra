@@ -81,6 +81,7 @@ async function performLogin() {
       loginButton.textContent = 'Login';
     }
   } catch (error) {
+    console.error('Login error:', error);
     errorMessage.textContent = 'Connection error. Please try again.';
     errorMessage.style.display = 'block';
     loginButton.disabled = false;
@@ -161,6 +162,7 @@ function showTOTPInput() {
         totpCodeInput.focus();
       }
     } catch (error) {
+      console.error('TOTP verification error:', error);
       totpError.textContent = 'Connection error. Please try again.';
       totpError.style.display = 'block';
       verifyButton.disabled = false;
