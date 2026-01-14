@@ -88,7 +88,7 @@ async function handleSetupTOTP(req, res) {
     const user = db.prepare('SELECT totp_enabled FROM users WHERE id = ?').get(userId);
     
     if (user.totp_enabled) {
-      return sendJSON(res, 400, { success: false, message: '2FA is already enabled. Disable it first to set up a new secret.' });
+      return sendJSON(res, { success: false, message: '2FA is already enabled. Disable it first to set up a new secret.' }, 400);
     }
     
     // Generate new TOTP secret
@@ -112,7 +112,7 @@ async function handleSetupTOTP(req, res) {
     
     logAudit('totp_setup_initiated', userId, { username }, req);
     
-    sendJSON(res, 200, {
+    sendJSON(res, {
       success: true,
       secret, // Send plaintext secret for manual entry
       qrCode: qrCodeDataUrl,
@@ -121,7 +121,7 @@ async function handleSetupTOTP(req, res) {
     
   } catch (error) {
     console.error('TOTP setup error:', error);
-    sendJSON(res, 500, { success: false, message: 'Failed to setup 2FA' });
+    sendJSON(res, { success: false, message: 'Failed to setup 2FA' }, 500);
   }
 }
 
@@ -136,18 +136,18 @@ async function handleVerifyTOTP(req, res) {
     const { code } = req.body;
     
     if (!code || !/^\d{6}$/.test(code)) {
-      return sendJSON(res, 400, { success: false, message: 'Invalid code format. Must be 6 digits.' });
+      return sendJSON(res, { success: false, message: 'Invalid code format. Must be 6 digits.' }, 400);
     }
     
     // Get user's TOTP secret
     const user = db.prepare('SELECT totp_secret, totp_enabled FROM users WHERE id = ?').get(userId);
     
     if (!user.totp_secret) {
-      return sendJSON(res, 400, { success: false, message: '2FA not set up. Please set up 2FA first.' });
+      return sendJSON(res, { success: false, message: '2FA not set up. Please set up 2FA first.' }, 400);
     }
     
     if (user.totp_enabled) {
-      return sendJSON(res, 400, { success: false, message: '2FA is already enabled and verified.' });
+      return sendJSON(res, { success: false, message: '2FA is already enabled and verified.' }, 400);
     }
     
     // Decrypt secret and verify code
@@ -156,7 +156,7 @@ async function handleVerifyTOTP(req, res) {
     
     if (!isValid) {
       logAudit('totp_verification_failed', userId, { reason: 'Invalid code' }, req);
-      return sendJSON(res, 400, { success: false, message: 'Invalid verification code. Please try again.' });
+      return sendJSON(res, { success: false, message: 'Invalid verification code. Please try again.' }, 400);
     }
     
     // Generate recovery key
@@ -172,7 +172,7 @@ async function handleVerifyTOTP(req, res) {
     
     logAudit('totp_enabled', userId, { username: req.user.username }, req);
     
-    sendJSON(res, 200, {
+    sendJSON(res, {
       success: true,
       recoveryKey, // Show recovery key ONCE
       message: '2FA enabled successfully! Save your recovery key in a secure location.'
@@ -180,7 +180,7 @@ async function handleVerifyTOTP(req, res) {
     
   } catch (error) {
     console.error('TOTP verification error:', error);
-    sendJSON(res, 500, { success: false, message: 'Failed to verify 2FA code' });
+    sendJSON(res, { success: false, message: 'Failed to verify 2FA code' }, 500);
   }
 }
 
@@ -195,7 +195,7 @@ async function handleDisableTOTP(req, res) {
     const { password } = req.body;
     
     if (!password) {
-      return sendJSON(res, 400, { success: false, message: 'Password is required to disable 2FA' });
+      return sendJSON(res, { success: false, message: 'Password is required to disable 2FA' }, 400);
     }
     
     // Verify password
@@ -204,11 +204,11 @@ async function handleDisableTOTP(req, res) {
     const isPasswordValid = await verifyPassword(password, user.password);
     if (!isPasswordValid) {
       logAudit('totp_disable_failed', userId, { reason: 'Invalid password' }, req);
-      return sendJSON(res, 401, { success: false, message: 'Invalid password' });
+      return sendJSON(res, { success: false, message: 'Invalid password' }, 401);
     }
     
     if (!user.totp_enabled) {
-      return sendJSON(res, 400, { success: false, message: '2FA is not enabled' });
+      return sendJSON(res, { success: false, message: '2FA is not enabled' }, 400);
     }
     
     // Disable 2FA and clear secrets
@@ -220,14 +220,14 @@ async function handleDisableTOTP(req, res) {
     
     logAudit('totp_disabled', userId, { username: req.user.username }, req);
     
-    sendJSON(res, 200, {
+    sendJSON(res, {
       success: true,
       message: '2FA has been disabled'
     });
     
   } catch (error) {
     console.error('TOTP disable error:', error);
-    sendJSON(res, 500, { success: false, message: 'Failed to disable 2FA' });
+    sendJSON(res, { success: false, message: 'Failed to disable 2FA' }, 500);
   }
 }
 
@@ -241,7 +241,7 @@ async function handleGetTOTPStatus(req, res) {
     
     const user = db.prepare('SELECT totp_enabled, totp_verified FROM users WHERE id = ?').get(userId);
     
-    sendJSON(res, 200, {
+    sendJSON(res, {
       success: true,
       enabled: !!user.totp_enabled,
       verified: !!user.totp_verified
@@ -249,7 +249,7 @@ async function handleGetTOTPStatus(req, res) {
     
   } catch (error) {
     console.error('TOTP status error:', error);
-    sendJSON(res, 500, { success: false, message: 'Failed to get 2FA status' });
+    sendJSON(res, { success: false, message: 'Failed to get 2FA status' }, 500);
   }
 }
 
@@ -264,7 +264,7 @@ async function handleRegenerateRecoveryKey(req, res) {
     const { password } = req.body;
     
     if (!password) {
-      return sendJSON(res, 400, { success: false, message: 'Password is required' });
+      return sendJSON(res, { success: false, message: 'Password is required' }, 400);
     }
     
     // Verify password
@@ -273,11 +273,11 @@ async function handleRegenerateRecoveryKey(req, res) {
     const isPasswordValid = await verifyPassword(password, user.password);
     if (!isPasswordValid) {
       logAudit('recovery_key_regeneration_failed', userId, { reason: 'Invalid password' }, req);
-      return sendJSON(res, 401, { success: false, message: 'Invalid password' });
+      return sendJSON(res, { success: false, message: 'Invalid password' }, 401);
     }
     
     if (!user.totp_enabled) {
-      return sendJSON(res, 400, { success: false, message: '2FA is not enabled' });
+      return sendJSON(res, { success: false, message: '2FA is not enabled' }, 400);
     }
     
     // Generate new recovery key
@@ -288,7 +288,7 @@ async function handleRegenerateRecoveryKey(req, res) {
     
     logAudit('recovery_key_regenerated', userId, { username: req.user.username }, req);
     
-    sendJSON(res, 200, {
+    sendJSON(res, {
       success: true,
       recoveryKey, // Show new recovery key
       message: 'Recovery key regenerated. Save it in a secure location.'
@@ -296,7 +296,7 @@ async function handleRegenerateRecoveryKey(req, res) {
     
   } catch (error) {
     console.error('Recovery key regeneration error:', error);
-    sendJSON(res, 500, { success: false, message: 'Failed to regenerate recovery key' });
+    sendJSON(res, { success: false, message: 'Failed to regenerate recovery key' }, 500);
   }
 }
 
@@ -331,7 +331,7 @@ async function handleTOTPRoutes(req, res, parsedUrl) {
     return handleRegenerateRecoveryKey(req, res);
   }
 
-  sendJSON(res, 404, { error: 'Not Found' });
+  sendJSON(res, { error: 'Not Found' }, 404);
 }
 
 module.exports = handleTOTPRoutes;
