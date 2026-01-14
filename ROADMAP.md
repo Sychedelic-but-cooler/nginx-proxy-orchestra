@@ -7,23 +7,19 @@ This is my list of late-night ideas; possibly not even workable ideas.
 ## Planned
 
 ### Security Features
-- **HIGH**: Multi-Factor Authentication (2FA/TOTP) - Enhance admin security beyond passwords
 - **HIGH**: Custom WAF Rule Editor - Write custom ModSecurity rules in the UI
 - **LOW**: WAF Automated Rule Tuning - ML-assisted exclusion rule suggestions
+- **HIGH**: GeoIP Lookup & Blocking - Block traffic by country/region
 
 ### Backend Features
 - **HIGH**: Prometheus Exporter - Export metrics for external dashboards, graph make brain happy!
 - **HIGH**: Automatic Health Check - Monitor management server health to avoid UI lockups
 - **LOW**: Response Time and Bandwidth Tracking - Performance metrics per proxy
+- **HIGH**: OCSP Stapling Configuration - Improve TLS performance
+- **LOW**: Upstream Health Checks - Monitor upstream server availability for configuration errors
 
 ### Frontend Features
 - **LOW**: gRPC Support - gRPC proxy configuration UI
-
----
-
-## In Progress
-- **HIGH**: GeoIP Lookup & Blocking - Block traffic by country/region
-- **HIGH**: OCSP Stapling Configuration - Improve TLS performance
 
 ---
 
@@ -32,6 +28,7 @@ This is my list of late-night ideas; possibly not even workable ideas.
 - Bulk Operations - Enable/disable/update multiple proxies at once — 2026-01-13
 - Certificate Renewal Dry-Run - Allow testing cert ordering without actual renewal — 2026-01-13
 - Custom Error Pages - Upload custom 404, 502, 503 pages for the default server and proxies — 2026-01-13
+- Multi-Factor Authentication (2FA/TOTP) - Enhance admin security beyond passwords
 
 ---
 
@@ -56,7 +53,4 @@ This is my list of late-night ideas; possibly not even workable ideas.
 - **HIGH**: Docker Integration - Provide a supported container image for easy deployment
 - **HIGH**: Webhook Support - Custom integrations for events (cert expiry, bans, errors)
 - **MEDIUM**: Access Log Retention Policies - Automated log rotation/archival
-- **LOW**: Backend Health Checks - Monitor upstream server availability for configuration errors
-- **LOW**: Response Time and Bandwidth Tracking - Performance metrics per proxy
-- **LOW**: OCSP Stapling Configuration - Improve TLS performance
 
