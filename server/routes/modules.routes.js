@@ -58,23 +58,37 @@ function handleGetModules(req, res) {
 
 /**
  * Create module
- * Creates a new configuration module
+ * Creates a new configuration module and generates its .conf file
  *
  * @param {IncomingMessage} req - HTTP request object
  * @param {ServerResponse} res - HTTP response object
  */
 async function handleCreateModule(req, res) {
+  const { generateModuleFile } = require('../utils/module-file-manager');
   const body = await parseBody(req);
-  const { name, description, content, tag } = body;
+  const { name, description, content, tag, level } = body;
 
   if (!name || !content) {
     return sendJSON(res, { error: 'Name and content required' }, 400);
   }
 
   try {
-    const result = db.prepare('INSERT INTO modules (name, description, content, tag) VALUES (?, ?, ?, ?)').run(name, description || null, content, tag || 'General');
-    logAudit(req.user.userId, 'create', 'module', result.lastInsertRowid, JSON.stringify({ name }), getClientIP(req));
-    sendJSON(res, { success: true, id: result.lastInsertRowid }, 201);
+    const result = db.prepare('INSERT INTO modules (name, description, content, tag, level) VALUES (?, ?, ?, ?, ?)')
+      .run(name, description || null, content, tag || 'General', level || 'location');
+    
+    const moduleId = result.lastInsertRowid;
+    
+    // Generate the module file
+    const module = db.prepare('SELECT * FROM modules WHERE id = ?').get(moduleId);
+    try {
+      generateModuleFile(module);
+    } catch (fileError) {
+      console.error('Error generating module file:', fileError);
+      // Continue anyway - file can be regenerated later
+    }
+    
+    logAudit(req.user.userId, 'create', 'module', moduleId, JSON.stringify({ name }), getClientIP(req));
+    sendJSON(res, { success: true, id: moduleId }, 201);
   } catch (error) {
     sendJSON(res, { error: error.message }, 500);
   }
@@ -82,16 +96,17 @@ async function handleCreateModule(req, res) {
 
 /**
  * Update module
- * Updates an existing configuration module
+ * Updates an existing configuration module and regenerates its .conf file
  *
  * @param {IncomingMessage} req - HTTP request object
  * @param {ServerResponse} res - HTTP response object
  * @param {URL} parsedUrl - Parsed URL object with ID parameter
  */
 async function handleUpdateModule(req, res, parsedUrl) {
+  const { generateModuleFile, deleteModuleFile } = require('../utils/module-file-manager');
   const id = parseInt(parsedUrl.pathname.split('/')[3]);
   const body = await parseBody(req);
-  const { name, description, content, tag } = body;
+  const { name, description, content, tag, level } = body;
 
   const module = db.prepare('SELECT * FROM modules WHERE id = ?').get(id);
   if (!module) {
@@ -99,10 +114,39 @@ async function handleUpdateModule(req, res, parsedUrl) {
   }
 
   try {
-    db.prepare('UPDATE modules SET name = ?, description = ?, content = ?, tag = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?')
-      .run(name || module.name, description !== undefined ? description : module.description, content || module.content, tag !== undefined ? tag : module.tag, id);
+    // If name changed, delete old file
+    const oldName = module.name;
+    const newName = name || module.name;
+    if (oldName !== newName) {
+      try {
+        deleteModuleFile(oldName);
+      } catch (fileError) {
+        console.error('Error deleting old module file:', fileError);
+        // Continue anyway
+      }
+    }
 
-    logAudit(req.user.userId, 'update', 'module', id, JSON.stringify({ name: name || module.name, changes: body }), getClientIP(req));
+    // Update database
+    db.prepare('UPDATE modules SET name = ?, description = ?, content = ?, tag = ?, level = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?')
+      .run(
+        newName,
+        description !== undefined ? description : module.description,
+        content || module.content,
+        tag !== undefined ? tag : module.tag,
+        level !== undefined ? level : module.level,
+        id
+      );
+
+    // Get updated module and regenerate file
+    const updatedModule = db.prepare('SELECT * FROM modules WHERE id = ?').get(id);
+    try {
+      generateModuleFile(updatedModule);
+    } catch (fileError) {
+      console.error('Error generating module file:', fileError);
+      // Continue anyway - file can be regenerated later
+    }
+
+    logAudit(req.user.userId, 'update', 'module', id, JSON.stringify({ name: newName, changes: body }), getClientIP(req));
     sendJSON(res, { success: true });
   } catch (error) {
     sendJSON(res, { error: error.message }, 500);
@@ -111,22 +155,33 @@ async function handleUpdateModule(req, res, parsedUrl) {
 
 /**
  * Delete module
- * Deletes a configuration module
+ * Deletes a configuration module and its .conf file
  *
  * @param {IncomingMessage} req - HTTP request object
  * @param {ServerResponse} res - HTTP response object
  * @param {URL} parsedUrl - Parsed URL object with ID parameter
  */
 function handleDeleteModule(req, res, parsedUrl) {
+  const { deleteModuleFile } = require('../utils/module-file-manager');
   const id = parseInt(parsedUrl.pathname.split('/')[3]);
 
-  const module = db.prepare('SELECT name FROM modules WHERE id = ?').get(id);
+  const module = db.prepare('SELECT * FROM modules WHERE id = ?').get(id);
   if (!module) {
     return sendJSON(res, { error: 'Module not found' }, 404);
   }
 
   try {
+    // Delete from database first
     db.prepare('DELETE FROM modules WHERE id = ?').run(id);
+    
+    // Delete the module file
+    try {
+      deleteModuleFile(module.name);
+    } catch (fileError) {
+      console.error('Error deleting module file:', fileError);
+      // Continue anyway - database deletion succeeded
+    }
+    
     logAudit(req.user.userId, 'delete', 'module', id, JSON.stringify({ name: module.name }), getClientIP(req));
     sendJSON(res, { success: true });
   } catch (error) {

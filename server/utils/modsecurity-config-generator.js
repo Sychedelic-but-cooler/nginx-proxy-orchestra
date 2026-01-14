@@ -276,27 +276,28 @@ function generateProxyWAFConfig(db, proxyId) {
   const ruleEngineMode = config_data.rule_engine_mode || 'DetectionOnly';
 
   // Generate nginx directives
-  let config = `\n  # ═════════════════════════════════════════════════════\n`;
-  config += `  # WAF Protection: ${profile.name}\n`;
-  config += `  # Paranoia Level: ${profile.paranoia_level}\n`;
-  config += `  # Rule Engine Mode: ${ruleEngineMode}\n`;
-  config += `  # ═════════════════════════════════════════════════════\n\n`;
+  let config = `    # ───────────────────────────────────────────────────────────────\n`;
+  config += `    # Web Application Firewall (ModSecurity)\n`;
+  config += `    # Profile: ${profile.name}\n`;
+  config += `    # Paranoia Level: ${profile.paranoia_level}\n`;
+  config += `    # Rule Engine Mode: ${ruleEngineMode}\n`;
+  config += `    # ───────────────────────────────────────────────────────────────\n`;
 
   // Enable ModSecurity
-  config += `  modsecurity on;\n`;
+  config += `    modsecurity on;\n`;
 
   // IMPORTANT: Load exclusions BEFORE main CRS rules
   // This allows ctl:ruleRemoveById to work properly by setting up exclusions
   // before the rules they exclude are even defined
   const exclusionPath = path.join(PROFILES_DIR, `exclusions_profile_${profile.id}.conf`);
-  config += `  modsecurity_rules_file ${exclusionPath};\n`;
+  config += `    modsecurity_rules_file ${exclusionPath};\n`;
 
   // Now load main CRS rules
-  config += `  modsecurity_rules_file ${MODSEC_DIR}/main.conf;\n`;
+  config += `    modsecurity_rules_file ${MODSEC_DIR}/main.conf;\n`;
 
   // Include profile-specific rules (contains SecRuleEngine directive)
   const profilePath = path.join(PROFILES_DIR, `profile_${profile.id}.conf`);
-  config += `  modsecurity_rules_file ${profilePath};\n`;
+  config += `    modsecurity_rules_file ${profilePath};\n`;
 
   config += `\n`;
 

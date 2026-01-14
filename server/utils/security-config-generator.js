@@ -134,30 +134,54 @@ function generateGlobalSecurityConfig(db) {
  * Generate security directives for a specific server block
  */
 function generateServerSecurityConfig(db, proxyId) {
-  let config = '\n  # Security Features\n';
+  let config = '';
+  let hasSecurityFeatures = false;
 
   // IP Blacklist check
   const ipEnabled = getSetting('security_ip_blacklist_enabled') === '1';
   if (ipEnabled) {
-    config += '  if ($blocked_ip) {\n';
-    config += '    return 403;\n';
-    config += '  }\n\n';
+    if (!hasSecurityFeatures) {
+      config += `    # ───────────────────────────────────────────────────────────────\n`;
+      config += `    # Security Features\n`;
+      config += `    # ───────────────────────────────────────────────────────────────\n`;
+      hasSecurityFeatures = true;
+    }
+    config += `    # IP Blacklist: Block requests from blacklisted IP addresses\n`;
+    config += `    if ($blocked_ip) {\n`;
+    config += `        return 403;\n`;
+    config += `    }\n`;
   }
 
   // Geo-blocking
   const geoEnabled = getSetting('security_geo_blocking_enabled') === '1';
   if (geoEnabled) {
-    config += '  if ($geo_blocked) {\n';
-    config += '    return 403;\n';
-    config += '  }\n\n';
+    if (!hasSecurityFeatures) {
+      config += `    # ───────────────────────────────────────────────────────────────\n`;
+      config += `    # Security Features\n`;
+      config += `    # ───────────────────────────────────────────────────────────────\n`;
+      hasSecurityFeatures = true;
+    }
+    if (ipEnabled) config += `\n`;
+    config += `    # Geo-blocking: Block requests from specific countries/regions\n`;
+    config += `    if ($geo_blocked) {\n`;
+    config += `        return 403;\n`;
+    config += `    }\n`;
   }
 
   // User-Agent filtering
   const uaEnabled = getSetting('security_user_agent_filtering_enabled') === '1';
   if (uaEnabled) {
-    config += '  if ($blocked_agent) {\n';
-    config += '    return 403;\n';
-    config += '  }\n\n';
+    if (!hasSecurityFeatures) {
+      config += `    # ───────────────────────────────────────────────────────────────\n`;
+      config += `    # Security Features\n`;
+      config += `    # ───────────────────────────────────────────────────────────────\n`;
+      hasSecurityFeatures = true;
+    }
+    if (ipEnabled || geoEnabled) config += `\n`;
+    config += `    # User-Agent filtering: Block requests from suspicious user agents\n`;
+    config += `    if ($blocked_agent) {\n`;
+    config += `        return 403;\n`;
+    config += `    }\n`;
   }
 
   // Rate limiting
@@ -168,10 +192,21 @@ function generateServerSecurityConfig(db, proxyId) {
   `).get(proxyId);
 
   if (rateLimit) {
+    if (!hasSecurityFeatures) {
+      config += `    # ───────────────────────────────────────────────────────────────\n`;
+      config += `    # Security Features\n`;
+      config += `    # ───────────────────────────────────────────────────────────────\n`;
+      hasSecurityFeatures = true;
+    }
+    if (ipEnabled || geoEnabled || uaEnabled) config += `\n`;
     const nodelayStr = rateLimit.nodelay ? ' nodelay' : '';
-    config += `  # Rate Limiting: ${rateLimit.rate}\n`;
-    config += `  limit_req zone=${rateLimit.zone_name} burst=${rateLimit.burst}${nodelayStr};\n`;
-    config += '  limit_req_status 429;\n\n';
+    config += `    # Rate limiting: ${rateLimit.rate} (burst: ${rateLimit.burst})\n`;
+    config += `    limit_req zone=${rateLimit.zone_name} burst=${rateLimit.burst}${nodelayStr};\n`;
+    config += `    limit_req_status 429;\n`;
+  }
+
+  if (hasSecurityFeatures) {
+    config += `\n`;
   }
 
   return config;

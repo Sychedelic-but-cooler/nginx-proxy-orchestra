@@ -391,57 +391,17 @@ async function handleUpdateProxy(req, res, parsedUrl) {
     // Execute transaction
     updateProxyTransaction();
 
-    // Regenerate config
+    // Regenerate config using centralized utility
+    // This ensures SSL certificates, WAF profiles, and security features are always up-to-date
+    const { regenerateProxyConfig } = require('../utils/proxy-config-regenerator');
+    const regenResult = await regenerateProxyConfig(id);
+
+    if (!regenResult.success) {
+      throw new Error(regenResult.error || 'Configuration regeneration failed');
+    }
+
+    const reloadId = regenResult.reloadId;
     const updatedProxy = db.prepare('SELECT * FROM proxy_hosts WHERE id = ?').get(id);
-    const modules = db.prepare(`
-      SELECT m.* FROM modules m
-      JOIN proxy_modules pm ON m.id = pm.module_id
-      WHERE pm.proxy_id = ?
-    `).all(id);
-
-    let config;
-    if (updatedProxy.type === 'stream') {
-      config = generateStreamBlock(updatedProxy);
-    } else if (updatedProxy.type === '404') {
-      config = generate404Block(updatedProxy);
-    } else {
-      config = generateServerBlock(updatedProxy, modules, db);
-
-      if (updatedProxy.ssl_enabled && updatedProxy.ssl_cert_id) {
-        const cert = db.prepare('SELECT cert_path, key_path FROM ssl_certificates WHERE id = ?').get(updatedProxy.ssl_cert_id);
-        if (cert) {
-          config = config.replace('{{SSL_CERT_PATH}}', cert.cert_path);
-          config = config.replace('{{SSL_KEY_PATH}}', cert.key_path);
-        }
-      }
-    }
-
-    // Use stored config filename (or generate if missing for legacy records)
-    const filename = updatedProxy.config_filename || `${sanitizeFilename(updatedProxy.name)}.conf`;
-    writeNginxConfig(filename, config);
-
-    // Ensure the config file has correct extension based on enabled state
-    if (updatedProxy.enabled) {
-      enableNginxConfig(filename);
-    } else {
-      disableNginxConfig(filename);
-    }
-
-    // Test nginx configuration
-    const testResult = testNginxConfig();
-    if (!testResult.success) {
-      throw new Error(`Nginx config test failed: ${testResult.error}`);
-    }
-
-    // Queue nginx reload
-    const { reloadId } = await reloadManager.queueReload();
-
-    // Update status to active
-    db.prepare(`
-      UPDATE proxy_hosts
-      SET config_status = 'active', config_error = NULL
-      WHERE id = ?
-    `).run(id);
 
     logAudit(req.user.userId, 'update', 'proxy', id, JSON.stringify({ name: name || proxy.name }), getClientIP(req));
 
@@ -452,12 +412,15 @@ async function handleUpdateProxy(req, res, parsedUrl) {
   } catch (error) {
     console.error('Update proxy error:', error);
 
-    // Mark as error
-    db.prepare(`
-      UPDATE proxy_hosts
-      SET config_status = 'error', config_error = ?
-      WHERE id = ?
-    `).run(error.message || 'Update failed', id);
+    // Mark as error (only if not already handled by regenerateProxyConfig)
+    const currentProxy = db.prepare('SELECT config_status FROM proxy_hosts WHERE id = ?').get(id);
+    if (currentProxy && currentProxy.config_status !== 'error') {
+      db.prepare(`
+        UPDATE proxy_hosts
+        SET config_status = 'error', config_error = ?
+        WHERE id = ?
+      `).run(error.message || 'Update failed', id);
+    }
 
     sendJSON(res, { error: error.message }, 500);
   }

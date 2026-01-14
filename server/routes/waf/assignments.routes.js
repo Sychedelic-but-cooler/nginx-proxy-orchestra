@@ -5,16 +5,6 @@
 
 const { db, logAudit } = require('../../db');
 const { parseBody, sendJSON, getClientIP } = require('../shared/utils');
-const {
-  generateServerBlock,
-  generateStreamBlock,
-  generate404Block,
-  writeNginxConfig,
-  enableNginxConfig,
-  disableNginxConfig,
-  sanitizeFilename
-} = require('../../utils/nginx-parser');
-const { reloadManager } = require('../../utils/nginx-reload-manager');
 
 /**
  * Handle WAF assignment routes
@@ -104,57 +94,14 @@ async function handleAssignWAFProfile(req, res, parsedUrl) {
       WHERE id = ?
     `).run(profile_id, proxyId);
 
-    // Regenerate proxy nginx config with WAF
-    try {
-      const proxy = db.prepare('SELECT * FROM proxy_hosts WHERE id = ?').get(proxyId);
-      if (proxy) {
-        // Skip regeneration for proxies using custom config editor (domain_names = 'N/A')
-        // These proxies store full config in advanced_config and should be manually edited
-        if (proxy.domain_names === 'N/A' && proxy.advanced_config && proxy.advanced_config.trim()) {
-          console.log(`Skipping WAF config regeneration for custom-config proxy: ${proxy.name}`);
-          console.log(`WAF profile assigned in database. User should manually add WAF directives to config.`);
-        } else {
-          // Fetch modules for this proxy
-          const modules = db.prepare(`
-            SELECT m.* FROM modules m
-            INNER JOIN proxy_modules pm ON m.id = pm.module_id
-            WHERE pm.proxy_id = ?
-          `).all(proxyId);
+    // Regenerate proxy nginx config with WAF using centralized utility
+    const { regenerateProxyConfig } = require('../../utils/proxy-config-regenerator');
+    const regenResult = await regenerateProxyConfig(proxyId);
 
-          const configFilename = proxy.config_filename || `${proxy.id}-${sanitizeFilename(proxy.name)}.conf`;
-
-          let config;
-          if (proxy.type === 'stream') {
-            config = generateStreamBlock(proxy);
-          } else if (proxy.type === '404') {
-            config = generate404Block(proxy);
-          } else {
-            config = generateServerBlock(proxy, modules, db);
-          }
-
-          // Replace SSL cert placeholders if needed
-          if (proxy.ssl_enabled && proxy.ssl_cert_id) {
-            const cert = db.prepare('SELECT cert_path, key_path FROM ssl_certificates WHERE id = ?').get(proxy.ssl_cert_id);
-            if (cert) {
-              config = config.replace(/\{\{SSL_CERT_PATH\}\}/g, cert.cert_path);
-              config = config.replace(/\{\{SSL_KEY_PATH\}\}/g, cert.key_path);
-            }
-          }
-
-          writeNginxConfig(configFilename, config);
-
-          // Ensure correct file extension based on enabled state
-          if (proxy.enabled) {
-            enableNginxConfig(configFilename);
-          } else {
-            disableNginxConfig(configFilename);
-          }
-
-          await reloadManager.queueReload();
-        }
-      }
-    } catch (err) {
-      console.error('Failed to regenerate proxy config:', err);
+    if (!regenResult.success && !regenResult.skipped) {
+      console.error('Failed to regenerate proxy config:', regenResult.error);
+      // Don't fail the request - WAF profile was assigned in database
+      // User can manually regenerate or update the proxy
     }
 
     logAudit(
@@ -192,57 +139,14 @@ async function handleRemoveWAFProfile(req, res, parsedUrl) {
       WHERE id = ?
     `).run(proxyId);
 
-    // Regenerate proxy config
-    try {
-      const proxy = db.prepare('SELECT * FROM proxy_hosts WHERE id = ?').get(proxyId);
-      if (proxy) {
-        // Skip regeneration for proxies using custom config editor (domain_names = 'N/A')
-        // These proxies store full config in advanced_config and should be manually edited
-        if (proxy.domain_names === 'N/A' && proxy.advanced_config && proxy.advanced_config.trim()) {
-          console.log(`Skipping WAF config regeneration for custom-config proxy: ${proxy.name}`);
-          console.log(`WAF profile removed from database. User should manually remove WAF directives from config.`);
-        } else {
-          // Fetch modules for this proxy
-          const modules = db.prepare(`
-            SELECT m.* FROM modules m
-            INNER JOIN proxy_modules pm ON m.id = pm.module_id
-            WHERE pm.proxy_id = ?
-          `).all(proxyId);
+    // Regenerate proxy config without WAF using centralized utility
+    const { regenerateProxyConfig } = require('../../utils/proxy-config-regenerator');
+    const regenResult = await regenerateProxyConfig(proxyId);
 
-          const configFilename = proxy.config_filename || `${proxy.id}-${sanitizeFilename(proxy.name)}.conf`;
-
-          let config;
-          if (proxy.type === 'stream') {
-            config = generateStreamBlock(proxy);
-          } else if (proxy.type === '404') {
-            config = generate404Block(proxy);
-          } else {
-            config = generateServerBlock(proxy, modules, db);
-          }
-
-          // Replace SSL cert placeholders if needed
-          if (proxy.ssl_enabled && proxy.ssl_cert_id) {
-            const cert = db.prepare('SELECT cert_path, key_path FROM ssl_certificates WHERE id = ?').get(proxy.ssl_cert_id);
-            if (cert) {
-              config = config.replace(/\{\{SSL_CERT_PATH\}\}/g, cert.cert_path);
-              config = config.replace(/\{\{SSL_KEY_PATH\}\}/g, cert.key_path);
-            }
-          }
-
-          writeNginxConfig(configFilename, config);
-
-          // Ensure correct file extension based on enabled state
-          if (proxy.enabled) {
-            enableNginxConfig(configFilename);
-          } else {
-            disableNginxConfig(configFilename);
-          }
-
-          await reloadManager.queueReload();
-        }
-      }
-    } catch (err) {
-      console.error('Failed to regenerate proxy config:', err);
+    if (!regenResult.success && !regenResult.skipped) {
+      console.error('Failed to regenerate proxy config:', regenResult.error);
+      // Don't fail the request - WAF profile was removed from database
+      // User can manually regenerate or update the proxy
     }
 
     logAudit(
