@@ -3632,38 +3632,50 @@ body {
 }
 
 /* Server Info Card */
-.info-item {
-  display: flex;
-  justify-content: space-between;
-  padding: 8px 0;
-  border-bottom: 1px solid var(--border-color);
+.server-info-body {
+  padding: 20px !important;
+  display: block !important;
 }
 
-.info-item:last-child {
+.info-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--border-color);
+  gap: 16px;
+}
+
+.info-row:last-child {
   border-bottom: none;
 }
 
 .info-label {
   font-weight: 600;
   color: var(--text-secondary);
+  flex-shrink: 0;
+  min-width: 140px;
 }
 
 .info-value {
   color: var(--text-primary);
   font-family: monospace;
+  text-align: right;
+  word-break: break-word;
 }
 
 /* Gauge Charts */
-.dashboard-card .card-body {
-  display: flex;
-  justify-content: space-around;
-  align-items: center;
-  flex-wrap: wrap;
+.gauges-body {
+  display: flex !important;
+  justify-content: space-around !important;
+  align-items: center !important;
+  flex-wrap: wrap !important;
+  padding: 15px !important;
 }
 
 .gauge-container {
   text-align: center;
-  margin: 10px;
+  margin: 10px 5px;
 }
 
 .gauge-label {
@@ -3782,7 +3794,7 @@ body.dark-mode .dashboard-card {
   border-color: var(--border-color);
 }
 
-body.dark-mode .info-item {
+body.dark-mode .info-row {
   border-bottom-color: var(--border-color);
 }
 

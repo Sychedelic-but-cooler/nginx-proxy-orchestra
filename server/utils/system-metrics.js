@@ -132,6 +132,41 @@ function getMemoryUsage() {
 }
 
 /**
+ * Get swap memory usage
+ */
+function getSwapUsage() {
+  try {
+    // Read swap info from /proc/meminfo
+    const meminfo = fs.readFileSync('/proc/meminfo', 'utf8');
+    const swapTotalMatch = meminfo.match(/SwapTotal:\s+(\d+)\s+kB/);
+    const swapFreeMatch = meminfo.match(/SwapFree:\s+(\d+)\s+kB/);
+    
+    if (swapTotalMatch && swapFreeMatch) {
+      const total = parseInt(swapTotalMatch[1], 10) * 1024; // Convert to bytes
+      const free = parseInt(swapFreeMatch[1], 10) * 1024;
+      const used = total - free;
+      const usagePercent = total > 0 ? (used / total) * 100 : 0;
+      
+      return {
+        total,
+        used,
+        free,
+        usagePercent: Math.round(usagePercent * 100) / 100
+      };
+    }
+  } catch (error) {
+    // Swap not available or error reading
+  }
+  
+  return {
+    total: 0,
+    used: 0,
+    free: 0,
+    usagePercent: 0
+  };
+}
+
+/**
  * Get disk usage for root filesystem
  */
 function getDiskUsage() {
@@ -280,6 +315,7 @@ function getRealTimeMetrics() {
     loadAverage: getLoadAverage(),
     cpu: getCPUUtilization(),
     memory: getMemoryUsage(),
+    swap: getSwapUsage(),
     disk: getDiskUsage(),
     network: getNetworkStats(),
     diskIO: getDiskIOStats(),
@@ -301,6 +337,7 @@ module.exports = {
   getLoadAverage,
   getCPUUtilization,
   getMemoryUsage,
+  getSwapUsage,
   getDiskUsage,
   getNetworkStats,
   getDiskIOStats,

@@ -34,29 +34,29 @@ export async function renderDashboard(container) {
             <div class="card-header">
               <h3>Server Info</h3>
             </div>
-            <div class="card-body">
-              <div class="info-item">
-                <span class="info-label">Hostname:</span>
+            <div class="card-body server-info-body">
+              <div class="info-row">
+                <span class="info-label">Hostname</span>
                 <span class="info-value">${staticInfo.hostname}</span>
               </div>
-              <div class="info-item">
-                <span class="info-label">OS:</span>
+              <div class="info-row">
+                <span class="info-label">Operating System</span>
                 <span class="info-value">${staticInfo.os}</span>
               </div>
-              <div class="info-item">
-                <span class="info-label">CPU:</span>
+              <div class="info-row">
+                <span class="info-label">CPU</span>
                 <span class="info-value">${staticInfo.cpu.model}</span>
               </div>
-              <div class="info-item">
-                <span class="info-label">Cores:</span>
-                <span class="info-value">${staticInfo.cpu.cores} @ ${staticInfo.cpu.speed} MHz</span>
+              <div class="info-row">
+                <span class="info-label">CPU Cores</span>
+                <span class="info-value">${staticInfo.cpu.cores} cores @ ${staticInfo.cpu.speed} MHz</span>
               </div>
-              <div class="info-item" id="uptime-display">
-                <span class="info-label">Uptime:</span>
+              <div class="info-row" id="uptime-display">
+                <span class="info-label">Uptime</span>
                 <span class="info-value">Loading...</span>
               </div>
-              <div class="info-item" id="load-display">
-                <span class="info-label">Load Avg:</span>
+              <div class="info-row" id="load-display">
+                <span class="info-label">Load Average</span>
                 <span class="info-value">Loading...</span>
               </div>
             </div>
@@ -67,14 +67,19 @@ export async function renderDashboard(container) {
             <div class="card-header">
               <h3>Memory & Storage</h3>
             </div>
-            <div class="card-body">
+            <div class="card-body gauges-body">
               <div class="gauge-container">
-                <canvas id="memoryGauge" width="200" height="200"></canvas>
+                <canvas id="memoryGauge" width="180" height="180"></canvas>
                 <div class="gauge-label">Memory</div>
                 <div class="gauge-value" id="memory-value">0%</div>
               </div>
               <div class="gauge-container">
-                <canvas id="storageGauge" width="200" height="200"></canvas>
+                <canvas id="swapGauge" width="180" height="180"></canvas>
+                <div class="gauge-label">Swap</div>
+                <div class="gauge-value" id="swap-value">0%</div>
+              </div>
+              <div class="gauge-container">
+                <canvas id="storageGauge" width="180" height="180"></canvas>
                 <div class="gauge-label">Storage</div>
                 <div class="gauge-value" id="storage-value">0%</div>
               </div>
@@ -156,6 +161,9 @@ export async function renderDashboard(container) {
     // Initialize charts
     initializeCharts();
 
+    // Load historical data first
+    await loadHistoricalData();
+
     // Start real-time updates
     await updateMetrics(); // First update
     startAutoRefresh();
@@ -165,6 +173,53 @@ export async function renderDashboard(container) {
     container.innerHTML = '<div class="empty-state"><h2>Failed to load dashboard</h2></div>';
   } finally {
     hideLoading();
+  }
+}
+
+/**
+ * Load historical metrics data to populate charts initially
+ */
+async function loadHistoricalData() {
+  try {
+    const response = await api.getHistoricalMetrics(60); // Last 60 minutes
+    const historicalMetrics = response.metrics || [];
+    
+    if (historicalMetrics.length === 0) {
+      console.log('No historical data available yet');
+      return;
+    }
+    
+    // Populate chart data from historical records
+    historicalMetrics.forEach(metric => {
+      const time = new Date(metric.timestamp).toLocaleTimeString();
+      
+      timeLabels.push(time);
+      cpuData.push(metric.cpu_usage);
+      networkRxData.push((metric.network_rx_rate / 1024).toFixed(2)); // Convert to KB/s
+      networkTxData.push((metric.network_tx_rate / 1024).toFixed(2));
+      diskReadsData.push(metric.disk_reads_per_sec.toFixed(2));
+      diskWritesData.push(metric.disk_writes_per_sec.toFixed(2));
+    });
+    
+    // Keep only last 60 data points
+    while (timeLabels.length > MAX_DATA_POINTS) {
+      timeLabels.shift();
+      cpuData.shift();
+      networkRxData.shift();
+      networkTxData.shift();
+      diskReadsData.shift();
+      diskWritesData.shift();
+    }
+    
+    // Update charts with historical data
+    if (cpuChart) cpuChart.update('none');
+    if (networkChart) networkChart.update('none');
+    if (diskIOChart) diskIOChart.update('none');
+    
+    console.log(`Loaded ${historicalMetrics.length} historical data points`);
+  } catch (error) {
+    console.error('Failed to load historical data:', error);
+    // Continue without historical data
   }
 }
 
@@ -317,6 +372,11 @@ async function updateMetrics() {
     // Update memory gauge
     updateGauge('memoryGauge', metrics.memory.usagePercent, 'memory-value', 
                 `${formatBytes(metrics.memory.used)} / ${formatBytes(metrics.memory.total)}`);
+
+    // Update swap gauge
+    const swapLabel = metrics.swap.total === 0 ? 'No Swap' : 
+                      `${formatBytes(metrics.swap.used)} / ${formatBytes(metrics.swap.total)}`;
+    updateGauge('swapGauge', metrics.swap.usagePercent, 'swap-value', swapLabel);
 
     // Update storage gauge
     updateGauge('storageGauge', metrics.disk.usagePercent, 'storage-value',

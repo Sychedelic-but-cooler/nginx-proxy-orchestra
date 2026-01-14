@@ -201,6 +201,10 @@ class API {
     return this.request('/api/dashboard/system/metrics');
   }
 
+  async getHistoricalMetrics(minutes = 60) {
+    return this.request(`/api/dashboard/system/history?minutes=${minutes}`);
+  }
+
   async getStatistics(range = '24h') {
     return this.request(`/api/statistics?range=${range}`);
   }

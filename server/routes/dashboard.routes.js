@@ -10,6 +10,10 @@ const {
   getStaticSystemInfo, 
   getRealTimeMetrics 
 } = require('../utils/system-metrics');
+const {
+  getHistoricalMetrics,
+  getAggregatedMetrics
+} = require('../utils/metrics-logger');
 
 /**
  * Handle dashboard-related routes
@@ -32,6 +36,10 @@ function handleDashboardRoutes(req, res, parsedUrl) {
 
   if (pathname === '/api/dashboard/system/metrics' && method === 'GET') {
     return handleRealTimeMetrics(req, res);
+  }
+
+  if (pathname === '/api/dashboard/system/history' && method === 'GET') {
+    return handleHistoricalMetrics(req, res, parsedUrl);
   }
 
   sendJSON(res, { error: 'Not Found' }, 404);
@@ -131,6 +139,21 @@ function handleStaticSystemInfo(req, res) {
 function handleRealTimeMetrics(req, res) {
   const metrics = getRealTimeMetrics();
   sendJSON(res, metrics);
+}
+
+/**
+ * Get historical system metrics
+ * Query parameters:
+ * - minutes: number of minutes of history (default: 60)
+ *
+ * @param {IncomingMessage} req - HTTP request object
+ * @param {ServerResponse} res - HTTP response object
+ * @param {URL} parsedUrl - Parsed URL object
+ */
+function handleHistoricalMetrics(req, res, parsedUrl) {
+  const minutes = parseInt(parsedUrl.searchParams.get('minutes') || '60', 10);
+  const metrics = getHistoricalMetrics(minutes);
+  sendJSON(res, { metrics, count: metrics.length });
 }
 
 module.exports = handleDashboardRoutes;
