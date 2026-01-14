@@ -3,7 +3,7 @@ const { authenticator } = require('otplib');
 const QRCode = require('qrcode');
 const { db, logAudit } = require('../db');
 const { verifyPassword } = require('../auth');
-const { sendJSON, getClientIP } = require('./shared/utils');
+const { sendJSON, getClientIP, parseBody } = require('./shared/utils');
 
 // Configure TOTP with 30-second time step and 6-digit codes
 authenticator.options = {
@@ -133,7 +133,8 @@ async function handleSetupTOTP(req, res) {
 async function handleVerifyTOTP(req, res) {
   try {
     const userId = req.user.userId;
-    const { code } = req.body;
+    const body = await parseBody(req);
+    const { code } = body;
     
     if (!code || !/^\d{6}$/.test(code)) {
       return sendJSON(res, { success: false, message: 'Invalid code format. Must be 6 digits.' }, 400);
@@ -192,7 +193,8 @@ async function handleVerifyTOTP(req, res) {
 async function handleDisableTOTP(req, res) {
   try {
     const userId = req.user.userId;
-    const { password } = req.body;
+    const body = await parseBody(req);
+    const { password } = body;
     
     if (!password) {
       return sendJSON(res, { success: false, message: 'Password is required to disable 2FA' }, 400);
@@ -261,7 +263,8 @@ async function handleGetTOTPStatus(req, res) {
 async function handleRegenerateRecoveryKey(req, res) {
   try {
     const userId = req.user.userId;
-    const { password } = req.body;
+    const body = await parseBody(req);
+    const { password } = body;
     
     if (!password) {
       return sendJSON(res, { success: false, message: 'Password is required' }, 400);
