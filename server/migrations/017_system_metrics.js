@@ -3,9 +3,7 @@
  * Creates table for storing historical system metrics data
  */
 
-const { db } = require('../db');
-
-function up() {
+function up(db) {
   console.log('Creating system_metrics table...');
   
   db.exec(`
@@ -68,7 +66,7 @@ function up() {
   console.log('system_metrics table created successfully');
 }
 
-function down() {
+function down(db) {
   console.log('Dropping system_metrics table...');
   
   db.exec('DROP INDEX IF EXISTS idx_system_metrics_created_at');
