@@ -4,8 +4,7 @@ import api from './api.js';
 import { renderDashboard } from './components/dashboard.js';
 import { renderSecurityDashboard } from './components/security-dashboard.js';
 import { renderNginxSecurity } from './components/nginx-security.js';
-import { renderNginxStatistics } from './components/nginx-statistics.js';
-import { renderNginxPerformance, cleanupPerformanceMonitor } from './components/nginx-performance.js';
+import { renderNginxStatistics, cleanupNginxStatistics } from './components/nginx-statistics.js';
 import { renderProxies } from './components/proxy-list.js';
 import { renderCertificates } from './components/ssl-manager.js';
 import { renderModules } from './components/module-manager.js';
@@ -179,16 +178,16 @@ router.register('/security/statistics', async () => {
   await renderNginxStatistics(mainContent);
 });
 
-router.register('/nginx/performance', async () => {
-  updateNavigation('nginx/performance');
-  setHeader('Nginx Performance Monitor');
-  await renderNginxPerformance(mainContent);
-});
+// Register cleanup for statistics page
+router.registerCleanup('/security/statistics', cleanupNginxStatistics);
 
 router.register('/security/waf', async () => {
   updateNavigation('waf/dashboard');
   await renderWAFDashboard(mainContent);
 });
+
+// Register cleanup for WAF dashboard
+router.registerCleanup('/security/waf', cleanupWAFDashboard);
 
 // WAF sub-routes
 router.register('/waf/profiles', async () => {
@@ -206,6 +205,9 @@ router.register('/waf/bans', async () => {
   setHeader('Banned IPs', '<button id="addBanBtn" class="btn btn-primary">+ Ban IP</button>');
   await renderBannedIPs(mainContent);
 });
+
+// Register cleanup for banned IPs page
+router.registerCleanup('/waf/bans', cleanupBannedIPs);
 
 router.register('/waf/detection-rules', async () => {
   updateNavigation('waf/detection-rules');

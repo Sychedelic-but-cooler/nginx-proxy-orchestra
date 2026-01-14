@@ -1,5 +1,9 @@
 import api from '../api.js';
-import { showLoading, hideLoading, showError, setHeader } from '../app.js';
+import { showLoading, hideLoading, showError, showSuccess, setHeader } from '../app.js';
+
+let refreshInterval = null;
+let stubStatusData = null;
+let previousStubData = null;
 
 export async function renderNginxStatistics(container, timeRange = '24h') {
   setHeader('Traffic & Performance');
@@ -7,24 +11,48 @@ export async function renderNginxStatistics(container, timeRange = '24h') {
 
   try {
     const hours = timeRange === '24h' ? 24 : 168;
-    const [stats, trafficStats, wafStats, banStats] = await Promise.all([
+    const [stats, trafficStats, wafStats, banStats, stubStatus] = await Promise.all([
       api.getNginxStatistics(hours),
       api.getStatistics(timeRange),
       api.getWAFStats(hours).catch(() => ({ totalEvents: 0, blockedEvents: 0 })),
-      api.getBanStats().catch(() => ({ totalBans: 0, activeBans: 0 }))
+      api.getBanStats().catch(() => ({ totalBans: 0, activeBans: 0 })),
+      api.getStubStatus().catch(() => ({ success: false, configured: false }))
     ]);
 
+    stubStatusData = stubStatus;
+
     container.innerHTML = `
-      <!-- Time Range Selector -->
+      <!-- Time Range Selector & Refresh Controls -->
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
         <div class="info-banner" style="background: #e3f2fd; border-left: 4px solid #2196F3; padding: 12px 16px; border-radius: 4px; flex: 1; margin-right: 16px;">
-          <strong>ℹ️ Traffic & Performance Analytics:</strong> Deep-dive into traffic patterns, performance metrics, and security effectiveness.
+          <strong>ℹ️ Traffic & Performance Analytics:</strong> Real-time nginx metrics + historical traffic analysis.
+          ${stubStatus.success ? ` <span style="color: #10b981;">● Live</span>` : ''}
         </div>
-        <div style="display: flex; gap: 8px; background: var(--card-bg); padding: 4px; border-radius: 8px; border: 1px solid var(--border-color);">
-          <button id="range24h" class="btn ${timeRange === '24h' ? 'btn-primary' : 'btn-secondary'}" style="padding: 8px 16px; font-size: 14px;">24h</button>
-          <button id="range7d" class="btn ${timeRange === '7d' ? 'btn-primary' : 'btn-secondary'}" style="padding: 8px 16px; font-size: 14px;">7d</button>
+        <div style="display: flex; gap: 8px;">
+          ${stubStatus.success ? `
+            <button id="pauseRefresh" class="btn btn-secondary" style="padding: 8px 16px; font-size: 14px;">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right: 6px;">
+                <rect x="6" y="4" width="4" height="16"></rect>
+                <rect x="14" y="4" width="4" height="16"></rect>
+              </svg>
+              Pause
+            </button>
+            <button id="refreshStubStatus" class="btn btn-secondary" style="padding: 8px 16px; font-size: 14px;">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right: 6px;">
+                <polyline points="23 4 23 10 17 10"></polyline>
+                <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
+              </svg>
+              Refresh Live
+            </button>
+          ` : ''}
+          <div style="background: var(--card-bg); padding: 4px; border-radius: 8px; border: 1px solid var(--border-color); display: flex; gap: 8px;">
+            <button id="range24h" class="btn ${timeRange === '24h' ? 'btn-primary' : 'btn-secondary'}" style="padding: 8px 16px; font-size: 14px;">24h</button>
+            <button id="range7d" class="btn ${timeRange === '7d' ? 'btn-primary' : 'btn-secondary'}" style="padding: 8px 16px; font-size: 14px;">7d</button>
+          </div>
         </div>
       </div>
+
+      ${stubStatus.success && stubStatus.configured ? renderRealTimeMetrics(stubStatus) : renderStubStatusSetup(stubStatus)}
 
       <!-- Main Metrics -->
       <div class="grid grid-4" style="margin-bottom: 30px;">
@@ -341,7 +369,240 @@ export async function renderNginxStatistics(container, timeRange = '24h') {
   }
 }
 
-function generateInsights(stats) {
+function renderRealTimeMetrics(stubStatus) {
+  if (!stubStatus.success || !stubStatus.data) {
+    return '';
+  }
+
+  const data = stubStatus.data;
+  const timestamp = new Date(stubStatus.timestamp).toLocaleTimeString();
+
+  // Calculate rates if we have previous data
+  let requestRate = 0;
+  let connectionRate = 0;
+  
+  if (previousStubData && stubStatus.timestamp > previousStubData.timestamp) {
+    const timeDiff = (stubStatus.timestamp - previousStubData.timestamp) / 1000;
+    requestRate = ((data.requests - previousStubData.data.requests) / timeDiff).toFixed(2);
+    connectionRate = ((data.accepts - previousStubData.data.accepts) / timeDiff).toFixed(2);
+  }
+
+  return `
+    <!-- Real-Time Nginx Performance -->
+    <div class="card" style="margin-bottom: 20px; border: 2px solid #10b981;">
+      <div class="card-header" style="background: linear-gradient(135deg, #10b981 0%, #059669 100%); color: white;">
+        <h3 class="card-title" style="color: white; display: flex; align-items: center; gap: 8px;">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="10"></circle>
+            <line x1="12" y1="8" x2="12" y2="12"></line>
+            <line x1="12" y1="16" x2="12.01" y2="16"></line>
+          </svg>
+          Real-Time Nginx Performance
+          <span style="margin-left: auto; font-size: 13px; font-weight: normal; opacity: 0.9;">Last update: ${timestamp}</span>
+        </h3>
+      </div>
+      <div style="padding: 20px;">
+        <!-- Live Metrics Grid -->
+        <div class="grid grid-4" style="margin-bottom: 24px;">
+          <div style="text-align: center; padding: 16px; background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%); border-radius: 8px; color: white;">
+            <div style="font-size: 36px; font-weight: 700; margin-bottom: 8px;">${data.active}</div>
+            <div style="font-size: 14px; font-weight: 600; margin-bottom: 4px;">Active Connections</div>
+            <div style="font-size: 12px; opacity: 0.9;">${connectionRate > 0 ? `${connectionRate} conn/sec` : 'Current'}</div>
+          </div>
+          <div style="text-align: center; padding: 16px; background: linear-gradient(135deg, #10b981 0%, #059669 100%); border-radius: 8px; color: white;">
+            <div style="font-size: 36px; font-weight: 700; margin-bottom: 8px;">${data.requestsPerConnection}</div>
+            <div style="font-size: 14px; font-weight: 600; margin-bottom: 4px;">Requests/Connection</div>
+            <div style="font-size: 12px; opacity: 0.9;">Keep-alive efficiency</div>
+          </div>
+          <div style="text-align: center; padding: 16px; background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%); border-radius: 8px; color: white;">
+            <div style="font-size: 36px; font-weight: 700; margin-bottom: 8px;">${requestRate > 0 ? requestRate : '-'}</div>
+            <div style="font-size: 14px; font-weight: 600; margin-bottom: 4px;">Requests/Second</div>
+            <div style="font-size: 12px; opacity: 0.9;">Current throughput</div>
+          </div>
+          <div style="text-align: center; padding: 16px; background: linear-gradient(135deg, ${data.handledPercentage === '100.00' ? '#10b981 0%, #059669' : '#ef4444 0%, #dc2626'} 100%); border-radius: 8px; color: white;">
+            <div style="font-size: 36px; font-weight: 700; margin-bottom: 8px;">${data.handledPercentage}%</div>
+            <div style="font-size: 14px; font-weight: 600; margin-bottom: 4px;">Handled</div>
+            <div style="font-size: 12px; opacity: 0.9;">${data.handled.toLocaleString()} / ${data.accepts.toLocaleString()}</div>
+          </div>
+        </div>
+
+        <!-- Connection States -->
+        <div style="margin-bottom: 16px;">
+          <h4 style="margin: 0 0 12px 0; font-size: 14px; color: var(--text-primary);">Connection States</h4>
+          <div class="grid grid-3" style="gap: 12px; margin-bottom: 16px;">
+            <div style="text-align: center; padding: 12px; background: var(--bg-color); border-radius: 6px;">
+              <div style="font-size: 28px; font-weight: 700; color: #3b82f6; margin-bottom: 4px;">${data.reading}</div>
+              <div style="font-size: 13px; font-weight: 600; color: var(--text-primary); margin-bottom: 2px;">Reading</div>
+              <div style="font-size: 11px; color: var(--text-secondary);">Reading requests</div>
+            </div>
+            <div style="text-align: center; padding: 12px; background: var(--bg-color); border-radius: 6px;">
+              <div style="font-size: 28px; font-weight: 700; color: #10b981; margin-bottom: 4px;">${data.writing}</div>
+              <div style="font-size: 13px; font-weight: 600; color: var(--text-primary); margin-bottom: 2px;">Writing</div>
+              <div style="font-size: 11px; color: var(--text-secondary);">Sending responses</div>
+            </div>
+            <div style="text-align: center; padding: 12px; background: var(--bg-color); border-radius: 6px;">
+              <div style="font-size: 28px; font-weight: 700; color: #f59e0b; margin-bottom: 4px;">${data.waiting}</div>
+              <div style="font-size: 13px; font-weight: 600; color: var(--text-primary); margin-bottom: 2px;">Waiting</div>
+              <div style="font-size: 11px; color: var(--text-secondary);">Keep-alive idle</div>
+            </div>
+          </div>
+
+          <!-- Visual Bar -->
+          <div style="display: flex; height: 32px; border-radius: 6px; overflow: hidden; border: 1px solid var(--border-color);">
+            ${renderConnectionBar(data)}
+          </div>
+        </div>
+
+        <!-- Quick Stats -->
+        ${generateLiveInsights(data, requestRate)}
+      </div>
+    </div>
+  `;
+}
+
+function renderStubStatusSetup(stubStatus) {
+  if (!stubStatus.configured) {
+    return `
+      <div class="card" style="margin-bottom: 20px; border: 2px solid #fbbf24;">
+        <div class="card-header" style="background: #fef3c7;">
+          <h3 class="card-title" style="color: #92400e;">⚡ Enable Real-Time Monitoring</h3>
+        </div>
+        <div style="padding: 20px;">
+          <p style="margin: 0 0 16px 0; color: var(--text-secondary);">
+            Enable nginx <code>stub_status</code> module to see real-time performance metrics including active connections, 
+            request rates, and connection states.
+          </p>
+          <details>
+            <summary style="cursor: pointer; font-weight: 600; color: var(--primary-color); margin-bottom: 12px;">
+              Quick Setup Instructions
+            </summary>
+            <div style="padding: 12px; background: var(--bg-color); border-radius: 4px; margin-top: 12px;">
+              <p style="margin: 0 0 8px 0; font-size: 14px;"><strong>1. Add to nginx.conf:</strong></p>
+              <pre style="background: #1e1e1e; color: #d4d4d4; padding: 12px; border-radius: 4px; overflow-x: auto; font-size: 13px;"><code>location /nginx_status {
+    stub_status on;
+    access_log off;
+    allow 127.0.0.1;
+    deny all;
+}</code></pre>
+              <p style="margin: 12px 0 8px 0; font-size: 14px;"><strong>2. Reload nginx:</strong></p>
+              <pre style="background: #1e1e1e; color: #d4d4d4; padding: 12px; border-radius: 4px; overflow-x: auto; font-size: 13px;"><code>sudo nginx -t && sudo systemctl reload nginx</code></pre>
+              <p style="margin: 12px 0 0 0; font-size: 13px; color: var(--text-secondary);">
+                See <a href="/STUB_STATUS_SETUP.md" target="_blank" style="color: var(--primary-color);">STUB_STATUS_SETUP.md</a> for detailed instructions.
+              </p>
+            </div>
+          </details>
+          <button id="retryStubStatus" class="btn btn-primary" style="margin-top: 16px;">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right: 6px;">
+              <polyline points="23 4 23 10 17 10"></polyline>
+              <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
+            </svg>
+            Check Again
+          </button>
+        </div>
+      </div>
+    `;
+  }
+  return '';
+}
+
+function renderConnectionBar(data) {
+  const total = data.active;
+  if (total === 0) {
+    return '<div style="flex: 1; background: var(--bg-color); display: flex; align-items: center; justify-content: center; color: var(--text-secondary); font-size: 12px;">No active connections</div>';
+  }
+
+  const readingPercent = (data.reading / total) * 100;
+  const writingPercent = (data.writing / total) * 100;
+  const waitingPercent = (data.waiting / total) * 100;
+
+  return `
+    ${data.reading > 0 ? `<div style="flex: ${readingPercent}; background: #3b82f6; display: flex; align-items: center; justify-content: center; color: white; font-size: 11px; font-weight: 600;" title="${data.reading} reading (${readingPercent.toFixed(1)}%)">${data.reading > 3 ? data.reading : ''}</div>` : ''}
+    ${data.writing > 0 ? `<div style="flex: ${writingPercent}; background: #10b981; display: flex; align-items: center; justify-content: center; color: white; font-size: 11px; font-weight: 600;" title="${data.writing} writing (${writingPercent.toFixed(1)}%)">${data.writing > 3 ? data.writing : ''}</div>` : ''}
+    ${data.waiting > 0 ? `<div style="flex: ${waitingPercent}; background: #f59e0b; display: flex; align-items: center; justify-content: center; color: white; font-size: 11px; font-weight: 600;" title="${data.waiting} waiting (${waitingPercent.toFixed(1)}%)">${data.waiting > 3 ? data.waiting : ''}</div>` : ''}
+  `;
+}
+
+function generateLiveInsights(data, requestRate) {
+  const insights = [];
+
+  const droppedConnections = data.accepts - data.handled;
+  if (droppedConnections > 0) {
+    insights.push(`<span style="color: var(--danger-color);">⚠️ ${droppedConnections} dropped connections</span>`);
+  } else {
+    insights.push(`<span style="color: var(--success-color);">✓ No dropped connections</span>`);
+  }
+
+  const keepAliveRatio = parseFloat(data.requestsPerConnection);
+  if (keepAliveRatio > 10) {
+    insights.push(`<span style="color: var(--success-color);">✓ Excellent keep-alive (${keepAliveRatio})</span>`);
+  } else if (keepAliveRatio < 2) {
+    insights.push(`<span style="color: var(--warning-color);">⚠️ Low keep-alive efficiency</span>`);
+  }
+
+  if (requestRate > 0) {
+    insights.push(`<span style="color: var(--primary-color);">📊 ${requestRate} req/sec</span>`);
+  }
+
+  return `
+    <div style="display: flex; gap: 16px; flex-wrap: wrap; padding: 12px; background: var(--bg-color); border-radius: 6px; font-size: 13px;">
+      ${insights.join('<span style="color: var(--border-color);">|</span>')}
+    </div>
+  `;
+}
+
+function setupStatisticsHandlers(timeRange) {
+  let isPaused = false;
+
+  // Time range switchers
+  document.getElementById('range24h')?.addEventListener('click', async () => {
+    stopAutoRefresh();
+    await renderNginxStatistics(document.getElementById('mainContent'), '24h');
+  });
+
+  document.getElementById('range7d')?.addEventListener('click', async () => {
+    stopAutoRefresh();
+    await renderNginxStatistics(document.getElementById('mainContent'), '7d');
+  });
+
+  // Stub status controls
+  document.getElementById('pauseRefresh')?.addEventListener('click', (e) => {
+    isPaused = !isPaused;
+    const btn = e.target.closest('button');
+    
+    if (isPaused) {
+      stopAutoRefresh();
+      btn.innerHTML = `
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right: 6px;">
+          <polygon points="5 3 19 12 5 21 5 3"></polygon>
+        </svg>
+        Resume
+      `;
+      btn.classList.remove('btn-secondary');
+      btn.classList.add('btn-warning');
+      showSuccess('Auto-refresh paused');
+    } else {
+      startAutoRefresh(timeRange);
+      btn.innerHTML = `
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right: 6px;">
+          <rect x="6" y="4" width="4" height="16"></rect>
+          <rect x="14" y="4" width="4" height="16"></rect>
+        </svg>
+        Pause
+      `;
+      btn.classList.remove('btn-warning');
+      btn.classList.add('btn-secondary');
+      showSuccess('Auto-refresh resumed');
+    }
+  });
+
+  document.getElementById('refreshStubStatus')?.addEventListener('click', async () => {
+    await refreshStubStatusOnly();
+    showSuccess('Live metrics refreshed');
+  });
+
+  document.getElementById('retryStubStatus')?.addEventListener('click', async () => {
+    await renderNginxStatistics(document.getElementById('mainContent'), timeRange);
+  });
   const insights = [];
 
   // High block rate
@@ -449,4 +710,62 @@ function setupStatisticsHandlers(timeRange) {
   document.getElementById('goToBansBtn')?.addEventListener('click', () => {
     window.location.hash = '#/waf/bans';
   });
+
+  // Start auto-refresh if stub_status is available
+  if (stubStatusData && stubStatusData.success) {
+    startAutoRefresh(timeRange);
+  }
+}
+
+async function refreshStubStatusOnly() {
+  try {
+    // Check if we're still on the performance dashboard
+    const realTimeContainer = document.querySelector('.card[style*="border: 2px solid #10b981"]');
+    if (!realTimeContainer) {
+      // User navigated away, stop refreshing
+      stopAutoRefresh();
+      return;
+    }
+
+    const result = await api.getStubStatus();
+    if (result.success && result.configured) {
+      previousStubData = stubStatusData;
+      stubStatusData = result;
+      
+      // Update only the real-time section
+      const tempDiv = document.createElement('div');
+      tempDiv.innerHTML = renderRealTimeMetrics(result);
+      realTimeContainer.replaceWith(tempDiv.firstElementChild);
+      
+      // Re-attach event handlers for the refresh button
+      document.getElementById('refreshStubStatus')?.addEventListener('click', async () => {
+        await refreshStubStatusOnly();
+        showSuccess('Live metrics refreshed');
+      });
+    }
+  } catch (error) {
+    console.error('Failed to refresh stub_status:', error);
+  }
+}
+
+function startAutoRefresh(timeRange) {
+  stopAutoRefresh();
+  
+  refreshInterval = setInterval(async () => {
+    await refreshStubStatusOnly();
+  }, 5000); // Refresh every 5 seconds
+}
+
+function stopAutoRefresh() {
+  if (refreshInterval) {
+    clearInterval(refreshInterval);
+    refreshInterval = null;
+  }
+}
+
+// Clean up when leaving the page
+export function cleanupNginxStatistics() {
+  stopAutoRefresh();
+  previousStubData = null;
+  stubStatusData = null;
 }

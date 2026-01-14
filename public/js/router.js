@@ -5,6 +5,8 @@ class Router {
   constructor() {
     this.routes = {};
     this.currentRoute = null;
+    this.previousRoute = null;
+    this.cleanupCallbacks = {};
     
     window.addEventListener('hashchange', () => this.handleRoute());
     window.addEventListener('load', () => this.handleRoute());
@@ -18,6 +20,14 @@ class Router {
   }
 
   /**
+   * Register a cleanup callback for a specific route
+   * This will be called when navigating away from the route
+   */
+  registerCleanup(path, cleanupFn) {
+    this.cleanupCallbacks[path] = cleanupFn;
+  }
+
+  /**
    * Navigate to a route
    */
   navigate(path) {
@@ -28,6 +38,15 @@ class Router {
    * Handle route change
    */
   handleRoute() {
+    // Call cleanup for previous route if exists
+    if (this.previousRoute && this.cleanupCallbacks[this.previousRoute]) {
+      try {
+        this.cleanupCallbacks[this.previousRoute]();
+      } catch (error) {
+        console.error(`Cleanup error for ${this.previousRoute}:`, error);
+      }
+    }
+
     let path = window.location.hash.slice(1) || '/dashboard';
 
     // Normalize path (ensure it starts with /)
@@ -45,6 +64,7 @@ class Router {
       handler = this.routes[routePath];
 
       if (handler) {
+        this.previousRoute = this.currentRoute;
         this.currentRoute = routePath;
         handler(params);
         return;
@@ -53,12 +73,14 @@ class Router {
 
     // If exact match found, use it
     if (handler) {
+      this.previousRoute = this.currentRoute;
       this.currentRoute = path;
       handler();
     } else {
       // Fall back to 404
       const notFoundHandler = this.routes['/404'];
       if (notFoundHandler) {
+        this.previousRoute = this.currentRoute;
         this.currentRoute = '/404';
         notFoundHandler();
       }
