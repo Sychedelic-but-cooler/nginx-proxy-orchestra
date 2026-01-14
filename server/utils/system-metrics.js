@@ -226,8 +226,10 @@ function getNetworkStats() {
     // Calculate rates if we have previous data
     if (previousNetworkStats && previousTimestamp) {
       const timeDiff = (currentTimestamp - previousTimestamp) / 1000; // seconds
-      rxRate = (totalRx - previousNetworkStats.rx) / timeDiff;
-      txRate = (totalTx - previousNetworkStats.tx) / timeDiff;
+      if (timeDiff > 0) {
+        rxRate = (totalRx - previousNetworkStats.rx) / timeDiff;
+        txRate = (totalTx - previousNetworkStats.tx) / timeDiff;
+      }
     }
 
     // Store current stats for next calculation
@@ -237,8 +239,8 @@ function getNetworkStats() {
     return {
       rx: totalRx,
       tx: totalTx,
-      rxRate: Math.max(0, rxRate),
-      txRate: Math.max(0, txRate)
+      rxRate: isNaN(rxRate) ? 0 : Math.max(0, rxRate),
+      txRate: isNaN(txRate) ? 0 : Math.max(0, txRate)
     };
   } catch (error) {
     return {
@@ -282,8 +284,10 @@ function getDiskIOStats() {
     // Calculate rates if we have previous data
     if (previousDiskStats && previousTimestamp) {
       const timeDiff = (currentTimestamp - previousTimestamp) / 1000; // seconds
-      readsPerSec = (totalReads - previousDiskStats.reads) / timeDiff;
-      writesPerSec = (totalWrites - previousDiskStats.writes) / timeDiff;
+      if (timeDiff > 0) {
+        readsPerSec = (totalReads - previousDiskStats.reads) / timeDiff;
+        writesPerSec = (totalWrites - previousDiskStats.writes) / timeDiff;
+      }
     }
 
     // Store current stats for next calculation
@@ -292,8 +296,8 @@ function getDiskIOStats() {
     return {
       reads: totalReads,
       writes: totalWrites,
-      readsPerSec: Math.max(0, readsPerSec),
-      writesPerSec: Math.max(0, writesPerSec)
+      readsPerSec: isNaN(readsPerSec) ? 0 : Math.max(0, readsPerSec),
+      writesPerSec: isNaN(writesPerSec) ? 0 : Math.max(0, writesPerSec)
     };
   } catch (error) {
     return {

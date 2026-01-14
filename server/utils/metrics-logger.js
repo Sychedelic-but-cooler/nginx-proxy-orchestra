@@ -21,6 +21,12 @@ function storeMetrics() {
   try {
     const metrics = getRealTimeMetrics();
     
+    // Validate and sanitize all values to ensure they're valid numbers
+    const sanitize = (val) => {
+      if (val === null || val === undefined || isNaN(val)) return 0;
+      return val;
+    };
+    
     const stmt = db.prepare(`
       INSERT INTO system_metrics (
         timestamp,
@@ -37,30 +43,30 @@ function storeMetrics() {
     
     stmt.run(
       metrics.timestamp,
-      metrics.cpu.usage,
-      metrics.loadAverage['1min'],
-      metrics.loadAverage['5min'],
-      metrics.loadAverage['15min'],
-      metrics.memory.total,
-      metrics.memory.used,
-      metrics.memory.free,
-      metrics.memory.usagePercent,
-      metrics.swap.total,
-      metrics.swap.used,
-      metrics.swap.free,
-      metrics.swap.usagePercent,
-      metrics.disk.total,
-      metrics.disk.used,
-      metrics.disk.available,
-      metrics.disk.usagePercent,
-      metrics.network.rx,
-      metrics.network.tx,
-      metrics.network.rxRate,
-      metrics.network.txRate,
-      metrics.diskIO.reads,
-      metrics.diskIO.writes,
-      metrics.diskIO.readsPerSec,
-      metrics.diskIO.writesPerSec
+      sanitize(metrics.cpu.usage),
+      sanitize(metrics.loadAverage['1min']),
+      sanitize(metrics.loadAverage['5min']),
+      sanitize(metrics.loadAverage['15min']),
+      sanitize(metrics.memory.total),
+      sanitize(metrics.memory.used),
+      sanitize(metrics.memory.free),
+      sanitize(metrics.memory.usagePercent),
+      sanitize(metrics.swap.total),
+      sanitize(metrics.swap.used),
+      sanitize(metrics.swap.free),
+      sanitize(metrics.swap.usagePercent),
+      sanitize(metrics.disk.total),
+      sanitize(metrics.disk.used),
+      sanitize(metrics.disk.available),
+      sanitize(metrics.disk.usagePercent),
+      sanitize(metrics.network.rx),
+      sanitize(metrics.network.tx),
+      sanitize(metrics.network.rxRate),
+      sanitize(metrics.network.txRate),
+      sanitize(metrics.diskIO.reads),
+      sanitize(metrics.diskIO.writes),
+      sanitize(metrics.diskIO.readsPerSec),
+      sanitize(metrics.diskIO.writesPerSec)
     );
     
   } catch (error) {
