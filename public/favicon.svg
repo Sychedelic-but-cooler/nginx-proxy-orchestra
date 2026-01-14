@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <!-- Background circle with gradient -->
+  <defs>
+    <linearGradient id="bgGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#269900;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#1a6600;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="accentGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#00d084;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#009900;stop-opacity:1" />
+    </linearGradient>
+  </defs>
+  
+  <!-- Background -->
+  <circle cx="32" cy="32" r="30" fill="url(#bgGradient)"/>
+  
+  <!-- Stylized "N" for Nginx -->
+  <path d="M 18 22 L 18 42 L 22 42 L 22 30 L 38 42 L 42 42 L 42 22 L 38 22 L 38 34 L 22 22 Z" 
+        fill="#ffffff" 
+        stroke="none"/>
+  
+  <!-- Proxy nodes - small circles representing distributed architecture -->
+  <circle cx="14" cy="50" r="3" fill="url(#accentGradient)"/>
+  <circle cx="32" cy="54" r="3" fill="url(#accentGradient)"/>
+  <circle cx="50" cy="50" r="3" fill="url(#accentGradient)"/>
+  
+  <!-- Connection lines -->
+  <path d="M 16 49 L 30 53" stroke="#00d084" stroke-width="1.5" fill="none" opacity="0.6"/>
+  <path d="M 34 53 L 48 49" stroke="#00d084" stroke-width="1.5" fill="none" opacity="0.6"/>
+  
+  <!-- Shield overlay for security aspect -->
+  <path d="M 48 14 L 48 20 C 48 24 46 26 42 28 C 46 26 48 24 48 20 Z" 
+        fill="#00d084" 
+        opacity="0.8"
+        transform="translate(4, -2)"/>
+</svg>

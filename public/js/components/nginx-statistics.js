@@ -603,6 +603,27 @@ function setupStatisticsHandlers(timeRange) {
   document.getElementById('retryStubStatus')?.addEventListener('click', async () => {
     await renderNginxStatistics(document.getElementById('mainContent'), timeRange);
   });
+
+  // Quick action buttons
+  document.getElementById('goToSecurityBtn')?.addEventListener('click', () => {
+    window.location.hash = '#/security/tuning';
+  });
+
+  document.getElementById('goToWAFBtn')?.addEventListener('click', () => {
+    window.location.hash = '#/waf/events';
+  });
+
+  document.getElementById('goToBansBtn')?.addEventListener('click', () => {
+    window.location.hash = '#/waf/bans';
+  });
+
+  // Start auto-refresh if stub_status is available
+  if (stubStatusData && stubStatusData.success) {
+    startAutoRefresh(timeRange);
+  }
+}
+
+function generateInsights(stats) {
   const insights = [];
 
   // High block rate
@@ -686,35 +707,6 @@ function renderHourlyChart(requestsByHour) {
       Hour of Day (0-23) · Current hour highlighted
     </div>
   `;
-}
-
-function setupStatisticsHandlers(timeRange) {
-  // Time range switchers
-  document.getElementById('range24h')?.addEventListener('click', async () => {
-    await renderNginxStatistics(document.getElementById('mainContent'), '24h');
-  });
-
-  document.getElementById('range7d')?.addEventListener('click', async () => {
-    await renderNginxStatistics(document.getElementById('mainContent'), '7d');
-  });
-
-  // Quick action buttons
-  document.getElementById('goToSecurityBtn')?.addEventListener('click', () => {
-    window.location.hash = '#/security/tuning';
-  });
-
-  document.getElementById('goToWAFBtn')?.addEventListener('click', () => {
-    window.location.hash = '#/waf/events';
-  });
-
-  document.getElementById('goToBansBtn')?.addEventListener('click', () => {
-    window.location.hash = '#/waf/bans';
-  });
-
-  // Start auto-refresh if stub_status is available
-  if (stubStatusData && stubStatusData.success) {
-    startAutoRefresh(timeRange);
-  }
 }
 
 async function refreshStubStatusOnly() {
