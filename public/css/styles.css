@@ -58,6 +58,7 @@ body.dark-mode .login-card {
 }
 
 body.dark-mode .modal,
+body.dark-mode .modal-large,
 body.dark-mode .stats-card,
 body.dark-mode .action-card,
 body.dark-mode .proxy-item,
@@ -716,6 +717,53 @@ body.dark-mode .modal-footer {
   background: var(--bg-color);
 }
 
+/* Dark mode for modal headers */
+body.dark-mode .modal-header {
+  border-bottom-color: var(--border-color);
+}
+
+body.dark-mode .modal-header h3 {
+  color: var(--text-primary);
+}
+
+body.dark-mode .modal-close {
+  color: var(--text-secondary);
+}
+
+body.dark-mode .modal-close:hover {
+  background: var(--bg-color);
+  color: var(--text-primary);
+}
+
+/* Dark mode for WAF profile modal elements */
+body.dark-mode .form-section {
+  border-bottom-color: var(--border-color);
+}
+
+body.dark-mode .form-section-title {
+  color: var(--text-primary);
+}
+
+body.dark-mode .checkbox-label {
+  color: var(--text-primary);
+}
+
+body.dark-mode .checkbox-label:hover {
+  background: var(--bg-color);
+}
+
+body.dark-mode .form-group label {
+  color: var(--text-primary);
+}
+
+body.dark-mode .form-group small {
+  color: var(--text-secondary);
+}
+
+body.dark-mode .modal-overlay {
+  background: rgba(0, 0, 0, 0.7);
+}
+
 body.dark-mode .attribution-divider {
   background: var(--border-color);
 }
@@ -774,6 +822,20 @@ body.dark-mode code[style*="background: rgba(0,0,0,0.1)"] {
 body.dark-mode pre[style*="background: #263238"] {
   background: var(--bg-color) !important;
   color: var(--text-primary) !important;
+}
+
+/* Dark mode for inline color styles in modals */
+body.dark-mode [style*="color: #6b7280"],
+body.dark-mode [style*="color:#6b7280"] {
+  color: var(--text-secondary) !important;
+}
+
+body.dark-mode [style*="color: var(--text-secondary)"] {
+  color: var(--text-secondary) !important;
+}
+
+body.dark-mode [style*="color: var(--danger-color)"] {
+  color: var(--danger-color) !important;
 }
 
 /* Dark mode for WAF dashboard and event rows */
