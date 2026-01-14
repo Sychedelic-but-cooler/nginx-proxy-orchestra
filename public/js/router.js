@@ -47,7 +47,7 @@ class Router {
       }
     }
 
-    let path = window.location.hash.slice(1) || '/dashboard';
+    let path = window.location.hash.slice(1) || '/dashboard/server';
 
     // Normalize path (ensure it starts with /)
     if (!path.startsWith('/')) {

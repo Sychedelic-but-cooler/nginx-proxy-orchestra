@@ -193,6 +193,14 @@ class API {
     return this.request('/api/dashboard/stats');
   }
 
+  async getStaticSystemInfo() {
+    return this.request('/api/dashboard/system/static');
+  }
+
+  async getRealTimeMetrics() {
+    return this.request('/api/dashboard/system/metrics');
+  }
+
   async getStatistics(range = '24h') {
     return this.request(`/api/statistics?range=${range}`);
   }

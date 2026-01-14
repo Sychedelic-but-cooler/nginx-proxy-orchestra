@@ -8,6 +8,7 @@ const { ensureAdminCert, getActiveCertPaths } = require('./utils/admin-cert');
 const { initializeACMEWebroot } = require('./utils/acme-setup');
 const { db, getSetting } = require('./db');
 const { getWAFLogParser } = require('./utils/waf-log-parser');
+const { initializeCache: initializeSystemMetricsCache } = require('./utils/system-metrics');
 
 // Initialize ACME webroot for Let's Encrypt challenges
 initializeACMEWebroot();
@@ -17,6 +18,9 @@ initializeDefaultServer();
 
 // Ensure admin certificate exists (generate self-signed if needed)
 ensureAdminCert();
+
+// Initialize system metrics cache
+initializeSystemMetricsCache();
 
 const HTTPS_PORT = process.env.PORT || 81;
 const PUBLIC_DIR = path.join(__dirname, '..', 'public');

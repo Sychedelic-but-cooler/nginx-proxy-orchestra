@@ -16,9 +16,26 @@
       </div>
       
       <nav class="sidebar-nav">
-        <a href="#/dashboard" class="nav-item active" data-route="dashboard">
-          <span>Dashboard</span>
-        </a>
+        <!-- Dashboard Group (Collapsible) -->
+        <div class="nav-group">
+          <div class="nav-group-header" data-group="dashboard">
+            <span>Dashboard</span>
+            <svg class="nav-group-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="6 9 12 15 18 9"></polyline>
+            </svg>
+          </div>
+          <div class="nav-group-items" data-group-items="dashboard">
+            <a href="#/dashboard/server" class="nav-item nav-subitem active" data-route="dashboard/server">
+              <span>Server</span>
+            </a>
+            <a href="#/dashboard/nginx" class="nav-item nav-subitem" data-route="dashboard/nginx">
+              <span>Nginx</span>
+            </a>
+            <a href="#/dashboard/sites" class="nav-item nav-subitem" data-route="dashboard/sites">
+              <span>Sites</span>
+            </a>
+          </div>
+        </div>
 
         <!-- Nginx Group (Collapsible) -->
         <div class="nav-group">

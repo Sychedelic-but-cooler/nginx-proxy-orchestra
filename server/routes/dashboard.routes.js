@@ -6,6 +6,10 @@
 const { db } = require('../db');
 const { sendJSON } = require('./shared/utils');
 const { getNginxStatus } = require('../utils/nginx-ops');
+const { 
+  getStaticSystemInfo, 
+  getRealTimeMetrics 
+} = require('../utils/system-metrics');
 
 /**
  * Handle dashboard-related routes
@@ -20,6 +24,14 @@ function handleDashboardRoutes(req, res, parsedUrl) {
 
   if (pathname === '/api/dashboard/stats' && method === 'GET') {
     return handleDashboardStats(req, res);
+  }
+
+  if (pathname === '/api/dashboard/system/static' && method === 'GET') {
+    return handleStaticSystemInfo(req, res);
+  }
+
+  if (pathname === '/api/dashboard/system/metrics' && method === 'GET') {
+    return handleRealTimeMetrics(req, res);
   }
 
   sendJSON(res, { error: 'Not Found' }, 404);
@@ -95,6 +107,30 @@ function handleDashboardStats(req, res) {
     nginx: nginxStatus,
     recentActivity
   });
+}
+
+/**
+ * Get static system information (cached)
+ * Hardware details that don't change
+ *
+ * @param {IncomingMessage} req - HTTP request object
+ * @param {ServerResponse} res - HTTP response object
+ */
+function handleStaticSystemInfo(req, res) {
+  const staticInfo = getStaticSystemInfo();
+  sendJSON(res, staticInfo);
+}
+
+/**
+ * Get real-time system metrics
+ * Per-second updates for CPU, memory, network, disk I/O
+ *
+ * @param {IncomingMessage} req - HTTP request object
+ * @param {ServerResponse} res - HTTP response object
+ */
+function handleRealTimeMetrics(req, res) {
+  const metrics = getRealTimeMetrics();
+  sendJSON(res, metrics);
 }
 
 module.exports = handleDashboardRoutes;

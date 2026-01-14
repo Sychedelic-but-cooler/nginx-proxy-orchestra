@@ -1,7 +1,9 @@
 import router from './router.js';
 import state from './state.js';
 import api from './api.js';
-import { renderDashboard } from './components/dashboard.js';
+import { renderDashboard, cleanupDashboard } from './components/dashboard.js';
+import { renderNginxDashboard } from './components/nginx-dashboard.js';
+import { renderSitesDashboard } from './components/sites-dashboard.js';
 import { renderSecurityDashboard } from './components/security-dashboard.js';
 import { renderNginxSecurity } from './components/nginx-security.js';
 import { renderNginxStatistics, cleanupNginxStatistics } from './components/nginx-statistics.js';
@@ -154,10 +156,30 @@ export function setHeader(title, actions = '') {
 }
 
 // Register routes
+// Redirect old /dashboard route to /dashboard/server
 router.register('/dashboard', async () => {
-  updateNavigation('dashboard');
-  setHeader('Dashboard');
+  router.navigate('/dashboard/server');
+});
+
+router.register('/dashboard/server', async () => {
+  updateNavigation('dashboard/server');
+  setHeader('Server Dashboard');
   await renderDashboard(mainContent);
+});
+
+// Register cleanup for dashboard
+router.registerCleanup('/dashboard/server', cleanupDashboard);
+
+router.register('/dashboard/nginx', async () => {
+  updateNavigation('dashboard/nginx');
+  setHeader('Nginx Dashboard');
+  await renderNginxDashboard(mainContent);
+});
+
+router.register('/dashboard/sites', async () => {
+  updateNavigation('dashboard/sites');
+  setHeader('Sites Dashboard');
+  await renderSitesDashboard(mainContent);
 });
 
 // Security sub-routes
