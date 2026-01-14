@@ -91,7 +91,7 @@ async function performLogin() {
 
 // Show TOTP input form
 function showTOTPInput() {
-  const formContainer = document.querySelector('.login-card form');
+  const formContainer = document.getElementById('loginForm');
   formContainer.innerHTML = `
     <h2 style="text-align: center; margin-bottom: 20px;">Two-Factor Authentication</h2>
     <p style="text-align: center; margin-bottom: 30px; color: #666;">Enter the 6-digit code from your authenticator app</p>
@@ -189,7 +189,7 @@ function showTOTPInput() {
 
 // Show recovery key option
 function showRecoveryOption() {
-  const formContainer = document.querySelector('.login-card form');
+  const formContainer = document.getElementById('loginForm');
   const existingRecoveryBtn = document.getElementById('useRecoveryButton');
   
   if (existingRecoveryBtn) return; // Already shown
@@ -207,7 +207,7 @@ function showRecoveryOption() {
 
 // Show recovery key form
 function showRecoveryForm() {
-  const formContainer = document.querySelector('.login-card form');
+  const formContainer = document.getElementById('loginForm');
   formContainer.innerHTML = `
     <h2 style="text-align: center; margin-bottom: 20px;">Account Recovery</h2>
     <p style="text-align: center; margin-bottom: 30px; color: #666;">Enter your 128-character recovery key</p>
