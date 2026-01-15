@@ -10,6 +10,7 @@ const { db, getSetting } = require('./db');
 const { getWAFLogParser } = require('./utils/waf-log-parser');
 const { initializeCache: initializeSystemMetricsCache } = require('./utils/system-metrics');
 const { startMetricsCollection } = require('./utils/metrics-logger');
+const { initializeHealthChecks } = require('./utils/health-check-service');
 
 // Initialize ACME webroot for Let's Encrypt challenges
 initializeACMEWebroot();
@@ -25,6 +26,9 @@ initializeSystemMetricsCache();
 
 // Start metrics collection service
 startMetricsCollection();
+
+// Initialize upstream health check service
+initializeHealthChecks();
 
 const HTTPS_PORT = process.env.PORT || 81;
 const PUBLIC_DIR = path.join(__dirname, '..', 'public');

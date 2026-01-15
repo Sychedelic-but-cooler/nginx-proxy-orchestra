@@ -41,6 +41,9 @@ const handleWhitelistRoutes = require('./ban/whitelist.routes');
 const handleDetectionRulesRoutes = require('./ban/detection.routes');
 const handleQueueRoutes = require('./ban/queue.routes');
 
+// Health check module
+const handleHealthCheckRoutes = require('./health.routes');
+
 /**
  * Main API request handler
  * Routes incoming requests to appropriate module handlers
@@ -206,6 +209,11 @@ async function handleAPI(req, res, parsedUrl) {
     // Queue routes
     if (pathname.startsWith('/api/ban/queue')) {
       return await handleQueueRoutes(req, res, parsedUrl);
+    }
+
+    // Health check routes
+    if (pathname.startsWith('/api/health')) {
+      return await handleHealthCheckRoutes(req, res, parsedUrl);
     }
 
     // No matching route

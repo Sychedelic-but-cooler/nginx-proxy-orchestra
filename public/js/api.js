@@ -806,6 +806,34 @@ class API {
       body: { ids }
     });
   }
+
+  // Health Check Methods
+  async getAllHealthStatus() {
+    return this.request('/api/health');
+  }
+
+  async getProxyHealthStatus(proxyId) {
+    return this.request(`/api/health/${proxyId}`);
+  }
+
+  async enableHealthCheck(proxyId) {
+    return this.request(`/api/health/${proxyId}/enable`, {
+      method: 'POST'
+    });
+  }
+
+  async disableHealthCheck(proxyId) {
+    return this.request(`/api/health/${proxyId}/disable`, {
+      method: 'POST'
+    });
+  }
+
+  async updateHealthCheckConfig(proxyId, config) {
+    return this.request(`/api/health/${proxyId}/config`, {
+      method: 'PUT',
+      body: config
+    });
+  }
 }
 
 export default new API();

@@ -22,6 +22,7 @@ import { renderBannedIPs, cleanupBannedIPs } from './components/banned-ips.js';
 import { renderDetectionRules } from './components/detection-rules.js';
 import { renderBanIntegrations } from './components/ban-integrations.js';
 import { renderAbout } from './components/about.js';
+import { renderSiteHealth, cleanupSiteHealth } from './components/site-health.js';
 
 // Check authentication on app load
 if (!api.getToken()) {
@@ -257,17 +258,11 @@ router.register('/sites/list', async () => {
 router.register('/sites/health', async () => {
   updateNavigation('sites/health');
   setHeader('Site Health');
-  mainContent.innerHTML = `
-    <div class="empty-state">
-      <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-        <path d="M22 12h-4l-3 9L9 3l-3 9H2"></path>
-      </svg>
-      <h2>Site Health Dashboard</h2>
-      <p>Monitor the health and status of your sites</p>
-      <p style="color: var(--text-muted); margin-top: 10px;">Coming soon...</p>
-    </div>
-  `;
+  await renderSiteHealth(mainContent);
 });
+
+// Register cleanup for site health
+router.registerCleanup('/sites/health', cleanupSiteHealth);
 
 // Legacy route redirect for backward compatibility
 router.register('/proxies', async () => {
