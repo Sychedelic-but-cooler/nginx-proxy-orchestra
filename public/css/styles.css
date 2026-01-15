@@ -83,6 +83,7 @@
   /* Spacing Scale (4px base unit) */
   --space-1: 4px;
   --space-2: 8px;
+  --space-2p5: 10px;
   --space-3: 12px;
   --space-4: 16px;
   --space-5: 20px;
@@ -1576,11 +1577,12 @@ body {
 .nav-item {
   display: flex;
   align-items: center;
-  padding: var(--space-3) var(--space-5);
+  padding: var(--space-4) var(--space-5);
   color: var(--sidebar-text);
   text-decoration: none;
   transition: all 0.2s;
   border-left: 3px solid transparent;
+  font-size: var(--text-base);
 }
 
 .nav-item:hover {
@@ -1603,12 +1605,14 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: var(--space-3) var(--space-5);
+  padding: var(--space-4) var(--space-5);
   color: var(--sidebar-text);
   cursor: pointer;
   transition: all 0.2s;
   border-left: 3px solid transparent;
   user-select: none;
+  font-size: var(--text-base);
+  font-weight: var(--font-medium);
 }
 
 .nav-group-header:hover {
@@ -1638,12 +1642,12 @@ body {
 .nav-subitem {
   display: flex;
   align-items: center;
-  padding: var(--space-2p5) var(--space-5) var(--space-2p5) var(--space-10);
+  padding: var(--space-3) var(--space-5) var(--space-3) var(--space-10);
   color: rgba(203, 213, 225, 0.8);
   text-decoration: none;
   transition: all 0.2s;
   border-left: 3px solid transparent;
-  font-size: var(--text-sm);
+  font-size: var(--text-base);
 }
 
 .nav-subitem:hover {

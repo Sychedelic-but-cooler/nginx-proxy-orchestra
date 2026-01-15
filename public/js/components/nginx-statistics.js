@@ -24,9 +24,9 @@ export async function renderNginxStatistics(container, timeRange = '24h') {
     container.innerHTML = `
       <!-- Time Range Selector & Refresh Controls -->
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
-        <div class="info-banner" style="background: #e3f2fd; border-left: 4px solid #2196F3; padding: 12px 16px; border-radius: 4px; flex: 1; margin-right: 16px;">
+        <div class="info-banner" style="background: var(--info-bg); border-left: 4px solid var(--info-color); padding: 12px 16px; border-radius: 4px; flex: 1; margin-right: 16px;">
           <strong>ℹ️ Traffic & Performance Analytics:</strong> Real-time nginx metrics + historical traffic analysis.
-          ${stubStatus.success ? ` <span style="color: #10b981;">● Live</span>` : ''}
+          ${stubStatus.success ? ` <span style="color: var(--success-color);">● Live</span>` : ''}
         </div>
         <div style="display: flex; gap: 8px;">
           ${stubStatus.success ? `
@@ -389,8 +389,8 @@ function renderRealTimeMetrics(stubStatus) {
 
   return `
     <!-- Real-Time Nginx Performance -->
-    <div class="card" style="margin-bottom: 20px; border: 2px solid #10b981;">
-      <div class="card-header" style="background: linear-gradient(135deg, #10b981 0%, #059669 100%); color: white;">
+    <div class="card" style="margin-bottom: 20px; border: 2px solid var(--success-color);">
+      <div class="card-header" style="background: var(--success-color); color: white;">
         <h3 class="card-title" style="color: white; display: flex; align-items: center; gap: 8px;">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <circle cx="12" cy="12" r="10"></circle>
@@ -404,22 +404,22 @@ function renderRealTimeMetrics(stubStatus) {
       <div style="padding: 20px;">
         <!-- Live Metrics Grid -->
         <div class="grid grid-4" style="margin-bottom: 24px;">
-          <div style="text-align: center; padding: 16px; background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%); border-radius: 8px; color: white;">
+          <div style="text-align: center; padding: 16px; background: var(--secondary-color); border-radius: 8px; color: white;">
             <div style="font-size: 36px; font-weight: 700; margin-bottom: 8px;">${data.active}</div>
             <div style="font-size: 14px; font-weight: 600; margin-bottom: 4px;">Active Connections</div>
             <div style="font-size: 12px; opacity: 0.9;">${connectionRate > 0 ? `${connectionRate} conn/sec` : 'Current'}</div>
           </div>
-          <div style="text-align: center; padding: 16px; background: linear-gradient(135deg, #10b981 0%, #059669 100%); border-radius: 8px; color: white;">
+          <div style="text-align: center; padding: 16px; background: var(--success-color); border-radius: 8px; color: white;">
             <div style="font-size: 36px; font-weight: 700; margin-bottom: 8px;">${data.requestsPerConnection}</div>
             <div style="font-size: 14px; font-weight: 600; margin-bottom: 4px;">Requests/Connection</div>
             <div style="font-size: 12px; opacity: 0.9;">Keep-alive efficiency</div>
           </div>
-          <div style="text-align: center; padding: 16px; background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%); border-radius: 8px; color: white;">
+          <div style="text-align: center; padding: 16px; background: var(--primary-color); border-radius: 8px; color: white;">
             <div style="font-size: 36px; font-weight: 700; margin-bottom: 8px;">${requestRate > 0 ? requestRate : '-'}</div>
             <div style="font-size: 14px; font-weight: 600; margin-bottom: 4px;">Requests/Second</div>
             <div style="font-size: 12px; opacity: 0.9;">Current throughput</div>
           </div>
-          <div style="text-align: center; padding: 16px; background: linear-gradient(135deg, ${data.handledPercentage === '100.00' ? '#10b981 0%, #059669' : '#ef4444 0%, #dc2626'} 100%); border-radius: 8px; color: white;">
+          <div style="text-align: center; padding: 16px; background: ${data.handledPercentage === '100.00' ? 'var(--success-color)' : 'var(--danger-color)'}; border-radius: 8px; color: white;">
             <div style="font-size: 36px; font-weight: 700; margin-bottom: 8px;">${data.handledPercentage}%</div>
             <div style="font-size: 14px; font-weight: 600; margin-bottom: 4px;">Handled</div>
             <div style="font-size: 12px; opacity: 0.9;">${data.handled.toLocaleString()} / ${data.accepts.toLocaleString()}</div>
@@ -431,17 +431,17 @@ function renderRealTimeMetrics(stubStatus) {
           <h4 style="margin: 0 0 12px 0; font-size: 14px; color: var(--text-primary);">Connection States</h4>
           <div class="grid grid-3" style="gap: 12px; margin-bottom: 16px;">
             <div style="text-align: center; padding: 12px; background: var(--bg-color); border-radius: 6px;">
-              <div style="font-size: 28px; font-weight: 700; color: #3b82f6; margin-bottom: 4px;">${data.reading}</div>
+              <div style="font-size: 28px; font-weight: 700; color: var(--secondary-color); margin-bottom: 4px;">${data.reading}</div>
               <div style="font-size: 13px; font-weight: 600; color: var(--text-primary); margin-bottom: 2px;">Reading</div>
               <div style="font-size: 11px; color: var(--text-secondary);">Reading requests</div>
             </div>
             <div style="text-align: center; padding: 12px; background: var(--bg-color); border-radius: 6px;">
-              <div style="font-size: 28px; font-weight: 700; color: #10b981; margin-bottom: 4px;">${data.writing}</div>
+              <div style="font-size: 28px; font-weight: 700; color: var(--success-color); margin-bottom: 4px;">${data.writing}</div>
               <div style="font-size: 13px; font-weight: 600; color: var(--text-primary); margin-bottom: 2px;">Writing</div>
               <div style="font-size: 11px; color: var(--text-secondary);">Sending responses</div>
             </div>
             <div style="text-align: center; padding: 12px; background: var(--bg-color); border-radius: 6px;">
-              <div style="font-size: 28px; font-weight: 700; color: #f59e0b; margin-bottom: 4px;">${data.waiting}</div>
+              <div style="font-size: 28px; font-weight: 700; color: var(--warning-color); margin-bottom: 4px;">${data.waiting}</div>
               <div style="font-size: 13px; font-weight: 600; color: var(--text-primary); margin-bottom: 2px;">Waiting</div>
               <div style="font-size: 11px; color: var(--text-secondary);">Keep-alive idle</div>
             </div>
@@ -463,9 +463,9 @@ function renderRealTimeMetrics(stubStatus) {
 function renderStubStatusSetup(stubStatus) {
   if (!stubStatus.configured) {
     return `
-      <div class="card" style="margin-bottom: 20px; border: 2px solid #fbbf24;">
-        <div class="card-header" style="background: #fef3c7;">
-          <h3 class="card-title" style="color: #92400e;">⚡ Enable Real-Time Monitoring</h3>
+      <div class="card" style="margin-bottom: 20px; border: 2px solid var(--warning-color);">
+        <div class="card-header" style="background: var(--warning-bg);">
+          <h3 class="card-title" style="color: var(--text-primary);">⚡ Enable Real-Time Monitoring</h3>
         </div>
         <div style="padding: 20px;">
           <p style="margin: 0 0 16px 0; color: var(--text-secondary);">
@@ -516,9 +516,9 @@ function renderConnectionBar(data) {
   const waitingPercent = (data.waiting / total) * 100;
 
   return `
-    ${data.reading > 0 ? `<div style="flex: ${readingPercent}; background: #3b82f6; display: flex; align-items: center; justify-content: center; color: white; font-size: 11px; font-weight: 600;" title="${data.reading} reading (${readingPercent.toFixed(1)}%)">${data.reading > 3 ? data.reading : ''}</div>` : ''}
-    ${data.writing > 0 ? `<div style="flex: ${writingPercent}; background: #10b981; display: flex; align-items: center; justify-content: center; color: white; font-size: 11px; font-weight: 600;" title="${data.writing} writing (${writingPercent.toFixed(1)}%)">${data.writing > 3 ? data.writing : ''}</div>` : ''}
-    ${data.waiting > 0 ? `<div style="flex: ${waitingPercent}; background: #f59e0b; display: flex; align-items: center; justify-content: center; color: white; font-size: 11px; font-weight: 600;" title="${data.waiting} waiting (${waitingPercent.toFixed(1)}%)">${data.waiting > 3 ? data.waiting : ''}</div>` : ''}
+    ${data.reading > 0 ? `<div style="flex: ${readingPercent}; background: var(--secondary-color); display: flex; align-items: center; justify-content: center; color: white; font-size: 11px; font-weight: 600;" title="${data.reading} reading (${readingPercent.toFixed(1)}%)">${data.reading > 3 ? data.reading : ''}</div>` : ''}
+    ${data.writing > 0 ? `<div style="flex: ${writingPercent}; background: var(--success-color); display: flex; align-items: center; justify-content: center; color: white; font-size: 11px; font-weight: 600;" title="${data.writing} writing (${writingPercent.toFixed(1)}%)">${data.writing > 3 ? data.writing : ''}</div>` : ''}
+    ${data.waiting > 0 ? `<div style="flex: ${waitingPercent}; background: var(--warning-color); display: flex; align-items: center; justify-content: center; color: white; font-size: 11px; font-weight: 600;" title="${data.waiting} waiting (${waitingPercent.toFixed(1)}%)">${data.waiting > 3 ? data.waiting : ''}</div>` : ''}
   `;
 }
 
