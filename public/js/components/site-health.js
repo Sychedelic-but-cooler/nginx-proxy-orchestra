@@ -148,15 +148,18 @@ function updateHealthTable() {
         <td>
           <div class="action-buttons">
             ${healthEnabled 
-              ? `<button class="btn btn-sm btn-secondary" onclick="window.disableHealthCheck(${site.id})">Disable</button>`
-              : `<button class="btn btn-sm btn-primary" onclick="window.enableHealthCheck(${site.id})">Enable</button>`
+              ? `<button class="btn btn-sm btn-secondary" data-action="disable" data-site-id="${site.id}">Disable</button>`
+              : `<button class="btn btn-sm btn-primary" data-action="enable" data-site-id="${site.id}">Enable</button>`
             }
-            <button class="btn btn-sm btn-secondary" onclick="window.viewHealthDetails(${site.id})">Details</button>
+            <button class="btn btn-sm btn-secondary" data-action="details" data-site-id="${site.id}">Details</button>
           </div>
         </td>
       </tr>
     `;
   }).join('');
+  
+  // Attach event listeners for action buttons using event delegation
+  attachTableEventListeners();
 }
 
 function getStatusBadge(status) {
@@ -224,8 +227,34 @@ function stopAutoRefresh() {
   }
 }
 
-// Global functions for button actions
-window.enableHealthCheck = async function(siteId) {
+// Event delegation for action buttons
+function attachTableEventListeners() {
+  const tbody = document.getElementById('healthTableBody');
+  if (!tbody) return;
+  
+  // Remove any existing listeners by cloning the tbody
+  const newTbody = tbody.cloneNode(true);
+  tbody.parentNode.replaceChild(newTbody, tbody);
+  
+  // Add event listener using delegation
+  newTbody.addEventListener('click', async (e) => {
+    const button = e.target.closest('button[data-action]');
+    if (!button) return;
+    
+    const action = button.dataset.action;
+    const siteId = parseInt(button.dataset.siteId, 10);
+    
+    if (action === 'enable') {
+      await enableHealthCheck(siteId);
+    } else if (action === 'disable') {
+      await disableHealthCheck(siteId);
+    } else if (action === 'details') {
+      await viewHealthDetails(siteId);
+    }
+  });
+}
+
+async function enableHealthCheck(siteId) {
   try {
     showLoading();
     await api.enableHealthCheck(siteId);
@@ -237,9 +266,9 @@ window.enableHealthCheck = async function(siteId) {
   } finally {
     hideLoading();
   }
-};
+}
 
-window.disableHealthCheck = async function(siteId) {
+async function disableHealthCheck(siteId) {
   if (!confirm('Are you sure you want to disable health checking for this site?')) {
     return;
   }
@@ -255,9 +284,9 @@ window.disableHealthCheck = async function(siteId) {
   } finally {
     hideLoading();
   }
-};
+}
 
-window.viewHealthDetails = async function(siteId) {
+async function viewHealthDetails(siteId) {
   try {
     showLoading();
     const details = await api.getProxyHealthStatus(siteId);
@@ -267,7 +296,7 @@ window.viewHealthDetails = async function(siteId) {
   } finally {
     hideLoading();
   }
-};
+}
 
 function showHealthDetailsModal(details) {
   const pings = details.pings || [];

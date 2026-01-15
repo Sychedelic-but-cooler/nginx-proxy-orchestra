@@ -279,10 +279,16 @@ export async function renderNotificationSettings(container) {
           <p style="color: var(--danger-color); margin-bottom: 16px;">
             Failed to load notification settings: ${error.message}
           </p>
-          <button onclick="location.reload()" class="btn btn-secondary">Retry</button>
+          <button id="retryLoadBtn" class="btn btn-secondary">Retry</button>
         </div>
       </div>
     `;
+    
+    // Attach retry event listener
+    const retryBtn = document.getElementById('retryLoadBtn');
+    if (retryBtn) {
+      retryBtn.addEventListener('click', () => location.reload());
+    }
   }
 }
 
