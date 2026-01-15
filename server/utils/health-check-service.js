@@ -4,11 +4,12 @@
  * Monitors upstream servers by performing periodic health checks.
  * Tracks response times, success/failure rates, and maintains ping history.
  * Uses node-cron to schedule checks every 5 minutes for all enabled sites.
+ * 
+ * Uses TCP connection checks to avoid issues with SSL certificates,
+ * HTTP redirects, and other application-level concerns.
  */
 
-const http = require('http');
-const https = require('https');
-const { URL } = require('url');
+const net = require('net');
 const cron = require('node-cron');
 const { db } = require('../db');
 
@@ -84,22 +85,17 @@ async function performHealthCheck(config) {
   const startTime = Date.now();
   let status = 'down';
   let responseTime = null;
-  let httpStatus = null;
   let errorMessage = null;
   
   try {
-    const result = await checkUpstream(
-      config.forward_scheme,
+    const result = await checkUpstreamTCP(
       config.forward_host,
       config.forward_port,
-      config.check_path,
-      config.timeout,
-      config.expected_status
+      config.timeout
     );
     
     status = result.success ? 'up' : 'down';
     responseTime = result.responseTime;
-    httpStatus = result.httpStatus;
     errorMessage = result.error;
     
   } catch (error) {
@@ -107,72 +103,59 @@ async function performHealthCheck(config) {
     errorMessage = error.message;
   }
   
-  // Record ping
-  recordPing(config.proxy_id, status, responseTime, httpStatus, errorMessage);
+  // Record ping (http_status is null for TCP checks)
+  recordPing(config.proxy_id, status, responseTime, null, errorMessage);
   
   // Update current health status
   updateCurrentStatus(config.proxy_id);
 }
 
 /**
- * Check upstream server availability
+ * Check upstream server availability using TCP connection
  */
-function checkUpstream(scheme, host, port, path, timeout, expectedStatus) {
-  return new Promise((resolve, reject) => {
+function checkUpstreamTCP(host, port, timeout) {
+  return new Promise((resolve) => {
     const startTime = Date.now();
-    const client = scheme === 'https' ? https : http;
+    const socket = new net.Socket();
     
-    // Build URL
-    const url = `${scheme}://${host}:${port}${path}`;
+    // Set timeout
+    socket.setTimeout(timeout);
     
-    const options = {
-      method: 'HEAD', // Use HEAD for minimal overhead
-      timeout: timeout,
-      headers: {
-        'User-Agent': 'Nginx-Proxy-Orchestra-HealthCheck/1.0'
-      }
-    };
-    
-    const req = client.request(url, options, (res) => {
+    // Attempt to connect
+    socket.connect(port, host, () => {
       const responseTime = Date.now() - startTime;
-      const httpStatus = res.statusCode;
-      
-      // Consume response data to free up memory
-      res.resume();
-      
-      // Check if status matches expected
-      const success = httpStatus === expectedStatus;
+      socket.destroy();
       
       resolve({
-        success,
+        success: true,
         responseTime,
-        httpStatus,
-        error: success ? null : `Unexpected status: ${httpStatus} (expected ${expectedStatus})`
+        error: null
       });
     });
     
-    req.on('timeout', () => {
-      req.destroy();
+    // Handle timeout
+    socket.on('timeout', () => {
       const responseTime = Date.now() - startTime;
+      socket.destroy();
+      
       resolve({
         success: false,
         responseTime,
-        httpStatus: null,
-        error: 'Request timeout'
+        error: 'Connection timeout'
       });
     });
     
-    req.on('error', (error) => {
+    // Handle connection errors
+    socket.on('error', (error) => {
       const responseTime = Date.now() - startTime;
+      socket.destroy();
+      
       resolve({
         success: false,
         responseTime,
-        httpStatus: null,
         error: error.message
       });
     });
-    
-    req.end();
   });
 }
 

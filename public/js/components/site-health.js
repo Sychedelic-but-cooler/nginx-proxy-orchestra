@@ -319,23 +319,19 @@ function showHealthDetailsModal(details) {
             </div>
             <div class="detail-row">
               <span class="detail-label">Upstream:</span>
-              <span class="detail-value">${escapeHtml(details.forward_scheme)}://${escapeHtml(details.forward_host)}:${details.forward_port}</span>
+              <span class="detail-value">${escapeHtml(details.forward_host)}:${details.forward_port}</span>
             </div>
             <div class="detail-row">
-              <span class="detail-label">Check Interval:</span>
-              <span class="detail-value">${details.check_interval || 30} seconds</span>
+              <span class="detail-label">Check Method:</span>
+              <span class="detail-value">TCP Connection</span>
+            </div>
+            <div class="detail-row">
+              <span class="detail-label">Check Schedule:</span>
+              <span class="detail-value">Every 5 minutes</span>
             </div>
             <div class="detail-row">
               <span class="detail-label">Timeout:</span>
               <span class="detail-value">${details.timeout || 5000} ms</span>
-            </div>
-            <div class="detail-row">
-              <span class="detail-label">Check Path:</span>
-              <span class="detail-value">${escapeHtml(details.check_path || '/')}</span>
-            </div>
-            <div class="detail-row">
-              <span class="detail-label">Expected Status:</span>
-              <span class="detail-value">${details.expected_status || 200}</span>
             </div>
             <div class="detail-row">
               <span class="detail-label">Average Response:</span>
@@ -354,8 +350,7 @@ function showHealthDetailsModal(details) {
                 <tr>
                   <th>Timestamp</th>
                   <th>Status</th>
-                  <th>Response Time</th>
-                  <th>HTTP Status</th>
+                  <th>Connection Time</th>
                   <th>Error</th>
                 </tr>
               </thead>
@@ -365,10 +360,9 @@ function showHealthDetailsModal(details) {
                     <td>${new Date(ping.timestamp).toLocaleString()}</td>
                     <td>${getStatusBadge(ping.status)}</td>
                     <td>${ping.response_time ? ping.response_time + ' ms' : '-'}</td>
-                    <td>${ping.http_status || '-'}</td>
                     <td class="error-cell">${escapeHtml(ping.error_message || '-')}</td>
                   </tr>
-                `).join('') : '<tr><td colspan="5" class="empty-cell">No ping history available</td></tr>'}
+                `).join('') : '<tr><td colspan="4" class="empty-cell">No ping history available</td></tr>'}
               </tbody>
             </table>
           </div>
