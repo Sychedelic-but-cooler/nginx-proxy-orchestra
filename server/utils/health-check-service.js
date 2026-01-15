@@ -3,26 +3,56 @@
  * 
  * Monitors upstream servers by performing periodic health checks.
  * Tracks response times, success/failure rates, and maintains ping history.
+ * Uses node-cron to schedule checks every 5 minutes for all enabled sites.
  */
 
 const http = require('http');
 const https = require('https');
 const { URL } = require('url');
+const cron = require('node-cron');
 const { db } = require('../db');
 
-// Store active check intervals
-const activeChecks = new Map();
+// Cron job instance
+let cronJob = null;
 
 // Maximum number of pings to store per upstream
 const MAX_PING_HISTORY = 100;
 
 /**
  * Initialize health check service
- * Starts health checks for all enabled upstreams
+ * Starts cron job to check all enabled upstreams every 5 minutes
  */
 function initializeHealthChecks() {
   console.log('Initializing upstream health check service...');
   
+  try {
+    // Stop existing cron job if any
+    if (cronJob) {
+      cronJob.stop();
+      cronJob = null;
+    }
+    
+    // Run initial check immediately
+    performAllHealthChecks();
+    
+    // Schedule health checks every 5 minutes using cron
+    // Cron expression: */5 * * * * = every 5 minutes
+    cronJob = cron.schedule('*/5 * * * *', () => {
+      console.log('Running scheduled health checks...');
+      performAllHealthChecks();
+    });
+    
+    console.log('  Health check service started (checks every 5 minutes)');
+    
+  } catch (error) {
+    console.error('Failed to initialize health checks:', error.message);
+  }
+}
+
+/**
+ * Perform health checks for all enabled upstreams
+ */
+async function performAllHealthChecks() {
   try {
     // Get all enabled health check configs
     const configs = db.prepare(`
@@ -32,45 +62,18 @@ function initializeHealthChecks() {
       WHERE hc.enabled = 1 AND ph.enabled = 1
     `).all();
     
-    console.log(`  Starting health checks for ${configs.length} upstreams`);
+    if (configs.length === 0) {
+      return;
+    }
     
-    configs.forEach(config => {
-      startHealthCheck(config);
-    });
+    console.log(`  Checking ${configs.length} upstreams...`);
+    
+    // Perform all checks in parallel
+    const checks = configs.map(config => performHealthCheck(config));
+    await Promise.allSettled(checks);
     
   } catch (error) {
-    console.error('Failed to initialize health checks:', error.message);
-  }
-}
-
-/**
- * Start health check for a specific upstream
- */
-function startHealthCheck(config) {
-  // Stop existing check if any
-  stopHealthCheck(config.proxy_id);
-  
-  const intervalMs = config.check_interval * 1000;
-  
-  // Perform initial check immediately
-  performHealthCheck(config);
-  
-  // Schedule periodic checks
-  const intervalId = setInterval(() => {
-    performHealthCheck(config);
-  }, intervalMs);
-  
-  activeChecks.set(config.proxy_id, intervalId);
-}
-
-/**
- * Stop health check for a specific upstream
- */
-function stopHealthCheck(proxyId) {
-  const intervalId = activeChecks.get(proxyId);
-  if (intervalId) {
-    clearInterval(intervalId);
-    activeChecks.delete(proxyId);
+    console.error('Error performing health checks:', error.message);
   }
 }
 
@@ -294,7 +297,7 @@ function enableHealthCheck(proxyId) {
         updated_at = CURRENT_TIMESTAMP
     `).run(proxyId);
     
-    // Get full config
+    // Perform an immediate check for this proxy
     const config = db.prepare(`
       SELECT hc.*, ph.forward_scheme, ph.forward_host, ph.forward_port
       FROM upstream_health_config hc
@@ -302,8 +305,11 @@ function enableHealthCheck(proxyId) {
       WHERE hc.proxy_id = ?
     `).get(proxyId);
     
-    // Start health check
-    startHealthCheck(config);
+    if (config) {
+      performHealthCheck(config).catch(err => {
+        console.error(`Initial health check failed for proxy ${proxyId}:`, err.message);
+      });
+    }
     
     return { success: true, message: 'Health check enabled' };
   } catch (error) {
@@ -323,9 +329,6 @@ function disableHealthCheck(proxyId) {
       SET enabled = 0, updated_at = CURRENT_TIMESTAMP
       WHERE proxy_id = ?
     `).run(proxyId);
-    
-    // Stop active check
-    stopHealthCheck(proxyId);
     
     return { success: true, message: 'Health check disabled' };
   } catch (error) {
@@ -352,7 +355,7 @@ function updateHealthCheckConfig(proxyId, config) {
       WHERE proxy_id = ?
     `).run(enabled, check_interval, timeout, check_path, expected_status, proxyId);
     
-    // Restart health check if enabled
+    // Perform immediate check if enabled
     if (enabled) {
       const fullConfig = db.prepare(`
         SELECT hc.*, ph.forward_scheme, ph.forward_host, ph.forward_port
@@ -361,9 +364,11 @@ function updateHealthCheckConfig(proxyId, config) {
         WHERE hc.proxy_id = ?
       `).get(proxyId);
       
-      startHealthCheck(fullConfig);
-    } else {
-      stopHealthCheck(proxyId);
+      if (fullConfig) {
+        performHealthCheck(fullConfig).catch(err => {
+          console.error(`Health check failed for proxy ${proxyId}:`, err.message);
+        });
+      }
     }
     
     return { success: true, message: 'Health check configuration updated' };
@@ -461,14 +466,14 @@ function getProxyHealthStatus(proxyId) {
 }
 
 /**
- * Cleanup - stop all health checks
+ * Cleanup - stop cron job
  */
 function cleanup() {
-  console.log('Stopping all health checks...');
-  for (const [proxyId, intervalId] of activeChecks.entries()) {
-    clearInterval(intervalId);
+  console.log('Stopping health check service...');
+  if (cronJob) {
+    cronJob.stop();
+    cronJob = null;
   }
-  activeChecks.clear();
 }
 
 // Handle graceful shutdown
@@ -477,13 +482,12 @@ process.on('SIGTERM', cleanup);
 
 module.exports = {
   initializeHealthChecks,
-  startHealthCheck,
-  stopHealthCheck,
   enableHealthCheck,
   disableHealthCheck,
   updateHealthCheckConfig,
   getAllHealthStatus,
   getProxyHealthStatus,
   performHealthCheck,
+  performAllHealthChecks,
   cleanup
 };

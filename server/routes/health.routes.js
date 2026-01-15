@@ -116,7 +116,9 @@ function handleUpdateHealthCheckConfig(req, res, proxyId) {
     try {
       const config = JSON.parse(body);
       
-      // Validate config
+      // NOTE: check_interval is stored in the database for reference but is no longer used for scheduling.
+      // All health checks run on a fixed 5-minute schedule via node-cron.
+      // Validation is kept for backward compatibility.
       if (config.check_interval !== undefined && (config.check_interval < 10 || config.check_interval > 3600)) {
         return sendJSON(res, { error: 'Check interval must be between 10 and 3600 seconds' }, 400);
       }

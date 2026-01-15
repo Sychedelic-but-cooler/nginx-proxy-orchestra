@@ -303,6 +303,15 @@ function shutdown(signal) {
       console.error('Error stopping ban system:', err.message);
     }
 
+    // Stop health check service
+    try {
+      const { cleanup } = require('./utils/health-check-service');
+      cleanup();
+      console.log('✓ Health check service stopped');
+    } catch (err) {
+      console.error('Error stopping health check service:', err.message);
+    }
+
     // Close database connection
     try {
       db.close();
