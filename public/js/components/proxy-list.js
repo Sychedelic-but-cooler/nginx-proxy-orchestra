@@ -745,8 +745,8 @@ function renderModuleSidebar(modules) {
     const tagModules = modules[tag];
     if (!tagModules || tagModules.length === 0) return;
 
-    // First tag expanded by default, others collapsed
-    const isExpanded = index === 0;
+    // All tags collapsed by default
+    const isExpanded = false;
     const sectionId = `tag-section-${tag.replace(/\s+/g, '-').toLowerCase()}`;
 
     html += `
